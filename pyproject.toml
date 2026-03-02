@@ -1,0 +1,90 @@
+[project]
+name = "dex-studio"
+version = "0.1.0"
+description = "DEX Studio – local control plane for DataEngineX/DEX"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "TheDataEngineX" }]
+keywords = ["data-engineering", "ml", "ui", "dashboard", "dataenginex"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "nicegui>=2.0",
+    "pywebview>=5.0",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+# Native window backends — install ONE for pywebview native mode
+gtk = [
+    "PyGObject>=3.42",
+    "pycairo>=1.20",
+]
+qt = [
+    "PyQt6>=6.5",
+    "qtpy>=2.4",
+]
+# macOS uses built-in WebKit via pyobjc (auto-installed by pywebview)
+
+[project.scripts]
+dex-studio = "dex_studio.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/TheDataEngineX/dex-studio"
+Repository = "https://github.com/TheDataEngineX/dex-studio"
+Issues = "https://github.com/TheDataEngineX/dex-studio/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dex_studio"]
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.32",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "httpx[cli]",
+    "coverage>=7.0",
+    "types-pyyaml>=6.0.12.20250915",
+]
+
+[tool.poe]
+include = "poe_tasks.toml"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dex_studio"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
