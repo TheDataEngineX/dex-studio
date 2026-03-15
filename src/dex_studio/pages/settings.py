@@ -31,24 +31,36 @@ async def settings_page() -> None:
 
         ui.label("Connection").classes("section-title")
         with ui.card().classes("dex-card w-full"):
-            api_url = ui.input(
-                label="DEX Engine URL",
-                value=cfg.api_url,
-            ).classes("w-96").props("outlined dark")
+            api_url = (
+                ui.input(
+                    label="DEX Engine URL",
+                    value=cfg.api_url,
+                )
+                .classes("w-96")
+                .props("outlined dark")
+            )
 
-            api_token = ui.input(
-                label="API Token (optional)",
-                value=cfg.api_token or "",
-                password=True,
-                password_toggle_button=True,
-            ).classes("w-96").props("outlined dark")
+            api_token = (
+                ui.input(
+                    label="API Token (optional)",
+                    value=cfg.api_token or "",
+                    password=True,
+                    password_toggle_button=True,
+                )
+                .classes("w-96")
+                .props("outlined dark")
+            )
 
-            timeout = ui.number(
-                label="Timeout (seconds)",
-                value=cfg.timeout,
-                min=1,
-                max=120,
-            ).classes("w-48").props("outlined dark")
+            timeout = (
+                ui.number(
+                    label="Timeout (seconds)",
+                    value=cfg.timeout,
+                    min=1,
+                    max=120,
+                )
+                .classes("w-48")
+                .props("outlined dark")
+            )
 
         ui.label("UI Preferences").classes("section-title mt-6")
         with ui.card().classes("dex-card w-full"):
@@ -57,12 +69,16 @@ async def settings_page() -> None:
                 value=cfg.theme,
             ).classes("mt-1")
 
-            poll = ui.number(
-                label="Status poll interval (seconds)",
-                value=cfg.poll_interval,
-                min=1,
-                max=60,
-            ).classes("w-48").props("outlined dark")
+            poll = (
+                ui.number(
+                    label="Status poll interval (seconds)",
+                    value=cfg.poll_interval,
+                    min=1,
+                    max=60,
+                )
+                .classes("w-48")
+                .props("outlined dark")
+            )
 
         # -- Actions --
         status_label = ui.label("").classes("text-sm mt-2")
@@ -129,6 +145,4 @@ async def settings_page() -> None:
                 raw = _CONFIG_PATH.read_text()
                 ui.code(raw, language="yaml").classes("w-full")
         else:
-            ui.label(f"No config file at {_CONFIG_PATH}").style(
-                f"color: {COLORS['text_muted']}"
-            )
+            ui.label(f"No config file at {_CONFIG_PATH}").style(f"color: {COLORS['text_muted']}")

@@ -43,15 +43,15 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Serving → Ob
 
 ### Why NiceGUI + Native Mode
 
-| Requirement                          | NiceGUI Capability                        |
+| Requirement | NiceGUI Capability |
 |--------------------------------------|-------------------------------------------|
-| Python-first, no JS build step       | ✅ Pure Python components                 |
-| Real URL routing (`/quality`, `/models`) | ✅ `@ui.page` decorator                |
-| Websocket for live updates           | ✅ Built-in, auto-managed                 |
-| Desktop-native window                | ✅ `native=True` via pywebview            |
-| Built on FastAPI                     | ✅ Same stack as DEX engine               |
-| Component model (cards, tables, tabs)| ✅ Quasar + custom components             |
-| Auth middleware (future)             | ✅ FastAPI middleware support              |
+| Python-first, no JS build step | ✅ Pure Python components |
+| Real URL routing (`/quality`, `/models`) | ✅ `@ui.page` decorator |
+| Websocket for live updates | ✅ Built-in, auto-managed |
+| Desktop-native window | ✅ `native=True` via pywebview |
+| Built on FastAPI | ✅ Same stack as DEX engine |
+| Component model (cards, tables, tabs)| ✅ Quasar + custom components |
+| Auth middleware (future) | ✅ FastAPI middleware support |
 
 ### Why NOT Streamlit
 
@@ -104,10 +104,10 @@ dex-studio/
 Config is loaded with this priority (highest wins):
 
 1. CLI arguments (`--url`, `--token`, `--theme`)
-2. Environment variables (`DEX_STUDIO_API_URL`, `DEX_STUDIO_API_TOKEN`, …)
-3. Project-local `.dex-studio.yaml`
-4. User-level `~/.dex-studio/config.yaml`
-5. Built-in defaults
+1. Environment variables (`DEX_STUDIO_API_URL`, `DEX_STUDIO_API_TOKEN`, …)
+1. Project-local `.dex-studio.yaml`
+1. User-level `~/.dex-studio/config.yaml`
+1. Built-in defaults
 
 ```yaml
 # ~/.dex-studio/config.yaml
@@ -125,14 +125,14 @@ window_height: 900
 Each Studio page drives corresponding DEX engine API endpoints.
 When Studio needs data that DEX doesn't expose yet, the engine API must be extended first.
 
-| Studio Page     | DEX Engine Endpoints Required                              | Status     |
+| Studio Page | DEX Engine Endpoints Required | Status |
 |-----------------|-------------------------------------------------------------|------------|
-| Overview        | `GET /`, `/health`, `/startup`, `/api/v1/data/quality`, `/api/v1/system/config` | ✅ Available |
-| Health          | `GET /health`, `/ready`, `/startup`                        | ✅ Available |
-| Data Quality    | `GET /api/v1/data/quality`, `/api/v1/data/quality/{layer}`, `/api/v1/data/sources`, `/api/v1/warehouse/layers` | ✅ Available |
-| Lineage         | `GET /api/v1/warehouse/lineage/{event_id}`                 | ✅ Available |
-| ML Models       | `GET /api/v1/models`, `/api/v1/models/{name}`, `POST /api/v1/predict` | 🔧 Router exists but was unmounted — **fixed in lockstep** |
-| Settings        | (local only — no API calls)                                 | ✅ N/A      |
+| Overview | `GET /`, `/health`, `/startup`, `/api/v1/data/quality`, `/api/v1/system/config` | ✅ Available |
+| Health | `GET /health`, `/ready`, `/startup` | ✅ Available |
+| Data Quality | `GET /api/v1/data/quality`, `/api/v1/data/quality/{layer}`, `/api/v1/data/sources`, `/api/v1/warehouse/layers` | ✅ Available |
+| Lineage | `GET /api/v1/warehouse/lineage/{event_id}` | ✅ Available |
+| ML Models | `GET /api/v1/models`, `/api/v1/models/{name}`, `POST /api/v1/predict` | 🔧 Router exists but was unmounted — **fixed in lockstep** |
+| Settings | (local only — no API calls) | ✅ N/A |
 
 ### Lockstep Rule
 
@@ -154,25 +154,27 @@ app.include_router(ml_router)
 ```
 
 This activates 3 previously dead endpoints:
+
 - `POST /api/v1/predict`
 - `GET /api/v1/models`
 - `GET /api/v1/models/{name}`
 
 ## 7. Technology Choices
 
-| Choice                    | Rationale                                               |
+| Choice | Rationale |
 |---------------------------|----------------------------------------------------------|
-| **NiceGUI**               | Python-first, real routing, websockets, built on FastAPI |
-| **pywebview (native mode)** | Desktop-native window without Electron overhead        |
-| **httpx**                 | Async HTTP client, connection pooling, same API as requests |
-| **Pydantic**              | Config validation, matches DEX engine patterns          |
-| **PyYAML**                | Config file format                                      |
-| **Hatchling**             | Same build backend as DEX engine                        |
-| **Separate repo**         | Different release cadence, users, and dependency trees  |
+| **NiceGUI** | Python-first, real routing, websockets, built on FastAPI |
+| **pywebview (native mode)** | Desktop-native window without Electron overhead |
+| **httpx** | Async HTTP client, connection pooling, same API as requests |
+| **Pydantic** | Config validation, matches DEX engine patterns |
+| **PyYAML** | Config file format |
+| **Hatchling** | Same build backend as DEX engine |
+| **Separate repo** | Different release cadence, users, and dependency trees |
 
 ## 8. Phased Roadmap
 
 ### Phase 0 — Foundation (v0.1.0) ← current
+
 - Project scaffold + CI
 - httpx client with health check
 - YAML config system (file + env + CLI)
@@ -180,21 +182,25 @@ This activates 3 previously dead endpoints:
 - DEX engine lockstep: mount ML router
 
 ### Phase 1 — Data Operations (v0.2.0)
+
 - Pipeline trigger page (needs `POST /api/v1/pipelines/run` on DEX engine)
 - Ingestion management (needs `POST /api/v1/data/ingest`)
 - Live pipeline log streaming (NiceGUI websocket)
 
 ### Phase 2 — ML Workflows (v0.3.0)
+
 - Experiment comparison page
 - Drift detection alerts (needs `GET /api/v1/ml/drift`)
 - Model promotion workflow
 
 ### Phase 3 — Observability (v0.4.0)
+
 - Prometheus metrics charts (needs structured `GET /api/v1/metrics` JSON endpoint)
 - Log viewer (needs `GET /api/v1/logs`)
 - Trace explorer (needs `GET /api/v1/traces`)
 
 ### Phase 4 — Project Management (v0.5.0)
+
 - Project scaffolder (`dex-studio init`)
 - Config editor (edit DEX engine config from Studio)
 - Multi-instance support (connect to multiple DEX engines)

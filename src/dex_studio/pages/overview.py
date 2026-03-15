@@ -54,16 +54,12 @@ async def overview_page() -> None:
 
         # -- Error banner --
         if errors:
-            with ui.card().classes("dex-card w-full").style(
-                f"border-color: {COLORS['warning']}"
-            ):
+            with ui.card().classes("dex-card w-full").style(f"border-color: {COLORS['warning']}"):
                 ui.label("Some endpoints unreachable").classes("font-semibold text-sm").style(
                     f"color: {COLORS['warning']}"
                 )
                 for err in errors:
-                    ui.label(f"• {err}").classes("text-xs").style(
-                        f"color: {COLORS['text_muted']}"
-                    )
+                    ui.label(f"• {err}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         # -- Row 1: Status cards --
         ui.label("System Status").classes("section-title")
@@ -124,14 +120,8 @@ async def overview_page() -> None:
                 ui.grid(columns=2).classes("gap-x-8 gap-y-2"),
             ):
                 for key, value in config.items():
-                    ui.label(key).classes(
-                        "text-xs font-mono"
-                    ).style(f"color: {COLORS['text_muted']}")
-                    display = (
-                        ", ".join(value)
-                        if isinstance(value, list)
-                        else str(value)
+                    ui.label(key).classes("text-xs font-mono").style(
+                        f"color: {COLORS['text_muted']}"
                     )
-                    ui.label(display).classes("text-sm").style(
-                        f"color: {COLORS['text_primary']}"
-                    )
+                    display = ", ".join(value) if isinstance(value, list) else str(value)
+                    ui.label(display).classes("text-sm").style(f"color: {COLORS['text_primary']}")

@@ -20,9 +20,9 @@ COLORS = {
     "bg_secondary": "#1a1d27",
     "bg_card": "#1e2130",
     "bg_hover": "#252838",
-    "accent": "#6366f1",          # indigo-500
-    "accent_light": "#818cf8",    # indigo-400
-    "accent_muted": "#4f46e5",    # indigo-600
+    "accent": "#6366f1",  # indigo-500
+    "accent_light": "#818cf8",  # indigo-400
+    "accent_muted": "#4f46e5",  # indigo-600
     "success": "#22c55e",
     "warning": "#f59e0b",
     "error": "#ef4444",

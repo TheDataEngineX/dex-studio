@@ -34,39 +34,33 @@ _MODEL_COLUMNS = [
 
 def _render_503_warning() -> None:
     """Show a warning card when the ML router is not mounted."""
-    with ui.card().classes("dex-card w-full").style(
-        f"border-color: {COLORS['warning']}"
-    ):
-        ui.label("ML Router Not Configured").classes(
-            "font-semibold text-sm"
-        ).style(f"color: {COLORS['warning']}")
+    with ui.card().classes("dex-card w-full").style(f"border-color: {COLORS['warning']}"):
+        ui.label("ML Router Not Configured").classes("font-semibold text-sm").style(
+            f"color: {COLORS['warning']}"
+        )
         ui.label(
             "The DEX engine ML router is not mounted or the model "
             "server is not configured. Start the engine with ML "
             "endpoints enabled."
-        ).classes("text-xs mt-1").style(
-            f"color: {COLORS['text_muted']}"
-        )
+        ).classes("text-xs mt-1").style(f"color: {COLORS['text_muted']}")
 
 
 def _render_model_meta(meta: dict[str, Any], name: str) -> None:
     """Render model metadata inside a card."""
     with ui.card().classes("dex-card w-full"):
-        ui.label(meta.get("name", name)).classes(
-            "font-bold text-lg"
-        ).style(f"color: {COLORS['text_primary']}")
+        ui.label(meta.get("name", name)).classes("font-bold text-lg").style(
+            f"color: {COLORS['text_primary']}"
+        )
         if meta.get("description"):
-            ui.label(meta["description"]).classes(
-                "text-sm mt-1"
-            ).style(f"color: {COLORS['text_secondary']}")
+            ui.label(meta["description"]).classes("text-sm mt-1").style(
+                f"color: {COLORS['text_secondary']}"
+            )
         with ui.grid(columns=2).classes("gap-x-6 gap-y-2 mt-3"):
             for key in ("version", "stage", "created_at"):
-                ui.label(key).classes("text-xs font-mono").style(
-                    f"color: {COLORS['text_muted']}"
+                ui.label(key).classes("text-xs font-mono").style(f"color: {COLORS['text_muted']}")
+                ui.label(str(meta.get(key, "—"))).classes("text-sm").style(
+                    f"color: {COLORS['text_primary']}"
                 )
-                ui.label(str(meta.get(key, "—"))).classes(
-                    "text-sm"
-                ).style(f"color: {COLORS['text_primary']}")
 
         _render_model_metrics(meta.get("metrics", {}))
         _render_model_params(meta.get("parameters", {}))
@@ -79,9 +73,7 @@ def _render_model_metrics(metrics: dict[str, Any]) -> None:
     ui.label("Metrics").classes("section-title mt-3")
     with ui.row().classes("gap-3 flex-wrap"):
         for mk, mv in metrics.items():
-            formatted = (
-                f"{mv:.4f}" if isinstance(mv, float) else str(mv)
-            )
+            formatted = f"{mv:.4f}" if isinstance(mv, float) else str(mv)
             metric_card(mk, formatted)
 
 
@@ -92,28 +84,30 @@ def _render_model_params(params: dict[str, Any]) -> None:
     ui.label("Parameters").classes("section-title mt-3")
     with ui.grid(columns=2).classes("gap-x-4 gap-y-1"):
         for pk, pv in params.items():
-            ui.label(pk).classes("text-xs font-mono").style(
-                f"color: {COLORS['text_muted']}"
-            )
-            ui.label(str(pv)).classes("text-xs").style(
-                f"color: {COLORS['text_primary']}"
-            )
+            ui.label(pk).classes("text-xs font-mono").style(f"color: {COLORS['text_muted']}")
+            ui.label(str(pv)).classes("text-xs").style(f"color: {COLORS['text_primary']}")
 
 
 def _render_prediction_playground(client: DexClient) -> None:
     """Render the prediction playground section."""
     ui.label("Prediction Playground").classes("section-title mt-6")
-    ui.label(
-        "Send a prediction request to a registered model."
-    ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+    ui.label("Send a prediction request to a registered model.").classes("text-xs").style(
+        f"color: {COLORS['text_muted']}"
+    )
 
-    pred_model = ui.input(
-        label="Model Name", placeholder="e.g. weather_regressor"
-    ).classes("w-64").props("outlined dark")
-    pred_features = ui.textarea(
-        label="Features (JSON array)",
-        placeholder='[{"temp": 20, "humidity": 65}]',
-    ).classes("w-full").props("outlined dark")
+    pred_model = (
+        ui.input(label="Model Name", placeholder="e.g. weather_regressor")
+        .classes("w-64")
+        .props("outlined dark")
+    )
+    pred_features = (
+        ui.textarea(
+            label="Features (JSON array)",
+            placeholder='[{"temp": 20, "humidity": 65}]',
+        )
+        .classes("w-full")
+        .props("outlined dark")
+    )
 
     pred_result = ui.column().classes("w-full mt-2")
 
@@ -129,30 +123,24 @@ def _render_prediction_playground(client: DexClient) -> None:
                 if not isinstance(features, list):
                     features = [features]
             except json.JSONDecodeError as exc:
-                ui.label(f"Invalid JSON: {exc}").style(
-                    f"color: {COLORS['error']}"
-                )
+                ui.label(f"Invalid JSON: {exc}").style(f"color: {COLORS['error']}")
                 return
 
             try:
                 result = await client.predict(name, features)
             except DexAPIError as exc:
-                ui.label(f"Prediction failed: {exc}").style(
-                    f"color: {COLORS['error']}"
-                )
+                ui.label(f"Prediction failed: {exc}").style(f"color: {COLORS['error']}")
                 return
 
             with ui.card().classes("dex-card w-full"):
-                ui.label("Prediction Result").classes(
-                    "font-semibold text-sm"
-                ).style(f"color: {COLORS['text_primary']}")
-                ui.code(
-                    json.dumps(result, indent=2, default=str)
-                ).classes("w-full mt-2")
+                ui.label("Prediction Result").classes("font-semibold text-sm").style(
+                    f"color: {COLORS['text_primary']}"
+                )
+                ui.code(json.dumps(result, indent=2, default=str)).classes("w-full mt-2")
 
-    ui.button(
-        "Predict", icon="play_arrow", on_click=run_prediction
-    ).props("color=indigo").classes("mt-2")
+    ui.button("Predict", icon="play_arrow", on_click=run_prediction).props("color=indigo").classes(
+        "mt-2"
+    )
 
 
 @ui.page("/models")
@@ -161,9 +149,7 @@ async def ml_models_page() -> None:
     with page_layout("ML Models", active_route="/models") as _content:
         client: DexClient | None = app.storage.general.get("client")
         if client is None:
-            ui.label("No connection configured.").style(
-                f"color: {COLORS['error']}"
-            )
+            ui.label("No connection configured.").style(f"color: {COLORS['error']}")
             return
 
         # -- Model list --
@@ -176,9 +162,7 @@ async def ml_models_page() -> None:
             if exc.status_code == 503:
                 _render_503_warning()
             else:
-                ui.label(f"Error: {exc}").style(
-                    f"color: {COLORS['error']}"
-                )
+                ui.label(f"Error: {exc}").style(f"color: {COLORS['error']}")
             models = []
             total = 0
 
@@ -194,16 +178,18 @@ async def ml_models_page() -> None:
                 }
                 for m in models
             ]
-            ui.table(
-                columns=_MODEL_COLUMNS, rows=rows
-            ).classes("w-full mt-4")
+            ui.table(columns=_MODEL_COLUMNS, rows=rows).classes("w-full mt-4")
 
             # -- Model detail --
             ui.label("Model Detail").classes("section-title mt-6")
-            model_select = ui.select(
-                label="Select model",
-                options=[m["name"] for m in models],
-            ).classes("w-64").props("outlined dark")
+            model_select = (
+                ui.select(
+                    label="Select model",
+                    options=[m["name"] for m in models],
+                )
+                .classes("w-64")
+                .props("outlined dark")
+            )
 
             detail_container = ui.column().classes("w-full gap-2 mt-2")
 
@@ -216,9 +202,7 @@ async def ml_models_page() -> None:
                     try:
                         meta = await client.model_metadata(name)
                     except DexAPIError as exc:
-                        ui.label(f"Error: {exc}").style(
-                            f"color: {COLORS['error']}"
-                        )
+                        ui.label(f"Error: {exc}").style(f"color: {COLORS['error']}")
                         return
                     _render_model_meta(meta, name)
 

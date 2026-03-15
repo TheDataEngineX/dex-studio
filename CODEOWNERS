@@ -1,0 +1,4 @@
+# Code owners — adjust teams to match your GitHub org
+/.github/  @TheDataEngineX/infra-team
+/src/      @TheDataEngineX/backend-team
+/tests/    @TheDataEngineX/backend-team

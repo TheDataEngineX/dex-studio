@@ -92,11 +92,10 @@ class TestDexClient:
     async def test_data_sources_passes_params(self, client_config: StudioConfig) -> None:
         client = DexClient(config=client_config)
         await client.connect()
-        mock_response = httpx.Response(
-            200, json={"items": [], "next_cursor": None}
-        )
+        mock_response = httpx.Response(200, json={"items": [], "next_cursor": None})
         with patch.object(
-            client._client, "get",
+            client._client,
+            "get",
             new_callable=AsyncMock,
             return_value=mock_response,
         ) as mock_get:

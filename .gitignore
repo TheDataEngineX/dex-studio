@@ -34,5 +34,11 @@ htmlcov/
 # Config (user-specific)
 .dex-studio.yaml
 
-# uv
-uv.lock
+# NiceGUI runtime artifacts
+.nicegui/
+
+# uv — lock file must be committed for reproducible installs
+# uv.lock intentionally NOT ignored
+
+# Linter cache
+.ruff_cache/

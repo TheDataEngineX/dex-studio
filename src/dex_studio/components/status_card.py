@@ -57,7 +57,5 @@ def status_card(
                     )
         with ui.row().classes("items-center gap-2 mt-2"):
             ui.icon("circle", size="2xs").style(f"color: {color}")
-            ui.label(status.upper()).classes("text-xs font-mono font-bold").style(
-                f"color: {color}"
-            )
+            ui.label(status.upper()).classes("text-xs font-mono font-bold").style(f"color: {color}")
     return card

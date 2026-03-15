@@ -56,8 +56,8 @@ def render_sidebar(active_route: str = "/") -> None:
         ui.separator().style(f"background-color: {COLORS['divider']}")
         with ui.row().classes("items-center gap-2 px-5 py-3"):
             status_dot = ui.icon("circle", size="2xs")
-            status_label = ui.label("Checking…").classes("text-xs").style(
-                f"color: {COLORS['text_muted']}"
+            status_label = (
+                ui.label("Checking…").classes("text-xs").style(f"color: {COLORS['text_muted']}")
             )
 
         async def _check_connection() -> None:

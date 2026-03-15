@@ -84,6 +84,11 @@ python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+ignore_missing_imports = true
+# Suppress untyped-decorator errors from third-party libs (nicegui, pywebview)
+disable_error_code = ["misc"]
+# Prevent false positives when stubs are absent (pre-commit isolated env)
+warn_unused_ignores = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

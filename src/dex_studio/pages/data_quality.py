@@ -74,20 +74,12 @@ def _render_layer_card(layer_cfg: dict[str, Any]) -> None:
     color = _LAYER_COLORS.get(name, COLORS["accent"])
     with ui.card().classes("dex-card").style(f"border-color: {color}"):
         with ui.row().classes("items-center gap-2"):
-            ui.icon(
-                _LAYER_ICONS.get(name, "layers"), size="xs"
-            ).style(f"color: {color}")
-            ui.label(name.upper()).classes(
-                "font-bold text-sm"
-            ).style(f"color: {color}")
+            ui.icon(_LAYER_ICONS.get(name, "layers"), size="xs").style(f"color: {color}")
+            ui.label(name.upper()).classes("font-bold text-sm").style(f"color: {color}")
         with ui.grid(columns=2).classes("gap-x-4 gap-y-1 mt-2"):
             for key in _LAYER_DETAIL_KEYS:
-                ui.label(key).classes("text-xs font-mono").style(
-                    f"color: {COLORS['text_muted']}"
-                )
-                ui.label(
-                    str(layer_cfg.get(key, "—"))
-                ).classes("text-xs").style(
+                ui.label(key).classes("text-xs font-mono").style(f"color: {COLORS['text_muted']}")
+                ui.label(str(layer_cfg.get(key, "—"))).classes("text-xs").style(
                     f"color: {COLORS['text_primary']}"
                 )
 
@@ -97,29 +89,20 @@ def _render_layer_detail(detail: dict[str, Any]) -> None:
     latest = detail.get("latest")
     if latest:
         with ui.card().classes("dex-card w-full"):
-            ui.label("Latest Evaluation").classes(
-                "font-semibold text-sm"
-            ).style(f"color: {COLORS['text_primary']}")
+            ui.label("Latest Evaluation").classes("font-semibold text-sm").style(
+                f"color: {COLORS['text_primary']}"
+            )
             with ui.grid(columns=2).classes("gap-x-4 gap-y-1 mt-2"):
                 for k, v in latest.items():
-                    ui.label(k).classes("text-xs font-mono").style(
-                        f"color: {COLORS['text_muted']}"
-                    )
-                    ui.label(str(v)).classes("text-xs").style(
-                        f"color: {COLORS['text_primary']}"
-                    )
+                    ui.label(k).classes("text-xs font-mono").style(f"color: {COLORS['text_muted']}")
+                    ui.label(str(v)).classes("text-xs").style(f"color: {COLORS['text_primary']}")
     else:
-        ui.label("No evaluations recorded yet.").style(
-            f"color: {COLORS['text_muted']}"
-        )
+        ui.label("No evaluations recorded yet.").style(f"color: {COLORS['text_muted']}")
 
     history = detail.get("history", [])
     if history:
         ui.label("History").classes("section-title mt-3")
-        columns = [
-            {"name": k, "label": k, "field": k, "align": "left"}
-            for k in history[0]
-        ]
+        columns = [{"name": k, "label": k, "field": k, "align": "left"} for k in history[0]]
         ui.table(columns=columns, rows=history).classes("w-full")
 
 
@@ -137,13 +120,9 @@ async def _render_sources(client: DexClient) -> None:
             ]
             ui.table(columns=columns, rows=items).classes("w-full")
         else:
-            ui.label("No data sources registered.").style(
-                f"color: {COLORS['text_muted']}"
-            )
+            ui.label("No data sources registered.").style(f"color: {COLORS['text_muted']}")
     except DexAPIError as exc:
-        ui.label(f"Failed to load sources: {exc}").style(
-            f"color: {COLORS['error']}"
-        )
+        ui.label(f"Failed to load sources: {exc}").style(f"color: {COLORS['error']}")
 
 
 @ui.page("/quality")
@@ -152,18 +131,14 @@ async def data_quality_page() -> None:
     with page_layout("Data Quality", active_route="/quality") as _content:
         client: DexClient | None = app.storage.general.get("client")
         if client is None:
-            ui.label("No connection configured.").style(
-                f"color: {COLORS['error']}"
-            )
+            ui.label("No connection configured.").style(f"color: {COLORS['error']}")
             return
 
         # -- Summary --
         try:
             summary = await client.data_quality_summary()
         except DexAPIError as exc:
-            ui.label(f"Failed to load quality summary: {exc}").style(
-                f"color: {COLORS['error']}"
-            )
+            ui.label(f"Failed to load quality summary: {exc}").style(f"color: {COLORS['error']}")
             summary = {}
 
         _render_summary_metrics(summary)

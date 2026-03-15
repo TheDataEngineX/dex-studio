@@ -38,8 +38,6 @@ def page_layout(
 
         with ui.column().classes("flex-grow p-6 gap-4 overflow-auto") as content:
             # Page header
-            ui.label(title).classes("text-2xl font-bold").style(
-                f"color: {COLORS['text_primary']}"
-            )
+            ui.label(title).classes("text-2xl font-bold").style(f"color: {COLORS['text_primary']}")
             ui.separator().style(f"background-color: {COLORS['divider']}")
             yield content

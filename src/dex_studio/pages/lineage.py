@@ -25,15 +25,18 @@ async def lineage_page() -> None:
             return
 
         ui.label(
-            "Look up a lineage event by ID to trace data flow through the "
-            "medallion pipeline."
+            "Look up a lineage event by ID to trace data flow through the medallion pipeline."
         ).classes("text-sm").style(f"color: {COLORS['text_secondary']}")
 
         # -- Search input --
-        event_input = ui.input(
-            label="Event ID",
-            placeholder="e.g. evt-abc123",
-        ).classes("w-96").props("outlined dark")
+        event_input = (
+            ui.input(
+                label="Event ID",
+                placeholder="e.g. evt-abc123",
+            )
+            .classes("w-96")
+            .props("outlined dark")
+        )
 
         result_container = ui.column().classes("w-full gap-3 mt-4")
 
