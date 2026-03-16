@@ -1,5 +1,7 @@
 # Security Scans
-# Runs Trivy (misconfig + secret scan) and CodeQL (static analysis) on push/PR.
+# Runs Trivy (misconfig + secret scan) on push/PR.
+# CodeQL is handled by GitHub's default setup — do NOT add a custom codeql job
+# (GitHub rejects SARIF uploads when default setup is enabled).
 # Results appear in GitHub Security tab.
 
 name: Security Scans
@@ -37,7 +39,7 @@ jobs:
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `*🔒 Security Scans Started*\n*Branch:* ${process.env.REF}\n*Tools:* Trivy (repo), CodeQL`
+                      text: `*🔒 Security Scans Started*\n*Branch:* ${process.env.REF}\n*Tools:* Trivy (repo)`
                     }
                   }]
                 })
@@ -47,7 +49,7 @@ jobs:
           SLACK_WEBHOOK: ${{ env.SLACK_WEBHOOK }}
           REF: ${{ github.ref_name }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Run Trivy repo security scan
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -61,7 +63,7 @@ jobs:
 
       - name: Upload Trivy repo results to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-repo-results.sarif
 
@@ -75,32 +77,15 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: '1'
 
-  codeql:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ python, actions ]
-    steps:
-      - uses: actions/checkout@v6
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-      - name: Perform CodeQL Scan
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: /language:${{ matrix.language }}
-
   notify-security:
     name: Notify Security Status
     runs-on: ubuntu-latest
-    needs: [trivy-security, codeql]
+    needs: [trivy-security]
     if: always()
 
     steps:
       - name: Notify Security Success
-        if: ${{ needs.trivy-security.result == 'success' && needs.codeql.result == 'success' }}
+        if: ${{ needs.trivy-security.result == 'success' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -123,8 +108,7 @@ jobs:
                       type: 'section',
                       fields: [
                         { type: 'mrkdwn', text: `*Branch:*\n${process.env.REF}` },
-                        { type: 'mrkdwn', text: `*Trivy (repo):*\n✅ Passed` },
-                        { type: 'mrkdwn', text: `*CodeQL:*\n✅ Passed` },
+                        { type: 'mrkdwn', text: `*Trivy:*\n✅ Passed` },
                         { type: 'mrkdwn', text: `*Run:*\n<${process.env.URL}|View Details>` }
                       ]
                     }
@@ -138,7 +122,7 @@ jobs:
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Notify Security Issues
-        if: ${{ needs.trivy-security.result == 'failure' || needs.codeql.result == 'failure' }}
+        if: ${{ needs.trivy-security.result == 'failure' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -170,7 +154,7 @@ jobs:
                     },
                     {
                       type: 'context',
-                      elements: [{ type: 'mrkdwn', text: `🔍 Trivy or CodeQL found issues — review security tab for findings` }]
+                      elements: [{ type: 'mrkdwn', text: `🔍 Trivy found issues — review security tab for findings` }]
                     }
                   ]
                 })
