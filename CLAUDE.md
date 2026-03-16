@@ -8,7 +8,7 @@
 
 **Stack:** Python 3.11+ · NiceGUI · pywebview · httpx · uv · Ruff · mypy strict · pytest · Port 8080
 
-**Version:** 0.1.0 | **Standalone** — connects to a running DEX engine via HTTP (no Python dependency on dataenginex)
+**Version:** `uv run poe version` | **Standalone** — connects to a running DEX engine via HTTP (no Python dependency on dataenginex)
 
 ## Build & Run Commands
 

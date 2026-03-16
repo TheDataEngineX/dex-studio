@@ -114,4 +114,4 @@ DEX engine API endpoint. No Studio page without an API. No API without a Studio 
 
 ______________________________________________________________________
 
-**Version**: v0.1.0 | **License**: MIT
+**Version**: [![Release](https://img.shields.io/github/v/release/TheDataEngineX/dex-studio)](https://github.com/TheDataEngineX/dex-studio/releases) | **License**: MIT

@@ -1,5 +1,6 @@
 # Security Scans
-# Runs Trivy (misconfig + secret scan) on push/PR.
+# Runs Trivy (misconfig + secret scan) on PRs and weekly schedule.
+# Skipped on direct pushes — PRs are the gate; weekly catches new CVEs between PRs.
 # CodeQL is handled by GitHub's default setup — do NOT add a custom codeql job
 # (GitHub rejects SARIF uploads when default setup is enabled).
 # Results appear in GitHub Security tab.
@@ -7,10 +8,10 @@
 name: Security Scans
 
 on:
-  push:
-    branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly Monday 8am UTC
 
 permissions:
   contents: read
@@ -49,7 +50,7 @@ jobs:
           SLACK_WEBHOOK: ${{ env.SLACK_WEBHOOK }}
           REF: ${{ github.ref_name }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run Trivy repo security scan
         uses: aquasecurity/trivy-action@0.35.0
         with:
