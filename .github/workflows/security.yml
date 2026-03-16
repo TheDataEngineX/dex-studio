@@ -1,0 +1,185 @@
+# Security Scans
+# Runs Trivy (misconfig + secret scan) and CodeQL (static analysis) on push/PR.
+# Results appear in GitHub Security tab.
+
+name: Security Scans
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+jobs:
+  trivy-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Security Scan Start
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            if (!process.env.SLACK_WEBHOOK) return;
+            try {
+              await fetch(process.env.SLACK_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: '🔒 Security Scans Started',
+                  blocks: [{
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `*🔒 Security Scans Started*\n*Branch:* ${process.env.REF}\n*Tools:* Trivy (repo), CodeQL`
+                    }
+                  }]
+                })
+              });
+            } catch (e) { console.log('Slack notification failed'); }
+        env:
+          SLACK_WEBHOOK: ${{ env.SLACK_WEBHOOK }}
+          REF: ${{ github.ref_name }}
+
+      - uses: actions/checkout@v6
+      - name: Run Trivy repo security scan
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig,secret
+          format: sarif
+          output: trivy-repo-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Upload Trivy repo results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-repo-results.sarif
+
+      - name: Enforce Trivy misconfig gate (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  codeql:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ python, actions ]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - name: Perform CodeQL Scan
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  notify-security:
+    name: Notify Security Status
+    runs-on: ubuntu-latest
+    needs: [trivy-security, codeql]
+    if: always()
+
+    steps:
+      - name: Notify Security Success
+        if: ${{ needs.trivy-security.result == 'success' && needs.codeql.result == 'success' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!process.env.SLACK_WEBHOOK) return;
+            try {
+              await fetch(process.env.SLACK_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: '✅ Security Scans Passed',
+                  blocks: [
+                    {
+                      type: 'section',
+                      text: {
+                        type: 'mrkdwn',
+                        text: `*✅ Security Scans Completed*`
+                      }
+                    },
+                    {
+                      type: 'section',
+                      fields: [
+                        { type: 'mrkdwn', text: `*Branch:*\n${process.env.REF}` },
+                        { type: 'mrkdwn', text: `*Trivy (repo):*\n✅ Passed` },
+                        { type: 'mrkdwn', text: `*CodeQL:*\n✅ Passed` },
+                        { type: 'mrkdwn', text: `*Run:*\n<${process.env.URL}|View Details>` }
+                      ]
+                    }
+                  ]
+                })
+              });
+            } catch (e) { console.log('Slack notification failed:', e.message); }
+        env:
+          SLACK_WEBHOOK: ${{ env.SLACK_WEBHOOK }}
+          REF: ${{ github.ref_name }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notify Security Issues
+        if: ${{ needs.trivy-security.result == 'failure' || needs.codeql.result == 'failure' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!process.env.SLACK_WEBHOOK) return;
+            try {
+              await fetch(process.env.SLACK_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: '⚠️ Security Issues Detected',
+                  blocks: [
+                    {
+                      type: 'section',
+                      text: {
+                        type: 'mrkdwn',
+                        text: `*⚠️ Security Issues Detected*`
+                      }
+                    },
+                    {
+                      type: 'section',
+                      fields: [
+                        { type: 'mrkdwn', text: `*Workflow:*\nSecurity Scans` },
+                        { type: 'mrkdwn', text: `*Branch:*\n${process.env.REF}` },
+                        { type: 'mrkdwn', text: `*Commit:*\n\`${process.env.SHA?.substring(0, 8)}\`` },
+                        { type: 'mrkdwn', text: `*Triggered by:*\n${process.env.ACTOR}` },
+                        { type: 'mrkdwn', text: `*Event:*\n${process.env.EVENT}` },
+                        { type: 'mrkdwn', text: `*Run:*\n<${process.env.URL}|View Details>` }
+                      ]
+                    },
+                    {
+                      type: 'context',
+                      elements: [{ type: 'mrkdwn', text: `🔍 Trivy or CodeQL found issues — review security tab for findings` }]
+                    }
+                  ]
+                })
+              });
+            } catch (e) { console.log('Slack notification failed:', e.message); }
+        env:
+          SLACK_WEBHOOK: ${{ env.SLACK_WEBHOOK }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          EVENT: ${{ github.event_name }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
