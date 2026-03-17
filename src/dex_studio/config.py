@@ -36,6 +36,8 @@ class StudioConfig:
     theme: str = "dark"
     poll_interval: float = 5.0
     native_mode: bool = True
+    host: str = "127.0.0.1"
+    port: int = 8080
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -77,6 +79,8 @@ def load_config(
         "timeout": f"{env_prefix}TIMEOUT",
         "theme": f"{env_prefix}THEME",
         "poll_interval": f"{env_prefix}POLL_INTERVAL",
+        "host": f"{env_prefix}HOST",
+        "port": f"{env_prefix}PORT",
     }
     for field_name, env_key in env_map.items():
         value = os.getenv(env_key)
@@ -92,6 +96,8 @@ def load_config(
         merged["window_width"] = int(merged["window_width"])
     if "window_height" in merged:
         merged["window_height"] = int(merged["window_height"])
+    if "port" in merged:
+        merged["port"] = int(merged["port"])
 
     # Filter to known fields only
     known = {f.name for f in StudioConfig.__dataclass_fields__.values()}

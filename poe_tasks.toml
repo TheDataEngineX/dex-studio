@@ -96,7 +96,19 @@ cmd = "uv sync --all-groups"
 help = "Install dependencies from uv.lock for all groups"
 env = { UV_PROJECT_ENVIRONMENT = ".venv" }
 
-# ── Version ────────────────────────────────────────────────────────────────
+# ── Version Management ─────────────────────────────────────────────────────
 [tool.poe.tasks.version]
-shell = "grep version pyproject.toml | head -1"
-help = "Show project version"
+shell = "python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')); print(t['project']['version'])\""
+help = "Show current version"
+
+[tool.poe.tasks.version-patch]
+shell = "bash ../.github/scripts/bump-version.sh patch && uv lock"
+help = "Bump patch version (x.x.X) — bug fixes, no new features"
+
+[tool.poe.tasks.version-minor]
+shell = "bash ../.github/scripts/bump-version.sh minor && uv lock"
+help = "Bump minor version (x.X.0) — new backward-compatible features"
+
+[tool.poe.tasks.version-major]
+shell = "bash ../.github/scripts/bump-version.sh major && uv lock"
+help = "Bump major version (X.0.0) — breaking changes"

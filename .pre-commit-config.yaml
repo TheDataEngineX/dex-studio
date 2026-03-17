@@ -25,7 +25,7 @@ repos:
     rev: 1.0.0
     hooks:
       - id: mdformat
-        exclude: '^(site/|\.github/)'
+        exclude: '^(site/|\.github/|README\.md)'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.0

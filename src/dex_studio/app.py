@@ -63,9 +63,11 @@ def start(config: StudioConfig | None = None) -> None:
 
     run_kwargs: dict[str, object] = {
         "title": "DEX Studio",
+        "host": cfg.host,
+        "port": cfg.port,
         "native": use_native,
         "reload": False,
-        "show": True,
+        "show": not use_native,
         "dark": cfg.theme == "dark",
         "storage_secret": "dex-studio-secret",
     }

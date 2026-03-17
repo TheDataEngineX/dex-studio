@@ -1,4 +1,12 @@
-# DEX Studio
+---
+title: DEX Studio
+emoji: 🛠️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+license: mit
+---
 
 [![CI](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -114,4 +122,4 @@ DEX engine API endpoint. No Studio page without an API. No API without a Studio 
 
 ______________________________________________________________________
 
-**Version**: v0.1.0 | **License**: MIT
+**Version**: [![Release](https://img.shields.io/github/v/release/TheDataEngineX/dex-studio)](https://github.com/TheDataEngineX/dex-studio/releases) | **License**: MIT
