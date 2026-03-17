@@ -11,7 +11,7 @@ COPY pyproject.toml README.md ./
 COPY src/ src/
 
 # Install without optional GTK/Qt native backends (browser mode only)
-RUN uv pip install --system .
+RUN uv pip install --system . && chown -R 1000:1000 /app
 
 USER 1000
 
@@ -19,7 +19,8 @@ USER 1000
 # DEX_STUDIO_* env vars override connection settings
 ENV DEX_STUDIO_HOST=0.0.0.0 \
     DEX_STUDIO_PORT=7860 \
-    DEX_STUDIO_API_URL=http://localhost:8000
+    DEX_STUDIO_API_URL=http://localhost:8000 \
+    NICEGUI_STORAGE_PATH=/app/.nicegui
 
 EXPOSE 7860
 
