@@ -3,9 +3,7 @@ title: DEX Studio
 emoji: 🛠️
 colorFrom: blue
 colorTo: indigo
-sdk: gradio
-sdk_version: "4.44.0"
-app_file: src/dex_studio/app.py
+sdk: docker
 pinned: false
 license: mit
 ---
