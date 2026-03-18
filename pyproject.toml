@@ -24,7 +24,7 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
-    "rich>=13.0",
+    "rich>=14.0",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +62,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.8",
     "mypy>=1.13",
-    "httpx[cli]",
+    "httpx",
     "coverage>=7.0",
     "types-pyyaml>=6.0.12.20250915",
 ]
