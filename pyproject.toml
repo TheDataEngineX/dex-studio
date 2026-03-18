@@ -1,6 +1,6 @@
 [project]
 name = "dex-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "DEX Studio – local control plane for DataEngineX/DEX"
 readme = "README.md"
 requires-python = ">=3.11"
