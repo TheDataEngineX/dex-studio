@@ -405,13 +405,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "nicegui", specifier = ">=2.0,<3.0" },
+    { name = "nicegui", specifier = ">=2.0,<4.0" },
     { name = "pycairo", marker = "extra == 'gtk'", specifier = ">=1.20" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pygobject", marker = "extra == 'gtk'", specifier = ">=3.42" },
     { name = "pyqt6", marker = "extra == 'qt'", specifier = ">=6.5" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "pywebview", specifier = ">=5.0,<6.0" },
+    { name = "pywebview", specifier = ">=5.0,<7.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qtpy", marker = "extra == 'qt'", specifier = ">=2.4" },
     { name = "rich", specifier = ">=14.0" },
