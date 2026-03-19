@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Notify Security Scan Start
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         if: always()
         with:
           script: |
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload Trivy repo results to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-repo-results.sarif
 
@@ -86,7 +86,7 @@ jobs:
     steps:
       - name: Notify Security Success
         if: ${{ needs.trivy-security.result == 'success' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             if (!process.env.SLACK_WEBHOOK) return;
@@ -123,7 +123,7 @@ jobs:
 
       - name: Notify Security Issues
         if: ${{ needs.trivy-security.result == 'failure' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             if (!process.env.SLACK_WEBHOOK) return;
