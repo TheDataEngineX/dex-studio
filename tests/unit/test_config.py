@@ -15,7 +15,7 @@ class TestStudioConfig:
 
     def test_defaults(self) -> None:
         cfg = StudioConfig()
-        assert cfg.api_url == "http://localhost:8000"
+        assert cfg.api_url == "http://localhost:17000"
         assert cfg.api_token is None
         assert cfg.timeout == 10.0
         assert cfg.theme == "dark"
@@ -68,7 +68,7 @@ class TestLoadConfig:
 
     def test_missing_file_returns_defaults(self) -> None:
         cfg = load_config(path=Path("/nonexistent/config.yaml"))
-        assert cfg.api_url == "http://localhost:8000"
+        assert cfg.api_url == "http://localhost:17000"
 
     def test_ignores_unknown_keys(self, tmp_path: Path) -> None:
         config_file = tmp_path / "config.yaml"

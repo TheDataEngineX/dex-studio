@@ -21,7 +21,7 @@ __all__ = ["page_layout"]
 def page_layout(
     title: str,
     active_route: str = "/",
-) -> Generator[ui.column, None, None]:
+) -> Generator[ui.column]:
     """Wrap page content in the standard DEX Studio layout.
 
     Yields a ``ui.column`` representing the main content area.

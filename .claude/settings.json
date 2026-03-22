@@ -1,0 +1,54 @@
+{
+  "autoUpdatesChannel": "latest",
+  "statusLine": {
+    "type": "command",
+    "command": "b=$(git branch --show-current 2>/dev/null); [ -n \"$b\" ] && echo \"[$b]\" || echo \"\"",
+    "padding": 2
+  },
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "Edit",
+      "Bash(uv run poe *)",
+      "Bash(uv run uvicorn *)",
+      "Bash(uv run python *)",
+      "Bash(uv run *)",
+      "Bash(uv lock *)",
+      "Bash(uv sync *)",
+      "Bash(curl *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git fetch *)",
+      "Bash(ls *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Bash(python -c *)",
+      "Bash(python3 *)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(gh release *)",
+      "Bash(gh run *)",
+      "Bash(gh api *)",
+      "Bash(llmfit *)",
+      "Bash(npx -y @upstash/context7-mcp*)"
+    ],
+    "deny": [
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(pip install*)",
+      "Bash(sudo *)",
+      "Bash(chmod 777*)",
+      "Bash(curl * | bash*)"
+    ]
+  }
+}

@@ -18,7 +18,7 @@ __all__ = ["StudioConfig", "load_config"]
 
 _USER_CONFIG = Path.home() / ".dex-studio" / "config.yaml"
 _LOCAL_CONFIG = Path(".dex-studio.yaml")
-_DEFAULT_API_URL = "http://localhost:8000"
+_DEFAULT_API_URL = "http://localhost:17000"
 _DEFAULT_TIMEOUT = 10.0
 _DEFAULT_WINDOW_WIDTH = 1400
 _DEFAULT_WINDOW_HEIGHT = 900
@@ -48,6 +48,19 @@ def _read_yaml(path: Path) -> dict[str, Any]:
             return data if isinstance(data, dict) else {}
     except (OSError, yaml.YAMLError):
         return {}
+
+
+def _coerce_types(merged: dict[str, Any]) -> None:
+    """Coerce string values (from env vars) to their expected Python types."""
+    for field, coerce in (
+        ("timeout", float),
+        ("poll_interval", float),
+        ("window_width", int),
+        ("window_height", int),
+        ("port", int),
+    ):
+        if field in merged:
+            merged[field] = coerce(merged[field])
 
 
 def load_config(
@@ -87,17 +100,7 @@ def load_config(
         if value is not None:
             merged[field_name] = value
 
-    # Coerce types
-    if "timeout" in merged:
-        merged["timeout"] = float(merged["timeout"])
-    if "poll_interval" in merged:
-        merged["poll_interval"] = float(merged["poll_interval"])
-    if "window_width" in merged:
-        merged["window_width"] = int(merged["window_width"])
-    if "window_height" in merged:
-        merged["window_height"] = int(merged["window_height"])
-    if "port" in merged:
-        merged["port"] = int(merged["port"])
+    _coerce_types(merged)
 
     # Filter to known fields only
     known = {f.name for f in StudioConfig.__dataclass_fields__.values()}
