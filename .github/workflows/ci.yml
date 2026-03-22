@@ -34,7 +34,7 @@ jobs:
           enable-cache: true
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: uv sync --all-groups
       - run: uv run poe lint
       - run: uv run poe typecheck

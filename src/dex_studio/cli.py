@@ -3,7 +3,7 @@
 Usage::
 
     dex-studio                     # Launch with defaults
-    dex-studio --url http://...:8000
+    dex-studio --url http://...:17000
     dex-studio --config path/to/config.yaml
 """
 
@@ -24,7 +24,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--url",
         default=None,
-        help="DEX engine API URL (default: http://localhost:8000)",
+        help="DEX engine API URL (default: http://localhost:17000)",
     )
     parser.add_argument(
         "--token",

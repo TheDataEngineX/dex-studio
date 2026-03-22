@@ -13,7 +13,7 @@ license: mit
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **DEX Studio** is a local, Python-first UI that provides a single control plane for
-end-to-end data projects powered by [TheDataEngineX/DEX](https://github.com/TheDataEngineX/DEX).
+end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.com/TheDataEngineX/dataenginex).
 
 It connects to a running DEX engine instance and unifies workflows in one desktop window:
 project setup → ingestion → medallion pipelines (bronze/silver/gold) → ML/AI workflows →
@@ -28,8 +28,8 @@ ______________________________________________________________________
 git clone https://github.com/TheDataEngineX/dex-studio && cd dex-studio
 uv sync
 
-# Start DEX engine first (in the DEX repo)
-cd ../DEX && uv run poe dev
+# Start DEX engine first (in the dex repo)
+cd ../dex && uv run poe dev
 
 # Launch Studio (opens native window)
 cd ../dex-studio && uv run dex-studio
@@ -38,8 +38,8 @@ cd ../dex-studio && uv run dex-studio
 ### CLI Options
 
 ```bash
-dex-studio                             # defaults (http://localhost:8000)
-dex-studio --url http://host:8000      # custom DEX engine URL
+dex-studio                             # defaults (http://localhost:17000)
+dex-studio --url http://host:17000      # custom DEX engine URL
 dex-studio --token my-jwt-token        # authenticated connection
 dex-studio --theme light               # light mode
 dex-studio --config path/to/config.yaml
@@ -73,7 +73,7 @@ Config is loaded with this priority (highest wins):
 
 ```yaml
 # ~/.dex-studio/config.yaml
-api_url: "http://localhost:8000"
+api_url: "http://localhost:17000"
 timeout: 10.0
 theme: dark
 poll_interval: 5.0

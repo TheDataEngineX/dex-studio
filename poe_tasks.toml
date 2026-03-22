@@ -1,7 +1,7 @@
 [tool.poe]
 executor.type = "uv"
 
-# ── Installation & Setup ──────────────────────────────────────────────────
+# ── Installation & Setup ──────────────────────────────────────────────────────
 [tool.poe.tasks.install]
 cmd = "uv sync"
 help = "Install dependencies"
@@ -14,7 +14,7 @@ help = "Install all dependency groups (dev included)"
 shell = "bash scripts/setup-system.sh"
 help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash scripts/setup-system.sh' directly if prompted"
 
-# ── Development ────────────────────────────────────────────────────────────
+# ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
 cmd = "dex-studio --no-native"
 help = "Launch DEX Studio in browser mode (development)"
@@ -23,51 +23,19 @@ help = "Launch DEX Studio in browser mode (development)"
 cmd = "dex-studio"
 help = "Launch DEX Studio in native window mode"
 
-# ── Testing ────────────────────────────────────────────────────────────────
-[tool.poe.tasks.test-core]
-cmd = "pytest tests/ -v --tb=short"
-help = "Internal: run all tests without dependency sync"
-
-[tool.poe.tasks.test-unit-core]
-cmd = "pytest tests/unit/ -v --tb=short"
-help = "Internal: run unit tests without dependency sync"
-
+# ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]
 cmd = "pytest tests/ -v --cov=dex_studio --cov-report=html --cov-report=xml:coverage.xml --cov-report=term-missing"
 help = "Internal: run coverage tests without dependency sync"
-
-[tool.poe.tasks.test]
-shell = "poe uv-sync && poe test-core"
-help = "Run all tests"
-
-[tool.poe.tasks.test-unit]
-shell = "poe uv-sync && poe test-unit-core"
-help = "Run unit tests only"
 
 [tool.poe.tasks.test-cov]
 shell = "poe uv-sync && poe test-cov-core"
 help = "Run tests with coverage report (HTML + XML + terminal)"
 
-# ── Code Quality ───────────────────────────────────────────────────────────
-[tool.poe.tasks.lint]
-shell = "ruff check src/ tests/"
-help = "Run ruff lint on source and test files"
-
-[tool.poe.tasks.lint-fix]
-shell = "ruff check --fix src/ tests/ && ruff format src/ tests/"
-help = "Auto-fix lint issues and format code"
-
-[tool.poe.tasks.format]
-shell = "ruff format src/ tests/"
-help = "Format code with ruff"
-
+# ── Code Quality ──────────────────────────────────────────────────────────────
 [tool.poe.tasks.typecheck]
 cmd = "mypy src/"
 help = "Run mypy strict type checking"
-
-[tool.poe.tasks.security]
-cmd = "uvx pip-audit --progress-spinner off"
-help = "Audit dependencies for known vulnerabilities"
 
 [tool.poe.tasks.check-all-core]
 shell = "poe lint && poe typecheck && poe test-core"
@@ -81,11 +49,7 @@ help = "Run full project checks: lint, typecheck, tests"
 shell = "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; find . -type f -name '*.pyc' -delete 2>/dev/null; rm -rf .pytest_cache .mypy_cache .ruff_cache dist build *.egg-info .nicegui 2>/dev/null; echo 'Cache and artifacts cleaned'"
 help = "Remove cache and build artifacts"
 
-# ── UV Package Manager ────────────────────────────────────────────────────
-[tool.poe.tasks.uv-lock]
-cmd = "uv lock"
-help = "Resolve dependencies from pyproject.toml and write uv.lock"
-
+# ── UV Package Manager ────────────────────────────────────────────────────────
 [tool.poe.tasks.uv-sync]
 cmd = "uv sync"
 help = "Install dependencies from uv.lock"
@@ -95,20 +59,3 @@ env = { UV_PROJECT_ENVIRONMENT = ".venv" }
 cmd = "uv sync --all-groups"
 help = "Install dependencies from uv.lock for all groups"
 env = { UV_PROJECT_ENVIRONMENT = ".venv" }
-
-# ── Version Management ─────────────────────────────────────────────────────
-[tool.poe.tasks.version]
-shell = "python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')); print(t['project']['version'])\""
-help = "Show current version"
-
-[tool.poe.tasks.version-patch]
-shell = "bash ../.github/scripts/bump-version.sh patch && uv lock"
-help = "Bump patch version (x.x.X) — bug fixes, no new features"
-
-[tool.poe.tasks.version-minor]
-shell = "bash ../.github/scripts/bump-version.sh minor && uv lock"
-help = "Bump minor version (x.X.0) — new backward-compatible features"
-
-[tool.poe.tasks.version-major]
-shell = "bash ../.github/scripts/bump-version.sh major && uv lock"
-help = "Bump major version (X.0.0) — breaking changes"

@@ -3,7 +3,7 @@
 ## 1. Purpose
 
 DEX Studio is a **local, Python-first, open-source UI application** that provides a single
-control plane for end-to-end data projects powered by [TheDataEngineX/DEX](https://github.com/TheDataEngineX/DEX).
+control plane for end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.com/TheDataEngineX/dataenginex).
 
 It does **not** fork or rebrand upstream DEX. It is a separate tool that connects to a local
 DEX engine instance and unifies workflows in one place:
@@ -31,7 +31,7 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Serving → Ob
 │  │  └──────────┘  └──────────┘  └────────────┘                │  │
 │  └──────────────────────────┬──────────────────────────────────┘  │
 └─────────────────────────────┼────────────────────────────────────┘
-                              │  HTTP (localhost:8000)
+                              │  HTTP (localhost:17000)
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    DEX Engine (FastAPI)                           │
@@ -66,7 +66,7 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Serving → Ob
 ```
 dex-studio/
 ├── pyproject.toml                  # Hatchling build, deps
-├── .python-version                 # 3.11
+├── .python-version                 # 3.13
 ├── config/
 │   └── default.yaml                # Default config template
 ├── src/
@@ -111,7 +111,7 @@ Config is loaded with this priority (highest wins):
 
 ```yaml
 # ~/.dex-studio/config.yaml
-api_url: "http://localhost:8000"
+api_url: "http://localhost:17000"
 api_token: null
 timeout: 10.0
 theme: dark
@@ -146,7 +146,7 @@ Those endpoints and pages are developed together in coordinated PRs across both 
 ### ML Router Mounted
 
 The ML router (`ml_router` in `dataenginex.api.routers.ml`) existed but was never
-`include_router()`'d in the CareerDEX app. Fixed by adding:
+`include_router()`'d in the DataEngineX app. Fixed by adding:
 
 ```python
 from dataenginex.api.routers.ml import ml_router
