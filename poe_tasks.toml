@@ -33,9 +33,25 @@ shell = "poe uv-sync && poe test-cov-core"
 help = "Run tests with coverage report (HTML + XML + terminal)"
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
+[tool.poe.tasks.lint]
+cmd = "ruff check src/ tests/"
+help = "Run ruff linter"
+
+[tool.poe.tasks.lint-fix]
+cmd = "ruff check --fix src/ tests/"
+help = "Run ruff linter with auto-fix"
+
 [tool.poe.tasks.typecheck]
 cmd = "mypy src/"
 help = "Run mypy strict type checking"
+
+[tool.poe.tasks.test]
+cmd = "pytest tests/ -v --tb=short"
+help = "Run all tests"
+
+[tool.poe.tasks.test-core]
+cmd = "pytest tests/ -v --tb=short"
+help = "Internal: run tests without dependency sync"
 
 [tool.poe.tasks.check-all-core]
 shell = "poe lint && poe typecheck && poe test-core"
