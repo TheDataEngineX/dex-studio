@@ -32,7 +32,7 @@ class DexClient:
     _client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
 
     async def connect(self) -> None:
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"Accept": "application/json"}
         if self.config.api_token:
             headers["Authorization"] = f"Bearer {self.config.api_token}"
         self._client = httpx.AsyncClient(
@@ -56,7 +56,7 @@ class DexClient:
             path, params={k: v for k, v in params.items() if v is not None}
         )
         if resp.status_code >= 400:
-            raise DexAPIError(resp.status_code, resp.text, str(resp.url))
+            raise DexAPIError(resp.status_code, resp.text[:500], str(resp.url))
         return resp.json()  # type: ignore[no-any-return]
 
     async def _post(self, path: str, json: Any = None) -> dict[str, Any]:
@@ -64,7 +64,7 @@ class DexClient:
             raise RuntimeError("Client not connected -- call connect() first")
         resp = await self._client.post(path, json=json)
         if resp.status_code >= 400:
-            raise DexAPIError(resp.status_code, resp.text, str(resp.url))
+            raise DexAPIError(resp.status_code, resp.text[:500], str(resp.url))
         return resp.json()  # type: ignore[no-any-return]
 
     # --- Health ---
@@ -72,7 +72,7 @@ class DexClient:
         try:
             data = await self._get("/health")
             return data.get("status") == "alive"
-        except Exception:
+        except (DexAPIError, RuntimeError, httpx.HTTPError):
             return False
 
     async def health(self) -> dict[str, Any]:
@@ -144,7 +144,7 @@ class DexClient:
         return await self._get("/api/v1/ml/features")
 
     async def get_features(self, group: str, entity_ids: list[str] | None = None) -> dict[str, Any]:
-        ids = ",".join(entity_ids) if entity_ids else ""
+        ids = ",".join(entity_ids) if entity_ids else None
         return await self._get(f"/api/v1/ml/features/{group}", entity_ids=ids)
 
     async def save_features(
