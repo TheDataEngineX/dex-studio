@@ -70,8 +70,8 @@ class DexClient:
     # --- Health ---
     async def ping(self) -> bool:
         try:
-            data = await self._get("/health")
-            return data.get("status") == "alive"
+            data = await self._get("/api/v1/health")
+            return data.get("status") in ("alive", "healthy")
         except (DexAPIError, RuntimeError, httpx.HTTPError):
             return False
 
