@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from nicegui.testing.general_fixtures import (
+    nicegui_reset_globals as nicegui_reset_globals,  # noqa: F401
+)
 
 from dex_studio.config import StudioConfig
 

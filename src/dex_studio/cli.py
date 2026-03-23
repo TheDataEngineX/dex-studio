@@ -53,7 +53,33 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print version and exit",
     )
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="Project name from projects.yaml",
+    )
     return parser
+
+
+def _apply_project_overrides(project_name: str, overrides: dict[str, object]) -> None:
+    """Resolve a project by name and write url/token into *overrides*.
+
+    Exits with code 1 if the project is not found.
+    """
+    from dex_studio.config import load_projects
+
+    projects = load_projects()
+    match = [p for p in projects if p.name == project_name]
+    if not match:
+        print(  # noqa: T201
+            f"Project '{project_name}' not found in projects.yaml",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    proj = match[0]
+    overrides["api_url"] = proj.url
+    if proj.token:
+        overrides["api_token"] = proj.token
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -72,6 +98,10 @@ def main(argv: list[str] | None = None) -> None:
 
     # Apply CLI overrides
     overrides: dict[str, object] = {}
+
+    if args.project:
+        _apply_project_overrides(args.project, overrides)
+
     if args.url:
         overrides["api_url"] = args.url
     if args.token:

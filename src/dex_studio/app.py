@@ -7,6 +7,7 @@ when pywebview is unavailable).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from nicegui import app, ui
@@ -20,15 +21,41 @@ __all__ = ["start"]
 
 
 def _register_pages() -> None:
-    """Import page modules so their ``@ui.page`` decorators register routes."""
-    from dex_studio.pages import (
-        data_quality,  # noqa: F401
-        health,  # noqa: F401
-        lineage,  # noqa: F401
-        ml_models,  # noqa: F401
-        overview,  # noqa: F401
-        settings,  # noqa: F401
-    )
+    """Import all page modules to register their routes."""
+    import importlib
+
+    from dex_studio.pages import project_hub  # noqa: F401
+
+    # Domain pages — imported when available
+    _optional_imports = [
+        "dex_studio.pages.data.dashboard",
+        "dex_studio.pages.data.pipelines",
+        "dex_studio.pages.data.sources",
+        "dex_studio.pages.data.warehouse",
+        "dex_studio.pages.data.quality",
+        "dex_studio.pages.data.lineage",
+        "dex_studio.pages.ml.dashboard",
+        "dex_studio.pages.ml.experiments",
+        "dex_studio.pages.ml.models",
+        "dex_studio.pages.ml.predictions",
+        "dex_studio.pages.ml.features",
+        "dex_studio.pages.ml.drift",
+        "dex_studio.pages.ai.dashboard",
+        "dex_studio.pages.ai.agents",
+        "dex_studio.pages.ai.tools",
+        "dex_studio.pages.ai.collections",
+        "dex_studio.pages.ai.retrieval",
+        "dex_studio.pages.system.status",
+        "dex_studio.pages.system.components",
+        "dex_studio.pages.system.metrics",
+        "dex_studio.pages.system.logs",
+        "dex_studio.pages.system.traces",
+        "dex_studio.pages.system.settings",
+        "dex_studio.pages.system.connection",
+    ]
+    for mod in _optional_imports:
+        with contextlib.suppress(ImportError):
+            importlib.import_module(mod)
 
 
 def start(config: StudioConfig | None = None) -> None:
@@ -42,12 +69,12 @@ def start(config: StudioConfig | None = None) -> None:
     cfg = config or load_config()
 
     # Store config and client on the NiceGUI app for access in pages
-    app.storage.general["config"] = cfg
     client = DexClient(config=cfg)
+    app.storage.general["config"] = cfg
+    app.storage.general["client"] = client
 
     async def on_startup() -> None:
         await client.connect()
-        app.storage.general["client"] = client
 
     async def on_shutdown() -> None:
         await client.close()
