@@ -17,7 +17,8 @@ from typing import Any
 from nicegui import app, ui
 
 from dex_studio.client import DexAPIError, DexClient
-from dex_studio.components import metric_card, page_layout, status_card
+from dex_studio.components import metric_card, status_badge
+from dex_studio.components.page_layout import page_layout
 from dex_studio.theme import COLORS
 
 
@@ -47,9 +48,8 @@ async def overview_page() -> None:
         await asyncio.gather(
             _fetch("root", client.root()),
             _fetch("health", client.health()),
-            _fetch("startup", client.startup()),
+            _fetch("components", client.components()),
             _fetch("quality", client.data_quality_summary()),
-            _fetch("config", client.system_config()),
         )
 
         # -- Error banner --
@@ -71,20 +71,30 @@ async def overview_page() -> None:
             health = results.get("health") or {}
             health_status = health.get("status", "unknown")
 
-            startup = results.get("startup") or {}
-            startup_status = startup.get("status", "unknown")
+            components_resp = results.get("components") or {}
+            components_list: list[dict[str, Any]] = components_resp.get("components", [])
+            components_status = "alive" if components_list else "unknown"
 
-            status_card(
-                "API",
-                health_status,
-                subtitle=f"{api_name} {api_version}",
-                icon="api",
-            )
-            status_card(
-                "Startup",
-                startup_status,
-                icon="rocket_launch",
-            )
+            with ui.card().classes("dex-card").style("padding: 12px; min-width: 160px;"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("api", size="sm").style(f"color: {COLORS['accent']}")
+                    ui.label("API").classes("text-sm font-semibold").style(
+                        f"color: {COLORS['text_primary']}"
+                    )
+                    status_badge(health_status)
+                ui.label(f"{api_name} {api_version}").classes("text-xs").style(
+                    f"color: {COLORS['text_muted']}"
+                )
+            with ui.card().classes("dex-card").style("padding: 12px; min-width: 160px;"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("extension", size="sm").style(f"color: {COLORS['accent']}")
+                    ui.label("Components").classes("text-sm font-semibold").style(
+                        f"color: {COLORS['text_primary']}"
+                    )
+                    status_badge(components_status)
+                ui.label(f"{len(components_list)} registered").classes("text-xs").style(
+                    f"color: {COLORS['text_muted']}"
+                )
 
         # -- Row 2: Quality metrics --
         quality = results.get("quality") or {}
@@ -94,11 +104,10 @@ async def overview_page() -> None:
             pass_rate = quality.get("pass_rate", 0)
             avg_score = quality.get("average_score", 0)
 
-            metric_card("Total Evaluations", total, icon="assessment")
+            metric_card("Total Evaluations", total)
             metric_card(
                 "Pass Rate",
                 f"{pass_rate:.0%}" if isinstance(pass_rate, float) else str(pass_rate),
-                icon="check_circle",
                 color=(
                     COLORS["success"]
                     if (isinstance(pass_rate, (int, float)) and pass_rate >= 0.8)
@@ -108,20 +117,19 @@ async def overview_page() -> None:
             metric_card(
                 "Avg Score",
                 f"{avg_score:.1f}" if isinstance(avg_score, float) else str(avg_score),
-                icon="speed",
             )
 
-        # -- Row 3: System config --
-        config = results.get("config") or {}
-        if config:
-            ui.label("System Config").classes("section-title mt-4")
+        # -- Row 3: Components list --
+        if components_list:
+            ui.label("Registered Components").classes("section-title mt-4")
             with (
                 ui.card().classes("dex-card"),
                 ui.grid(columns=2).classes("gap-x-8 gap-y-2"),
             ):
-                for key, value in config.items():
-                    ui.label(key).classes("text-xs font-mono").style(
+                for comp in components_list:
+                    name = comp.get("name", "—")
+                    status = comp.get("status", "unknown")
+                    ui.label(name).classes("text-xs font-mono").style(
                         f"color: {COLORS['text_muted']}"
                     )
-                    display = ", ".join(value) if isinstance(value, list) else str(value)
-                    ui.label(display).classes("text-sm").style(f"color: {COLORS['text_primary']}")
+                    ui.label(status).classes("text-sm").style(f"color: {COLORS['text_primary']}")

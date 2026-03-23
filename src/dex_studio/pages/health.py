@@ -15,8 +15,12 @@ from typing import Any
 from nicegui import app, ui
 
 from dex_studio.client import DexAPIError, DexClient
-from dex_studio.components import page_layout, status_card
+from dex_studio.components import status_badge
+from dex_studio.components.page_layout import page_layout
 from dex_studio.theme import COLORS
+
+_ROW_CLASSES = "items-center gap-2"
+_LABEL_CLASSES = "text-sm font-semibold"
 
 
 def _health_columns() -> list[dict[str, str]]:
@@ -32,6 +36,15 @@ def _health_columns() -> list[dict[str, str]]:
             "align": "right",
         },
     ]
+
+
+def _probe_row(probe_name: str, status: str, subtitle: str | None = None) -> None:
+    """Render a single probe row with label, status badge, and optional subtitle."""
+    with ui.row().classes(_ROW_CLASSES):
+        ui.label(probe_name).classes(_LABEL_CLASSES).style(f"color: {COLORS['text_primary']}")
+        status_badge(status)
+        if subtitle:
+            ui.label(subtitle).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
 
 @ui.page("/health")
@@ -52,44 +65,23 @@ async def health_page() -> None:
                 # -- Liveness --
                 try:
                     health = await client.health()
-                    status_card(
-                        "Liveness Probe",
-                        health.get("status", "unknown"),
-                        subtitle="GET /health",
-                        icon="favorite",
-                    )
+                    _probe_row("Liveness Probe", health.get("status", "unknown"))
                 except DexAPIError as exc:
-                    status_card("Liveness Probe", "error", subtitle=str(exc), icon="favorite")
+                    _probe_row("Liveness Probe", "error", subtitle=str(exc))
 
-                # -- Startup --
+                # -- Components (replaces readiness/startup probes) --
                 try:
-                    startup = await client.startup()
-                    status_card(
-                        "Startup Probe",
-                        startup.get("status", "unknown"),
-                        subtitle="GET /startup",
-                        icon="rocket_launch",
-                    )
-                except DexAPIError as exc:
-                    status_card("Startup Probe", "error", subtitle=str(exc), icon="rocket_launch")
-
-                # -- Readiness (component breakdown) --
-                try:
-                    ready = await client.readiness()
-                    overall = ready.get("status", "unknown")
-                    status_card(
-                        "Readiness Probe",
-                        overall,
-                        subtitle="GET /ready",
-                        icon="check_circle",
+                    comp_resp = await client.components()
+                    components: list[dict[str, Any]] = comp_resp.get("components", [])
+                    _probe_row(
+                        "Components",
+                        "alive" if components else "unknown",
                     )
 
-                    components: list[dict[str, Any]] = ready.get("components", [])
                     if components:
                         ui.label("Component Health").classes("section-title mt-4")
                         with ui.card().classes("dex-card w-full"):
                             columns = _health_columns()
-
                             rows = [
                                 {
                                     "name": c.get("name", "—"),
@@ -104,12 +96,7 @@ async def health_page() -> None:
                                 f"background-color: {COLORS['bg_card']}"
                             )
                 except DexAPIError:
-                    status_card(
-                        "Readiness Probe",
-                        "unhealthy",
-                        subtitle="Dependencies unhealthy or unreachable",
-                        icon="check_circle",
-                    )
+                    _probe_row("Components", "unhealthy", subtitle="Components unreachable")
 
         await refresh_health()
 

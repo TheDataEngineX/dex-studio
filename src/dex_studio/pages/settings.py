@@ -16,7 +16,7 @@ import yaml
 from nicegui import app, ui
 
 from dex_studio.client import DexClient
-from dex_studio.components import page_layout
+from dex_studio.components.page_layout import page_layout
 from dex_studio.config import StudioConfig, load_config
 from dex_studio.theme import COLORS
 

@@ -16,7 +16,8 @@ from typing import Any
 from nicegui import app, ui
 
 from dex_studio.client import DexAPIError, DexClient
-from dex_studio.components import metric_card, page_layout
+from dex_studio.components import metric_card
+from dex_studio.components.page_layout import page_layout
 from dex_studio.theme import COLORS
 
 _LAYERS = ["bronze", "silver", "gold"]
@@ -49,7 +50,7 @@ def _render_summary_metrics(summary: dict[str, Any]) -> None:
         pass_rate = summary.get("pass_rate", 0)
         avg = summary.get("average_score", 0)
 
-        metric_card("Evaluations", total, icon="assessment")
+        metric_card("Evaluations", total)
         _pass_color = (
             COLORS["success"]
             if (isinstance(pass_rate, (int, float)) and pass_rate >= 0.75)
@@ -58,13 +59,11 @@ def _render_summary_metrics(summary: dict[str, Any]) -> None:
         metric_card(
             "Pass Rate",
             f"{pass_rate:.0%}" if isinstance(pass_rate, float) else str(pass_rate),
-            icon="check_circle",
             color=_pass_color,
         )
         metric_card(
             "Avg Score",
             f"{avg:.1f}" if isinstance(avg, float) else str(avg),
-            icon="speed",
         )
 
 
@@ -110,8 +109,8 @@ async def _render_sources(client: DexClient) -> None:
     """Render the registered data sources table."""
     ui.label("Registered Sources").classes("section-title mt-6")
     try:
-        sources_resp = await client.data_sources()
-        items: list[dict[str, Any]] = sources_resp.get("items", [])
+        sources_resp = await client.list_sources()
+        items: list[dict[str, Any]] = sources_resp.get("sources", [])
         if items:
             columns = [
                 {"name": "name", "label": "Name", "field": "name", "align": "left"},
@@ -167,7 +166,7 @@ async def data_quality_page() -> None:
             for layer in _LAYERS:
                 with ui.tab_panel(tabs[layer]):
                     try:
-                        detail = await client.data_quality_layer(layer)
+                        detail = await client.data_quality_pipeline(layer)
                     except DexAPIError:
                         detail = {}
                     _render_layer_detail(detail)
