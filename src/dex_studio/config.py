@@ -1,38 +1,51 @@
-"""YAML-based configuration for DEX Studio.
-
-Loads connection settings from ``~/.dex-studio/config.yaml`` or a
-project-local ``.dex-studio.yaml``.  Environment variables override
-file values (``DEX_STUDIO_API_URL``, ``DEX_STUDIO_API_TOKEN``).
-"""
+"""Configuration for DEX Studio — supports multi-project setup."""
 
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-__all__ = ["StudioConfig", "load_config"]
+__all__ = ["ProjectEntry", "StudioConfig", "load_config", "load_projects", "save_projects"]
 
 _USER_CONFIG = Path.home() / ".dex-studio" / "config.yaml"
+_PROJECTS_FILE = Path.home() / ".dex-studio" / "projects.yaml"
 _LOCAL_CONFIG = Path(".dex-studio.yaml")
-_DEFAULT_API_URL = "http://localhost:8000"
-_DEFAULT_TIMEOUT = 10.0
-_DEFAULT_WINDOW_WIDTH = 1400
-_DEFAULT_WINDOW_HEIGHT = 900
+
+# Fields that need coercion when sourced from env vars (strings)
+_COERCE_MAP: dict[str, Callable[[str], Any]] = {
+    "timeout": float,
+    "poll_interval": float,
+    "window_width": int,
+    "window_height": int,
+    "port": int,
+    "native_mode": lambda v: v.lower() not in {"0", "false", "no"},
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectEntry:
+    """A single project in the multi-project config."""
+
+    name: str
+    url: str = "http://localhost:17000"
+    token: str | None = None
+    icon: str = "folder"
 
 
 @dataclass(frozen=True, slots=True)
 class StudioConfig:
-    """Immutable configuration for a DEX Studio session."""
+    """DEX Studio configuration."""
 
-    api_url: str = _DEFAULT_API_URL
+    api_url: str = "http://localhost:17000"
     api_token: str | None = None
-    timeout: float = _DEFAULT_TIMEOUT
-    window_width: int = _DEFAULT_WINDOW_WIDTH
-    window_height: int = _DEFAULT_WINDOW_HEIGHT
+    timeout: float = 10.0
+    window_width: int = 1400
+    window_height: int = 900
     theme: str = "dark"
     poll_interval: float = 5.0
     native_mode: bool = True
@@ -40,67 +53,71 @@ class StudioConfig:
     port: int = 8080
 
 
-def _read_yaml(path: Path) -> dict[str, Any]:
-    """Read a YAML file into a dict, returning ``{}`` on any error."""
+def load_config(
+    path: Path | None = None,
+    *,
+    env_prefix: str = "DEX_STUDIO_",
+) -> StudioConfig:
+    """Load config from YAML file(s) + env vars.
+
+    Priority (highest wins): env vars > explicit path > local > user-level > defaults.
+    """
+    merged: dict[str, Any] = {}
+
+    if _USER_CONFIG.exists():
+        merged.update(_load_yaml(_USER_CONFIG))
+    if _LOCAL_CONFIG.exists():
+        merged.update(_load_yaml(_LOCAL_CONFIG))
+    if path is not None and path.exists():
+        merged.update(_load_yaml(path))
+
+    field_names = {f.name for f in StudioConfig.__dataclass_fields__.values()}
+    for key in field_names:
+        env_key = f"{env_prefix}{key.upper()}"
+        env_val = os.environ.get(env_key)
+        if env_val is not None:
+            merged[key] = env_val
+
+    # Coerce string values (from env or YAML parsed as strings) to correct types
+    for field_name, coerce in _COERCE_MAP.items():
+        if field_name in merged and isinstance(merged[field_name], str):
+            merged[field_name] = coerce(merged[field_name])
+
+    valid = {k: v for k, v in merged.items() if k in field_names}
+    return StudioConfig(**valid)
+
+
+def load_projects() -> list[ProjectEntry]:
+    """Load project list from ~/.dex-studio/projects.yaml."""
+    if not _PROJECTS_FILE.exists():
+        return []
+    data = _load_yaml(_PROJECTS_FILE)
+    projects = data.get("projects", {})
+    if not isinstance(projects, dict):
+        return []
+    return [
+        ProjectEntry(
+            name=name,
+            **{k: v for k, v in cfg.items() if k in ("url", "token", "icon")},
+        )
+        for name, cfg in projects.items()
+    ]
+
+
+def save_projects(projects: list[ProjectEntry]) -> None:
+    """Save project list to ~/.dex-studio/projects.yaml."""
+    _PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {
+        "projects": {p.name: {"url": p.url, "token": p.token, "icon": p.icon} for p in projects}
+    }
+    _PROJECTS_FILE.write_text(yaml.safe_dump(data, default_flow_style=False))
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    """Load a YAML file, returning empty dict on any error."""
     try:
         with path.open() as fh:
             data = yaml.safe_load(fh)
             return data if isinstance(data, dict) else {}
     except (OSError, yaml.YAMLError):
         return {}
-
-
-def load_config(
-    path: Path | None = None,
-    *,
-    env_prefix: str = "DEX_STUDIO_",
-) -> StudioConfig:
-    """Build config by merging file → env → explicit path.
-
-    Priority (highest wins):
-        1. Environment variables (``DEX_STUDIO_API_URL``, …)
-        2. Explicit *path* argument
-        3. Project-local ``.dex-studio.yaml``
-        4. User-level ``~/.dex-studio/config.yaml``
-        5. Built-in defaults
-    """
-    merged: dict[str, Any] = {}
-
-    # Layer 1 & 2: file config (user → local → explicit)
-    merged.update(_read_yaml(_USER_CONFIG))
-    merged.update(_read_yaml(_LOCAL_CONFIG))
-    if path is not None:
-        merged.update(_read_yaml(path))
-
-    # Layer 3: env overrides
-    env_map = {
-        "api_url": f"{env_prefix}API_URL",
-        "api_token": f"{env_prefix}API_TOKEN",
-        "timeout": f"{env_prefix}TIMEOUT",
-        "theme": f"{env_prefix}THEME",
-        "poll_interval": f"{env_prefix}POLL_INTERVAL",
-        "host": f"{env_prefix}HOST",
-        "port": f"{env_prefix}PORT",
-    }
-    for field_name, env_key in env_map.items():
-        value = os.getenv(env_key)
-        if value is not None:
-            merged[field_name] = value
-
-    # Coerce types
-    if "timeout" in merged:
-        merged["timeout"] = float(merged["timeout"])
-    if "poll_interval" in merged:
-        merged["poll_interval"] = float(merged["poll_interval"])
-    if "window_width" in merged:
-        merged["window_width"] = int(merged["window_width"])
-    if "window_height" in merged:
-        merged["window_height"] = int(merged["window_height"])
-    if "port" in merged:
-        merged["port"] = int(merged["port"])
-
-    # Filter to known fields only
-    known = {f.name for f in StudioConfig.__dataclass_fields__.values()}
-    filtered = {k: v for k, v in merged.items() if k in known}
-
-    return StudioConfig(**filtered)
