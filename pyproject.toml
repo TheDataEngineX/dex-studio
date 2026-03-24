@@ -16,6 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "dataenginex>=0.9",
     "nicegui>=2.0,<4.0",
     "pywebview>=5.0,<7.0",
     "httpx>=0.27",
@@ -52,6 +53,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]
 
+[tool.uv.sources]
+# Use local path during development; remove this section when dataenginex>=1.0 is on PyPI
+dataenginex = { path = "../dex", editable = true }
+
 [dependency-groups]
 dev = [
     "poethepoet>=0.42.1",
@@ -66,7 +71,7 @@ dev = [
 ]
 
 [tool.poe]
-include = ["poe_tasks.toml", "../.github/poe_tasks_base.toml"]
+include = ["poe_tasks.toml"]
 
 [tool.ruff]
 line-length = 100

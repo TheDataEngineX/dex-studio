@@ -14,7 +14,7 @@ class TestStudioConfig:
         config = StudioConfig()
         assert config.api_url == "http://localhost:17000"
         assert config.theme == "dark"
-        assert config.port == 8080
+        assert config.port == 7860
 
     def test_custom_values(self) -> None:
         config = StudioConfig(api_url="http://prod:17000", theme="light")

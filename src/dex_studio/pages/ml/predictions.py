@@ -5,16 +5,18 @@ Route: ``/ml/predictions``
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
-from dex_studio.client import DexAPIError, DexClient
+from dex_studio.app import get_engine, get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.domain_sidebar import domain_sidebar
+from dex_studio.engine import DexEngine
 from dex_studio.theme import COLORS, apply_global_styles
 
 _log = logging.getLogger(__name__)
@@ -43,20 +45,25 @@ def _parse_features(raw: str) -> dict[str, Any] | str:
     return "Features must be a JSON object."
 
 
-def _render_prediction_result(prediction: dict[str, Any]) -> None:
+def _render_prediction_result(prediction: Any) -> None:
     """Render a prediction result card."""
     with ui.card().classes("dex-card w-full"):
         ui.label("Prediction Result").classes("font-semibold text-sm").style(
             f"color: {COLORS['text_primary']}"
         )
-        ui.code(json.dumps(prediction, indent=2, default=str)).classes("w-full mt-2")
+        display = (
+            json.dumps(prediction, indent=2, default=str)
+            if isinstance(prediction, dict)
+            else str(prediction)
+        )
+        ui.code(display).classes("w-full mt-2")
 
 
 @ui.page("/ml/predictions")
 async def ml_predictions_page() -> None:
     """Render the ML predictions playground."""
-    apply_global_styles()
-    client: DexClient | None = app.storage.general.get("client")
+    apply_global_styles(get_theme())
+    engine: DexEngine | None = get_engine()
 
     app_shell(active_domain="ml")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
@@ -64,8 +71,12 @@ async def ml_predictions_page() -> None:
         with ui.column().classes("flex-1"):
             breadcrumb("ML", "Predictions")
             with ui.column().classes("p-6 gap-4 w-full"):
-                if client is None:
-                    ui.label("No connection configured.").style(f"color: {COLORS['error']}")
+                if engine is None:
+                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
+                    return
+
+                if engine.serving_engine is None:
+                    ui.label("Serving engine unavailable.").style(f"color: {COLORS['warning']}")
                     return
 
                 ui.label("Prediction Playground").classes("section-title")
@@ -74,13 +85,7 @@ async def ml_predictions_page() -> None:
                 ).style(f"color: {COLORS['text_muted']}")
 
                 # Fetch model names for select
-                model_names: list[str] = []
-                try:
-                    models_resp = await client.list_models()
-                    models: list[dict[str, Any]] = models_resp.get("models", [])
-                    model_names = [m.get("name", "") for m in models if m.get("name")]
-                except DexAPIError as exc:
-                    _log.warning("Failed to fetch models for predictions: %s", exc)
+                model_names: list[str] = engine.model_registry.list_models()
 
                 with ui.column().classes("gap-3 w-full max-w-xl mt-2"):
                     model_input: ui.select | ui.input
@@ -127,8 +132,12 @@ async def ml_predictions_page() -> None:
                                 ui.label(parsed).style(f"color: {COLORS['error']}")
                                 return
                             try:
-                                prediction = await client.predict(name, parsed)
-                            except DexAPIError as exc:
+                                prediction = await asyncio.to_thread(
+                                    engine.serving_engine.predict,
+                                    name,
+                                    parsed,
+                                )
+                            except Exception as exc:
                                 ui.label(f"Prediction failed: {exc}").style(
                                     f"color: {COLORS['error']}"
                                 )

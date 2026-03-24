@@ -75,3 +75,40 @@ env = { UV_PROJECT_ENVIRONMENT = ".venv" }
 cmd = "uv sync --all-groups"
 help = "Install dependencies from uv.lock for all groups"
 env = { UV_PROJECT_ENVIRONMENT = ".venv" }
+
+[tool.poe.tasks.uv-lock]
+cmd = "uv lock"
+help = "Resolve dependencies from pyproject.toml and write uv.lock"
+
+# ── Version Management ────────────────────────────────────────────────────────
+[tool.poe.tasks.version]
+shell = "python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')); print(t['project']['version'])\""
+help = "Show current version"
+
+# ── Code Quality (additional) ─────────────────────────────────────────────────
+[tool.poe.tasks.format]
+shell = "ruff format src/ tests/"
+help = "Format code with ruff"
+
+[tool.poe.tasks.security]
+cmd = "uvx pip-audit --progress-spinner off"
+help = "Audit dependencies for known vulnerabilities"
+
+# ── Claude Code Settings ──────────────────────────────────────────────────────
+[tool.poe.tasks.sync-claude-settings]
+shell = """
+mkdir -p .claude
+cp ../.github/.claude/settings.json .claude/settings.json
+echo "✓ .claude/settings.json synced from .github/.claude/settings.json"
+"""
+help = "Sync shared Claude Code settings from canonical .github/.claude/settings.json"
+
+# ── Git Hooks ─────────────────────────────────────────────────────────────────
+[tool.poe.tasks.install-hooks]
+shell = """
+cp ../.github/scripts/pre-commit-version-bump.sh .git/hooks/pre-commit
+cp ../.github/scripts/bump-version.sh .git/hooks/bump-version.sh
+chmod +x .git/hooks/pre-commit .git/hooks/bump-version.sh
+echo "✓ pre-commit hook installed"
+"""
+help = "Install git hooks (auto-bump patch version on commit if not manually changed)"
