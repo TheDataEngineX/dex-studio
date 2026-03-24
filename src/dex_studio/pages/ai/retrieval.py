@@ -12,6 +12,7 @@ import logging
 
 from nicegui import ui
 
+from dex_studio.app import get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.domain_sidebar import domain_sidebar
@@ -24,7 +25,7 @@ _log = logging.getLogger(__name__)
 @ui.page("/ai/retrieval")
 async def ai_retrieval_page() -> None:
     """Render the AI retrieval placeholder page."""
-    apply_global_styles()
+    apply_global_styles(get_theme())
 
     app_shell(active_domain="ai")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):

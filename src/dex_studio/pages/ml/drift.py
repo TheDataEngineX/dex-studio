@@ -8,93 +8,83 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
-from dex_studio.client import DexAPIError, DexClient
+from dex_studio.app import get_engine, get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.data_table import data_table
 from dex_studio.components.domain_sidebar import domain_sidebar
+from dex_studio.components.empty_state import empty_state
 from dex_studio.components.status_badge import status_badge
+from dex_studio.engine import DexEngine
 from dex_studio.theme import COLORS, apply_global_styles
 
 _log = logging.getLogger(__name__)
 
 _PSI_COLUMNS: list[dict[str, Any]] = [
-    {"name": "feature", "label": "Feature", "field": "feature", "align": "left"},
-    {"name": "psi", "label": "PSI Score", "field": "psi", "align": "right"},
-    {"name": "status", "label": "Status", "field": "status", "align": "left"},
+    {
+        "name": "feature",
+        "label": "Feature",
+        "field": "feature",
+        "align": "left",
+    },
+    {
+        "name": "psi",
+        "label": "PSI Score",
+        "field": "psi",
+        "align": "right",
+    },
+    {
+        "name": "severity",
+        "label": "Severity",
+        "field": "severity",
+        "align": "left",
+    },
 ]
 
-# PSI thresholds: < 0.1 stable, 0.1–0.2 moderate drift, > 0.2 significant drift
-_PSI_STABLE = 0.1
-_PSI_MODERATE = 0.2
 
+def _render_drift_results(reports: list[Any]) -> None:
+    """Render per-feature drift report table."""
+    if not reports:
+        empty_state("No drift data available", icon="trending_flat")
+        return
 
-def _psi_status(psi: float) -> str:
-    """Return a drift status label from a PSI score."""
-    if psi < _PSI_STABLE:
-        return "stable"
-    if psi < _PSI_MODERATE:
-        return "degraded"
-    return "failed"
-
-
-def _render_feature_scores(feature_scores: list[dict[str, Any]]) -> None:
-    """Render per-feature PSI breakdown table."""
-    ui.label("Feature Drift Breakdown").classes("section-title mt-4")
     rows: list[dict[str, Any]] = []
-    for fs in feature_scores:
-        psi_val: Any = fs.get("psi", fs.get("score"))
-        psi_float = float(psi_val) if psi_val is not None else 0.0
+    for r in reports:
         rows.append(
             {
-                "feature": fs.get("feature", fs.get("name", "—")),
-                "psi": (f"{psi_float:.4f}" if isinstance(psi_val, float) else str(psi_val)),
-                "status": _psi_status(psi_float),
+                "feature": r.feature_name,
+                "psi": f"{r.psi:.6f}",
+                "severity": r.severity,
             }
         )
-    data_table(_PSI_COLUMNS, rows, title="Feature PSI Scores")
 
-
-def _render_drift_raw(result: dict[str, Any]) -> None:
-    """Render raw drift result as key-value pairs when no feature breakdown is available."""
-    ui.label("Drift Details").classes("section-title mt-4")
-    with ui.card().classes("dex-card w-full"), ui.grid(columns=2).classes("gap-x-6 gap-y-2 p-4"):
-        for key, val in result.items():
-            ui.label(key).classes("text-xs font-mono").style(f"color: {COLORS['text_muted']}")
-            ui.label(str(val)).classes("text-sm").style(f"color: {COLORS['text_primary']}")
-
-
-def _render_drift_summary(pipeline_name: str, result: dict[str, Any]) -> None:
-    """Render drift summary row with overall status and score."""
-    overall_status: str = result.get("status", "unknown")
-    drift_score: Any = result.get("drift_score", result.get("psi"))
+    # Determine overall severity
+    severities = [r.severity for r in reports]
+    if "severe" in severities:
+        overall = "severe"
+    elif "moderate" in severities:
+        overall = "moderate"
+    else:
+        overall = "none"
 
     ui.label("Summary").classes("section-title")
     with ui.row().classes("items-center gap-3"):
-        ui.label(f"Pipeline: {pipeline_name}").classes("text-sm font-semibold").style(
-            f"color: {COLORS['text_primary']}"
+        status_badge(overall)
+        ui.label(f"{len(reports)} feature(s) checked").classes("text-xs").style(
+            f"color: {COLORS['text_muted']}"
         )
-        status_badge(overall_status)
-        if drift_score is not None:
-            formatted = f"{drift_score:.4f}" if isinstance(drift_score, float) else str(drift_score)
-            ui.label(f"Overall PSI: {formatted}").classes("text-xs").style(
-                f"color: {COLORS['text_muted']}"
-            )
 
-    feature_scores: list[dict[str, Any]] = result.get("feature_scores", result.get("features", []))
-    if feature_scores:
-        _render_feature_scores(feature_scores)
-    else:
-        _render_drift_raw(result)
+    ui.label("Feature Drift Breakdown").classes("section-title mt-4")
+    data_table(_PSI_COLUMNS, rows, title="Feature PSI Scores")
 
 
 @ui.page("/ml/drift")
 async def ml_drift_page() -> None:
     """Render the ML drift monitor page."""
-    apply_global_styles()
-    client: DexClient | None = app.storage.general.get("client")
+    apply_global_styles(get_theme())
+    engine: DexEngine | None = get_engine()
 
     app_shell(active_domain="ml")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
@@ -102,8 +92,8 @@ async def ml_drift_page() -> None:
         with ui.column().classes("flex-1"):
             breadcrumb("ML", "Drift Monitor")
             with ui.column().classes("p-6 gap-4 w-full"):
-                if client is None:
-                    ui.label("No connection configured.").style(f"color: {COLORS['error']}")
+                if engine is None:
+                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
                     return
 
                 ui.label("Drift Monitor").classes("section-title")
@@ -111,33 +101,13 @@ async def ml_drift_page() -> None:
                     "text-xs"
                 ).style(f"color: {COLORS['text_muted']}")
 
-                with ui.row().classes("items-end gap-3 mt-2"):
-                    pipeline_input = (
-                        ui.input(
-                            label="Pipeline Name",
-                            placeholder="e.g. customer_churn",
-                        )
-                        .classes("w-64")
-                        .props("outlined dark")
-                    )
+                ui.label(
+                    "Use the DriftDetector API to detect distribution"
+                    " drift between reference and current datasets."
+                ).classes("text-xs").style(f"color: {COLORS['text_dim']}")
 
-                drift_container = ui.column().classes("w-full mt-4")
-
-                async def check_drift() -> None:
-                    pipeline_name = pipeline_input.value.strip()
-                    if not pipeline_name:
-                        return
-                    drift_container.clear()
-                    with drift_container:
-                        try:
-                            result = await client.check_drift(pipeline_name)
-                        except DexAPIError as exc:
-                            ui.label(f"Error: {exc}").style(f"color: {COLORS['error']}")
-                            return
-                        _render_drift_summary(pipeline_name, result)
-
-                ui.button(
-                    "Check Drift",
+                empty_state(
+                    "Submit reference and current datasets via the "
+                    "DriftDetector API to check for drift",
                     icon="trending_up",
-                    on_click=check_drift,
-                ).props("color=indigo")
+                )

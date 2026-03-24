@@ -10,7 +10,14 @@ from typing import Any
 
 import yaml
 
-__all__ = ["ProjectEntry", "StudioConfig", "load_config", "load_projects", "save_projects"]
+__all__ = [
+    "ProjectEntry",
+    "StudioConfig",
+    "load_config",
+    "save_config",
+    "load_projects",
+    "save_projects",
+]
 
 _USER_CONFIG = Path.home() / ".dex-studio" / "config.yaml"
 _PROJECTS_FILE = Path.home() / ".dex-studio" / "projects.yaml"
@@ -50,7 +57,7 @@ class StudioConfig:
     poll_interval: float = 5.0
     native_mode: bool = True
     host: str = "127.0.0.1"
-    port: int = 8080
+    port: int = 7860
 
 
 def load_config(
@@ -85,6 +92,16 @@ def load_config(
 
     valid = {k: v for k, v in merged.items() if k in field_names}
     return StudioConfig(**valid)
+
+
+def save_config(config: StudioConfig, path: Path | None = None) -> None:
+    """Persist StudioConfig to ~/.dex-studio/config.yaml (or explicit path)."""
+    from dataclasses import asdict
+
+    target = path or _USER_CONFIG
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = {k: v for k, v in asdict(config).items() if v is not None}
+    target.write_text(yaml.safe_dump(data, default_flow_style=False))
 
 
 def load_projects() -> list[ProjectEntry]:
