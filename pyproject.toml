@@ -53,9 +53,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]
 
-[tool.uv.sources]
-# Use local path during development; remove this section when dataenginex>=1.0 is on PyPI
-dataenginex = { path = "../dex", editable = true }
 
 [dependency-groups]
 dev = [

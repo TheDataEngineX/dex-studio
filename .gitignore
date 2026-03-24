@@ -33,6 +33,7 @@ htmlcov/
 
 # Config (user-specific)
 .dex-studio.yaml
+.dex/
 
 # NiceGUI runtime artifacts
 .nicegui/
