@@ -13,7 +13,7 @@ license: mit
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **DEX Studio** is a local, Python-first UI that provides a single control plane for
-end-to-end data projects powered by [TheDataEngineX/DEX](https://github.com/TheDataEngineX/DEX).
+end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.com/TheDataEngineX/dataenginex).
 
 It connects to a running DEX engine instance and unifies workflows in one desktop window:
 project setup → ingestion → medallion pipelines (bronze/silver/gold) → ML/AI workflows →
