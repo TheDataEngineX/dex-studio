@@ -2,9 +2,10 @@
 
 Usage::
 
-    dex-studio                     # Launch with defaults
-    dex-studio --url http://...:17000
-    dex-studio --config path/to/config.yaml
+    dex-studio my-project/dex.yaml          # local mode (default)
+    dex-studio --project staging            # named project from ~/.dex-studio/projects.yaml
+    dex-studio --url http://dex:17000       # explicit remote URL
+    dex-studio                               # looks for dex.yaml in CWD
 """
 
 from __future__ import annotations
@@ -13,29 +14,36 @@ import argparse
 import sys
 from pathlib import Path
 
+import dex_studio.config as _dex_cfg
 from dex_studio.config import StudioConfig, load_config
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dex-studio",
-        description="DEX Studio — local control plane for DataEngineX/DEX",
+        description="DEX Studio — local control plane for DataEngineX",
+    )
+    parser.add_argument(
+        "config",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Path to a dex YAML config file (default: dex.yaml in CWD)",
+    )
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="Named project from ~/.dex-studio/projects.yaml",
     )
     parser.add_argument(
         "--url",
         default=None,
-        help="DEX engine API URL (default: http://localhost:17000)",
+        help="DEX engine API URL (overrides project lookup)",
     )
     parser.add_argument(
         "--token",
         default=None,
-        help="Bearer token for authenticated DEX engine",
-    )
-    parser.add_argument(
-        "--config",
-        default=None,
-        type=Path,
-        help="Path to a YAML config file",
+        help="Auth token for the DEX engine API",
     )
     parser.add_argument(
         "--theme",
@@ -53,33 +61,36 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print version and exit",
     )
-    parser.add_argument(
-        "--project",
-        default=None,
-        help="Project name from projects.yaml",
-    )
     return parser
 
 
-def _apply_project_overrides(project_name: str, overrides: dict[str, object]) -> None:
-    """Resolve a project by name and write url/token into *overrides*.
+def _resolve_config(args: argparse.Namespace) -> tuple[StudioConfig, bool]:
+    """Return (StudioConfig, is_http_mode) from parsed args."""
+    from dataclasses import asdict
 
-    Exits with code 1 if the project is not found.
-    """
-    from dex_studio.config import load_projects
+    ui_cfg = load_config()
+    overrides: dict[str, object] = {}
 
-    projects = load_projects()
-    match = [p for p in projects if p.name == project_name]
-    if not match:
-        print(  # noqa: T201
-            f"Project '{project_name}' not found in projects.yaml",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    proj = match[0]
-    overrides["api_url"] = proj.url
-    if proj.token:
-        overrides["api_token"] = proj.token
+    if args.project:
+        projects = _dex_cfg.load_projects()
+        match = next((p for p in projects if p.name == args.project), None)
+        if match is None:
+            sys.stderr.write(f"Project '{args.project}' not found in projects config.\n")
+            sys.exit(1)
+        overrides["api_url"] = match.url
+        if match.token:
+            overrides["api_token"] = match.token
+
+    # --url / --token override project lookup
+    overrides.update({k: v for k, v in [("api_url", args.url), ("api_token", args.token)] if v})
+    overrides.update({k: v for k, v in [("theme", args.theme)] if v})
+    if args.no_native:
+        overrides["native_mode"] = False
+
+    if overrides:
+        ui_cfg = StudioConfig(**{**asdict(ui_cfg), **overrides})
+
+    return ui_cfg, bool(args.project or args.url)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -93,35 +104,14 @@ def main(argv: list[str] | None = None) -> None:
         print(f"dex-studio {__version__}")  # noqa: T201
         sys.exit(0)
 
-    # Load base config (file + env)
-    cfg = load_config(path=args.config)
+    ui_cfg, http_mode = _resolve_config(args)
 
-    # Apply CLI overrides
-    overrides: dict[str, object] = {}
-
-    if args.project:
-        _apply_project_overrides(args.project, overrides)
-
-    if args.url:
-        overrides["api_url"] = args.url
-    if args.token:
-        overrides["api_token"] = args.token
-    if args.theme:
-        overrides["theme"] = args.theme
-    if args.no_native:
-        overrides["native_mode"] = False
-
-    if overrides:
-        # Re-create with overrides (frozen dataclass)
-        from dataclasses import asdict
-
-        merged = {**asdict(cfg), **overrides}
-        cfg = StudioConfig(**merged)
-
-    # Launch the NiceGUI app
     from dex_studio.app import start
 
-    start(config=cfg)
+    if http_mode:
+        start(config=ui_cfg)
+    else:
+        start(config_path=args.config, studio_config=ui_cfg)
 
 
 if __name__ == "__main__":

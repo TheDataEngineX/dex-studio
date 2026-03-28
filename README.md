@@ -9,7 +9,7 @@ license: mit
 ---
 
 [![CI](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **DEX Studio** is a local, Python-first UI that provides a single control plane for
@@ -18,6 +18,23 @@ end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.
 It connects to a running DEX engine instance and unifies workflows in one desktop window:
 project setup → ingestion → medallion pipelines (bronze/silver/gold) → ML/AI workflows →
 serving → observability.
+
+______________________________________________________________________
+
+## Architecture
+
+DEX Studio is Layer 2 in the three-layer DEX architecture:
+
+```text
+Layer 1: DEX (framework)     — dataenginex PyPI package, CLI, headless
+     ↓ HTTP API
+Layer 2: DEX Studio (shell)  — this repo, domain-agnostic UI
+     ↓ page plugin registration
+Layer 3: Domain Apps         — registers custom pages into Studio
+```
+
+Studio connects to a running DEX engine via HTTP. It does not import
+`dataenginex` directly — the API is the contract.
 
 ______________________________________________________________________
 

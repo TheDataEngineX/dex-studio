@@ -1,8 +1,6 @@
-"""Chat message bubble — user or agent with tool call rendering."""
+"""Chat message bubble — user or agent with tool call count."""
 
 from __future__ import annotations
-
-from typing import Any
 
 from nicegui import ui
 
@@ -15,7 +13,7 @@ def chat_message(
     role: str,
     content: str,
     *,
-    tool_calls: list[dict[str, Any]] | None = None,
+    tool_calls: int = 0,
 ) -> None:
     """Render a chat message bubble."""
     is_user = role == "user"
@@ -24,25 +22,24 @@ def chat_message(
 
     with ui.row().classes("gap-3 w-full").style("margin-bottom: 20px;"):
         ui.label(avatar_text).style(
-            f"width: 28px; height: 28px; background: {avatar_bg}; border-radius: 50%; "
-            f"display: flex; align-items: center; justify-content: center; font-size: 12px; "
-            f"flex-shrink: 0; color: white;"
+            f"width: 28px; height: 28px; background: {avatar_bg};"
+            " border-radius: 50%; "
+            "display: flex; align-items: center;"
+            " justify-content: center; font-size: 12px; "
+            "flex-shrink: 0; color: white;"
         )
 
         with ui.column().classes("flex-1"):
-            if tool_calls:
-                for tc in tool_calls:
-                    from dex_studio.components.tool_call_block import tool_call_block
-
-                    tool_call_block(
-                        name=tc.get("name", "unknown"),
-                        args=tc.get("args", ""),
-                        duration=tc.get("duration"),
-                        status=tc.get("status", "done"),
-                    )
+            if tool_calls > 0:
+                ui.badge(
+                    f"\U0001f527 {tool_calls} tool call{'s' if tool_calls != 1 else ''}"
+                ).props("outline").style(f"color: {COLORS['accent_light']}; margin-bottom: 6px;")
 
             ui.label(content).style(
-                f"background: {COLORS['bg_secondary']}; padding: 12px 16px; "
-                f"border-radius: 12px; border-top-left-radius: {'12px' if is_user else '4px'}; "
-                f"max-width: 80%;"
+                f"background: {COLORS['bg_secondary']};"
+                " padding: 12px 16px; "
+                "border-radius: 12px;"
+                f" border-top-left-radius:"
+                f" {'12px' if is_user else '4px'}; "
+                "max-width: 80%;"
             )

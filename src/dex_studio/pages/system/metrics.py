@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import logging
 
-from nicegui import app, ui
+from nicegui import ui
 
-from dex_studio.client import DexClient
+from dex_studio.app import get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.domain_sidebar import domain_sidebar
@@ -22,8 +22,7 @@ _log = logging.getLogger(__name__)
 @ui.page("/system/metrics")
 async def system_metrics_page() -> None:
     """Render the system metrics placeholder page."""
-    apply_global_styles()
-    client: DexClient | None = app.storage.general.get("client")
+    apply_global_styles(get_theme())
 
     app_shell(active_domain="system")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
@@ -44,14 +43,11 @@ async def system_metrics_page() -> None:
                         ui.label(
                             "Connect to the /metrics endpoint for Prometheus-format metrics."
                         ).classes("text-sm").style(f"color: {COLORS['text_primary']}")
-                        if client is not None:
-                            metrics_url = f"{client.config.api_url}/metrics"
-                            ui.label(metrics_url).classes("text-xs font-mono").style(
-                                f"color: {COLORS['accent_light']}"
-                            )
                         ui.label(
-                            "Use a Prometheus scrape config or a Grafana data source "
-                            "pointed at the /metrics endpoint to visualise these metrics."
+                            "Use a Prometheus scrape config or"
+                            " a Grafana data source pointed at"
+                            " the /metrics endpoint to"
+                            " visualise these metrics."
                         ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
                 empty_state(

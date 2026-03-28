@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import logging
 
-from nicegui import app, ui
+from nicegui import ui
 
-from dex_studio.client import DexClient
+from dex_studio.app import get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.domain_sidebar import domain_sidebar
@@ -22,8 +22,7 @@ _log = logging.getLogger(__name__)
 @ui.page("/system/traces")
 async def system_traces_page() -> None:
     """Render the OpenTelemetry trace viewer placeholder page."""
-    apply_global_styles()
-    _client: DexClient | None = app.storage.general.get("client")
+    apply_global_styles(get_theme())
 
     app_shell(active_domain="system")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
@@ -45,9 +44,10 @@ async def system_traces_page() -> None:
                             "text-sm"
                         ).style(f"color: {COLORS['text_primary']}")
                         ui.label(
-                            "Traces are collected via the /api/v1/system/traces endpoint. "
-                            "Connect an OpenTelemetry-compatible backend (Jaeger, Tempo, "
-                            "Zipkin) for full distributed tracing support."
+                            "Connect an"
+                            " OpenTelemetry-compatible backend"
+                            " (Jaeger, Tempo, Zipkin) for full"
+                            " distributed tracing support."
                         ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
                 empty_state(

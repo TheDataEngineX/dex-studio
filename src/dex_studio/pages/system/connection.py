@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from nicegui import ui
 
+from dex_studio.app import get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.domain_sidebar import domain_sidebar
@@ -62,7 +63,7 @@ def _render_project_card(
 @ui.page("/system/connection")
 async def system_connection_page() -> None:
     """Render the multi-project connection manager page."""
-    apply_global_styles()
+    apply_global_styles(get_theme())
 
     app_shell(active_domain="system")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):

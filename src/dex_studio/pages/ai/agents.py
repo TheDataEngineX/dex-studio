@@ -2,33 +2,35 @@
 
 Route: ``/ai/agents``
 
-Drives DEX engine endpoints:
-    GET  /api/v1/ai/agents              → list agents
-    GET  /api/v1/ai/agents/{name}       → agent metadata
-    POST /api/v1/ai/agents/{name}/chat  → send message
+Uses DexEngine directly for agent access:
+    engine.config.ai.agents  -> agent config dict
+    engine.agents             -> live agent instances
+    engine.agents[name].run() -> agent response
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
-from dex_studio.client import DexAPIError, DexClient
+from dex_studio.app import get_engine, get_theme
 from dex_studio.components.app_shell import app_shell
 from dex_studio.components.breadcrumb import breadcrumb
 from dex_studio.components.chat_message import chat_message
 from dex_studio.components.domain_sidebar import domain_sidebar
 from dex_studio.components.empty_state import empty_state
 from dex_studio.components.inspector_panel import inspector_panel
+from dex_studio.engine import DexEngine
 from dex_studio.theme import COLORS, apply_global_styles
 
 _log = logging.getLogger(__name__)
 
 
 def _render_chat_area(
-    client: DexClient,
+    engine: DexEngine,
     agent_names: list[str],
 ) -> None:
     """Render the left chat area with agent selector, messages, and input bar."""
@@ -37,7 +39,8 @@ def _render_chat_area(
         .classes("flex-1")
         .style(
             f"background: {COLORS['bg_primary']}; "
-            "display: flex; flex-direction: column; height: calc(100vh - 88px);"
+            "display: flex; flex-direction: column;"
+            " height: calc(100vh - 88px);"
         )
     ):
         # Agent selector bar
@@ -45,7 +48,8 @@ def _render_chat_area(
             ui.row()
             .classes("items-center gap-3 w-full")
             .style(
-                f"padding: 12px 16px; border-bottom: 1px solid {COLORS['border']}; "
+                f"padding: 12px 16px; border-bottom: 1px solid"
+                f" {COLORS['border']}; "
                 f"background: {COLORS['bg_secondary']};"
             )
         ):
@@ -75,7 +79,8 @@ def _render_chat_area(
             ui.row()
             .classes("items-end gap-3 w-full")
             .style(
-                f"padding: 12px 16px; border-top: 1px solid {COLORS['border']}; "
+                f"padding: 12px 16px; border-top: 1px solid"
+                f" {COLORS['border']}; "
                 f"background: {COLORS['bg_secondary']};"
             )
         ):
@@ -98,19 +103,32 @@ def _render_chat_area(
                 with messages_col:
                     chat_message("user", msg)
 
+                # Check if agent is available (LLM up)
+                if agent_name not in engine.agents:
+                    response_text = (
+                        "LLM provider unavailable.\n\n"
+                        "To enable AI agents, start Ollama:\n"
+                        "  ollama serve\n"
+                        "  ollama pull qwen3:8b\n\n"
+                        "Then restart DEX Studio."
+                    )
+                    with messages_col:
+                        chat_message("agent", response_text)
+                    return
+
                 try:
-                    result = await client.agent_chat(agent_name, msg)
-                    response_text: str = result.get("response", "")
-                    tool_calls: list[dict[str, Any]] = result.get("tool_calls", [])
-                except DexAPIError as exc:
+                    result = await asyncio.to_thread(engine.agents[agent_name].run, msg)
+                    response_text = result.response if hasattr(result, "response") else str(result)
+                    tool_calls: int = result.tool_calls if hasattr(result, "tool_calls") else 0
+                except Exception as exc:
                     response_text = f"[Error: {exc}]"
-                    tool_calls = []
+                    tool_calls = 0
 
                 with messages_col:
                     chat_message(
                         "agent",
                         response_text,
-                        tool_calls=tool_calls if tool_calls else None,
+                        tool_calls=tool_calls,
                     )
 
             ui.button(
@@ -121,7 +139,7 @@ def _render_chat_area(
 
 
 def _render_inspector(
-    agents: list[dict[str, Any]],
+    engine: DexEngine,
     agent_names: list[str],
 ) -> None:
     """Render the right inspector panel for the first agent."""
@@ -133,15 +151,15 @@ def _render_inspector(
             return
 
         first_name = agent_names[0]
-        first_agent = next((a for a in agents if a.get("name") == first_name), {})
-        _render_agent_inspector(first_agent)
+        agent_cfg = engine.config.ai.agents.get(first_name)
+        _render_agent_inspector(first_name, agent_cfg)
 
 
 @ui.page("/ai/agents")
 async def ai_agents_page() -> None:
     """Render the AI agents chat interface with inspector panel."""
-    apply_global_styles()
-    client: DexClient | None = app.storage.general.get("client")
+    apply_global_styles(get_theme())
+    engine: DexEngine | None = get_engine()
 
     app_shell(active_domain="ai")
     with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
@@ -150,45 +168,35 @@ async def ai_agents_page() -> None:
         with ui.column().classes("flex-1"):
             breadcrumb("AI", "Agent Chat")
 
-            if client is None:
+            if engine is None:
                 with ui.column().classes("p-6 gap-4 w-full"):
-                    ui.label("No connection configured.").style(f"color: {COLORS['error']}")
+                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
                 return
 
-            agents: list[dict[str, Any]] = []
-            try:
-                agents_resp = await client.list_agents()
-                agents = agents_resp.get("agents", [])
-            except DexAPIError as exc:
-                with ui.column().classes("p-6"):
-                    ui.label(f"Error loading agents: {exc}").style(f"color: {COLORS['error']}")
-                return
-
-            agent_names = [a.get("name", "") for a in agents if a.get("name")]
+            agent_names = list(engine.config.ai.agents.keys())
 
             with ui.row().classes("flex-1 w-full").style("gap: 0; overflow: hidden;"):
-                _render_chat_area(client, agent_names)
-                _render_inspector(agents, agent_names)
+                _render_chat_area(engine, agent_names)
+                _render_inspector(engine, agent_names)
 
 
-def _render_agent_inspector(agent: dict[str, Any]) -> None:
+def _render_agent_inspector(name: str, agent_cfg: Any) -> None:
     """Render agent metadata in the inspector panel."""
-    if not agent:
+    if agent_cfg is None:
         ui.label("Select an agent to inspect.").style(
             f"padding: 12px 16px; font-size: 12px; color: {COLORS['text_dim']};"
         )
         return
 
     with ui.column().classes("w-full gap-2").style("padding: 12px 16px;"):
-        name = agent.get("name", "—")
-        description = agent.get("description", "")
-        runtime = agent.get("runtime", "—")
-        tool_list: list[str] = agent.get("tools", [])
-
         ui.label(name).style(f"font-size: 14px; font-weight: 600; color: {COLORS['text_primary']};")
 
-        if description:
-            ui.label(description).style(
+        # Show system prompt snippet instead of description
+        if agent_cfg.system_prompt:
+            snippet = agent_cfg.system_prompt[:120]
+            if len(agent_cfg.system_prompt) > 120:
+                snippet += "..."
+            ui.label(snippet).style(
                 f"font-size: 12px; color: {COLORS['text_muted']}; margin-top: 4px;"
             )
 
@@ -199,16 +207,20 @@ def _render_agent_inspector(agent: dict[str, Any]) -> None:
         with ui.row().classes("items-center gap-2"):
             ui.label("Runtime").style(
                 f"font-size: 10px; text-transform: uppercase; "
-                f"color: {COLORS['text_faint']}; letter-spacing: 0.05em;"
+                f"color: {COLORS['text_faint']};"
+                " letter-spacing: 0.05em;"
             )
-            ui.label(str(runtime)).style(f"font-size: 12px; color: {COLORS['text_muted']};")
+            ui.label(str(agent_cfg.runtime)).style(
+                f"font-size: 12px; color: {COLORS['text_muted']};"
+            )
 
-        if tool_list:
+        if agent_cfg.tools:
             ui.label("Tools").style(
                 f"font-size: 10px; text-transform: uppercase; "
-                f"color: {COLORS['text_faint']}; letter-spacing: 0.05em; margin-top: 8px;"
+                f"color: {COLORS['text_faint']};"
+                " letter-spacing: 0.05em; margin-top: 8px;"
             )
-            for tool_name in tool_list:
+            for tool_name in agent_cfg.tools:
                 with ui.row().classes("items-center gap-2").style("margin-top: 4px;"):
                     ui.icon("build", size="xs").style(f"color: {COLORS['accent']};")
                     ui.label(str(tool_name)).style(
