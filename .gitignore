@@ -44,5 +44,8 @@ htmlcov/
 # Linter cache
 .ruff_cache/
 
+# Generated site (docs)
+site/
+
 # Claude Code — local overrides (personal, never commit)
 .claude/settings.local.json
