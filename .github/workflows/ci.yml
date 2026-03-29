@@ -39,7 +39,7 @@ jobs:
       - run: uv run poe lint
       - run: uv run poe typecheck
       - run: uv run pytest tests/ -x --tb=short -q --cov=dex_studio --cov-report=xml
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           flags: dex-studio
           fail_ci_if_error: false
