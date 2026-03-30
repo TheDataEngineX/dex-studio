@@ -1,7 +1,3 @@
-______________________________________________________________________
-
-## title: DEX Studio description: Web UI for the DataEngineX platform
-
 # DEX Studio
 
 Local Python-first desktop UI. Single control plane for the full DataEngineX platform.

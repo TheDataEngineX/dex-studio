@@ -1,7 +1,3 @@
-______________________________________________________________________
-
-## title: Configuration description: DEX Studio configuration reference
-
 # Configuration
 
 DEX Studio uses a YAML config file for customization.
@@ -23,6 +19,6 @@ ui:
 ## Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| --- | --- | --- |
 | `DEX_ENGINE_URL` | `http://localhost:17000` | DEX engine URL |
 | `DEX_STUDIO_PORT` | `7860` | UI port |

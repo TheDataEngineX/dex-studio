@@ -1,7 +1,3 @@
-______________________________________________________________________
-
-## title: Getting Started with DEX Studio description: Install and run DEX Studio
-
 # Getting Started
 
 ## Prerequisites
