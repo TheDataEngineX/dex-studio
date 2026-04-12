@@ -63,7 +63,7 @@ dev = [
     "ruff>=0.15.6",
     "mypy>=1.19.1",
     "httpx",
-    "coverage>=7.0",
+    "coverage>=7.13.5",
     "types-pyyaml>=6.0.12.20250915",
 ]
 
