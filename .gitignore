@@ -1,3 +1,7 @@
+.web
+assets/external/
+.states
+*.db
 # Python
 __pycache__/
 *.py[cod]
@@ -30,15 +34,34 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+node_modules/
+tests/e2e/package-lock.json
 
 # Config (user-specific)
 .dex-studio.yaml
+.dex/
 
 # NiceGUI runtime artifacts
 .nicegui/
+
+.playwright-mcp/
+mcp.log
+tasks/todo.md
+test_resume.txt
+*.png
 
 # uv — lock file must be committed for reproducible installs
 # uv.lock intentionally NOT ignored
 
 # Linter cache
 .ruff_cache/
+
+# Generated site (docs)
+site/
+
+# Claude Code — local overrides (personal, never commit)
+.claude/settings.local.json
+docs/superpowers/
+.superpowers/
+# Added by code-review-graph
+.code-review-graph/

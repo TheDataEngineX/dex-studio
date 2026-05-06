@@ -3,7 +3,7 @@ name = "dex-studio"
 version = "0.2.0"
 description = "DEX Studio – local control plane for DataEngineX/DEX"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "TheDataEngineX" }]
 keywords = ["data-engineering", "ml", "ui", "dashboard", "dataenginex"]
@@ -11,33 +11,24 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
 
 dependencies = [
-    "nicegui>=2.0,<4.0",
-    "pywebview>=5.0,<7.0",
-    "httpx>=0.27",
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
-    "python-dotenv>=1.0",
-    "rich>=14.0",
+    "dataenginex>=1.0.2",
+    "careerdex>=0.1.0",
+    "reflex>=0.7.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.2",
+    "pyyaml>=6.0.3",
+    "python-dotenv>=1.2.2",
+    "structlog>=25.0",
 ]
 
 [project.optional-dependencies]
-# Native window backends — install ONE for pywebview native mode
-gtk = [
-    "PyGObject>=3.42",
-    "pycairo>=1.20",
-]
-qt = [
-    "PyQt6>=6.5",
-    "qtpy>=2.4",
-]
-# macOS uses built-in WebKit via pyobjc (auto-installed by pywebview)
+# Resume PDF export
+pdf = ["weasyprint>=68.0"]
 
 [project.scripts]
 dex-studio = "dex_studio.cli:main"
@@ -54,34 +45,52 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]
 
+[tool.uv.sources]
+careerdex = { path = "../careerdex", editable = true }
+dataenginex = { path = "../dex", editable = true }
+
+
 [dependency-groups]
 dev = [
-    "poethepoet>=0.32",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "pytest-cov>=5.0",
-    "ruff>=0.8",
-    "mypy>=1.13",
-    "httpx",
-    "coverage>=7.0",
+    "poethepoet>=0.42.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1",
+    "ruff>=0.15",
+    "mypy>=1.20",
+    "httpx>=0.28",
+    "coverage>=7.13.5",
     "types-pyyaml>=6.0.12.20250915",
 ]
 
 [tool.poe]
-include = "poe_tasks.toml"
+include = ["poe_tasks.toml"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
 [tool.ruff.lint.isort]
 known-first-party = ["dex_studio"]
 
+[tool.ruff.lint.per-file-ignores]
+# NiceGUI page/component files contain long inline CSS .style() strings — splitting
+# reduces readability without improving correctness. C901/SIM117 suppressed because
+# NiceGUI requires nested closures and nested `with` blocks by design.
+"src/dex_studio/pages/**/*.py" = ["E501", "C901", "SIM117"]
+"src/dex_studio/components/**/*.py" = ["E501", "C901", "SIM117"]
+# Service API calls produce long URLs/params lines; filter function is intentionally
+# complex (10+ filter conditions in one place for readability).
+"src/dex_studio/careerdex/services/job_search.py" = ["E501", "C901"]
+
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -91,6 +100,47 @@ disable_error_code = ["misc"]
 # Prevent false positives when stubs are absent (pre-commit isolated env)
 warn_unused_ignores = false
 
+[[tool.mypy.overrides]]
+# Reflex page components: rx.Component return types and EventSpec patterns not fully typed in stubs
+module = ["dex_studio.pages.*"]
+disable_error_code = ["no-any-return", "operator", "attr-defined", "type-arg"]
+
+[[tool.mypy.overrides]]
+# Reflex layout components return rx.Component which httpx/reflex stubs report as Any
+module = ["dex_studio.components.layout", "dex_studio.auth"]
+disable_error_code = ["no-any-return", "attr-defined"]
+
+[[tool.mypy.overrides]]
+# Reflex event chaining (yield/await another @rx.event) — EventNamespace is callable at runtime
+module = ["dex_studio.state.data", "dex_studio.state.ml", "dex_studio.state.system"]
+disable_error_code = ["operator"]
+
+[[tool.mypy.overrides]]
+# Legacy NiceGUI component files — not used in Reflex stack, excluded until removed
+module = [
+    "dex_studio.components.app_shell",
+    "dex_studio.components.badge",
+    "dex_studio.components.breadcrumb",
+    "dex_studio.components.button",
+    "dex_studio.components.card",
+    "dex_studio.components.chat_message",
+    "dex_studio.components.command_palette",
+    "dex_studio.components.data_table",
+    "dex_studio.components.domain_sidebar",
+    "dex_studio.components.empty_state",
+    "dex_studio.components.hub_nav",
+    "dex_studio.components.input",
+    "dex_studio.components.inspector_panel",
+    "dex_studio.components.metric_card",
+    "dex_studio.components.page_layout",
+    "dex_studio.components.project_card",
+    "dex_studio.components.status_badge",
+    "dex_studio.components.toast",
+    "dex_studio.components.tool_call_block",
+]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+pythonpath = ["src"]

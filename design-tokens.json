@@ -1,0 +1,133 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "_note": "Canonical token set for DEX Studio (Reflex/Radix UI). Source of truth — drives design-preview.html and DESIGN.md. The Radix semantic tokens (--gray-N, --indigo-N) are provided by rx.theme() at runtime; the custom tokens below are injected as CSS vars via rx.GlobalStyle or app.style.",
+
+  "color": {
+    "brand": {
+      "primary": { "value": "#6366f1", "comment": "Indigo — DEX accent, Radix --indigo-9" },
+      "primary-hover": { "value": "#818cf8", "comment": "Radix --indigo-10" },
+      "primary-active": { "value": "#4f46e5", "comment": "Radix --indigo-8" },
+      "primary-subtle": { "value": "var(--indigo-3)", "comment": "Radix semantic" },
+      "primary-border": { "value": "var(--indigo-6)", "comment": "Radix semantic" }
+    },
+    "domain": {
+      "data": { "value": "var(--indigo-9)", "comment": "Data domain" },
+      "ml": { "value": "var(--violet-9)", "comment": "ML domain" },
+      "ai": { "value": "var(--cyan-9)", "comment": "AI domain" },
+      "system": { "value": "var(--orange-9)", "comment": "System domain" },
+      "career": { "value": "var(--teal-9)", "comment": "Career/CareerDEX domain" }
+    },
+    "semantic": {
+      "success": { "value": "var(--green-9)" },
+      "warning": { "value": "var(--amber-9)" },
+      "error": { "value": "var(--red-9)" },
+      "info": { "value": "var(--blue-9)" }
+    },
+    "surface": {
+      "page": { "value": "var(--gray-2)", "comment": "Main content area background" },
+      "sidebar": { "value": "var(--gray-1)", "comment": "Sidebar + header background" },
+      "card": { "value": "var(--gray-2)", "comment": "Card surface" },
+      "card-elevated": { "value": "var(--gray-1)", "comment": "Elevated card (e.g. modal)" },
+      "overlay": { "value": "var(--gray-1)", "comment": "Panel overlays (copilot, drawers)" }
+    },
+    "border": {
+      "subtle": { "value": "var(--gray-4)", "comment": "Dividers, card outlines, sidebar edge" },
+      "default": { "value": "var(--gray-6)", "comment": "Input outlines, stronger separators" },
+      "accent": { "value": "var(--indigo-6)", "comment": "Focused/active card borders" }
+    },
+    "text": {
+      "primary": { "value": "var(--gray-12)", "comment": "Headings, primary content" },
+      "secondary": { "value": "var(--gray-11)", "comment": "Body text, nav labels" },
+      "tertiary": { "value": "var(--gray-10)", "comment": "Table cells, descriptions" },
+      "muted": { "value": "var(--gray-9)", "comment": "Labels, metadata" },
+      "faint": { "value": "var(--gray-7)", "comment": "Placeholders, disabled" },
+      "on-accent": { "value": "#ffffff", "comment": "Text on accent backgrounds" }
+    }
+  },
+
+  "typography": {
+    "font": {
+      "display": { "value": "'Fira Sans', Inter, system-ui, -apple-system, sans-serif", "comment": "All UI text" },
+      "mono": { "value": "'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace", "comment": "SQL console, code blocks, terminal" }
+    },
+    "size": {
+      "xs": { "value": "11px", "radix": "1" },
+      "sm": { "value": "13px", "radix": "2" },
+      "base": { "value": "14px", "radix": "3" },
+      "md": { "value": "16px", "radix": "4" },
+      "lg": { "value": "18px", "radix": "5" },
+      "xl": { "value": "20px", "radix": "6" },
+      "2xl": { "value": "24px", "radix": "7" },
+      "3xl": { "value": "30px", "radix": "8" },
+      "display": { "value": "36px", "radix": "9" }
+    },
+    "weight": {
+      "normal": { "value": "400" },
+      "medium": { "value": "500" },
+      "semibold": { "value": "600" },
+      "bold": { "value": "700" }
+    },
+    "line-height": {
+      "tight": { "value": "1.25" },
+      "normal": { "value": "1.5" },
+      "relaxed": { "value": "1.75" }
+    }
+  },
+
+  "spacing": {
+    "1": { "value": "4px" },
+    "2": { "value": "8px" },
+    "3": { "value": "12px" },
+    "4": { "value": "16px" },
+    "5": { "value": "20px" },
+    "6": { "value": "24px" },
+    "8": { "value": "32px" },
+    "10": { "value": "40px" },
+    "12": { "value": "48px" },
+    "16": { "value": "64px" },
+    "20": { "value": "80px" }
+  },
+
+  "border-radius": {
+    "sm": { "value": "var(--radius-1)", "px": "4px" },
+    "md": { "value": "var(--radius-2)", "px": "6px" },
+    "lg": { "value": "var(--radius-3)", "px": "8px" },
+    "xl": { "value": "var(--radius-4)", "px": "12px" },
+    "full": { "value": "9999px" }
+  },
+
+  "shadow": {
+    "sm": { "value": "0 1px 2px rgba(0,0,0,0.12)" },
+    "md": { "value": "0 4px 6px -1px rgba(0,0,0,0.18), 0 2px 4px -1px rgba(0,0,0,0.10)" },
+    "lg": { "value": "0 10px 20px -4px rgba(0,0,0,0.25), 0 4px 6px -2px rgba(0,0,0,0.12)" },
+    "xl": { "value": "0 25px 50px -12px rgba(0,0,0,0.4)" },
+    "focus": { "value": "0 0 0 2px var(--gray-1), 0 0 0 4px var(--indigo-8)", "comment": "Keyboard focus ring" },
+    "card-hover": { "value": "0 0 0 1px var(--indigo-4), 0 2px 8px rgba(0,0,0,0.2)", "comment": "Card hover border glow" }
+  },
+
+  "motion": {
+    "easing": {
+      "default": { "value": "cubic-bezier(0.16, 1, 0.3, 1)", "name": "ease-out-expo" },
+      "in-out": { "value": "cubic-bezier(0.4, 0, 0.2, 1)" },
+      "spring": { "value": "cubic-bezier(0.175, 0.885, 0.32, 1.275)" }
+    },
+    "duration": {
+      "instant": { "value": "0ms" },
+      "fast": { "value": "120ms", "comment": "Hover states, micro-interactions" },
+      "normal": { "value": "200ms", "comment": "Panel open/close, transitions" },
+      "slow": { "value": "350ms", "comment": "Page-level animations — use sparingly" }
+    }
+  },
+
+  "layout": {
+    "sidebar-width": { "value": "220px" },
+    "content-max-width": { "value": "1200px" },
+    "header-height": { "value": "56px" },
+    "copilot-width": { "value": "360px" }
+  },
+
+  "_dead_tokens": {
+    "note": "The following token files exist but are NOT injected into the Reflex app. They were written for NiceGUI and are inert. Migrate inject_design_tokens() to rx.GlobalStyle or delete.",
+    "files": ["src/dex_studio/design_tokens.py", "src/dex_studio/theme.py"]
+  }
+}

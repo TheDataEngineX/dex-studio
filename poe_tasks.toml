@@ -1,7 +1,7 @@
 [tool.poe]
 executor.type = "uv"
 
-# ── Installation & Setup ──────────────────────────────────────────────────
+# ── Installation & Setup ──────────────────────────────────────────────────────
 [tool.poe.tasks.install]
 cmd = "uv sync"
 help = "Install dependencies"
@@ -14,60 +14,46 @@ help = "Install all dependency groups (dev included)"
 shell = "bash scripts/setup-system.sh"
 help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash scripts/setup-system.sh' directly if prompted"
 
-# ── Development ────────────────────────────────────────────────────────────
+# ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
-cmd = "dex-studio --no-native"
-help = "Launch DEX Studio in browser mode (development)"
+cmd = "reflex run --env dev"
+env = { PYTHONPATH = "src" }
+help = "Launch DEX Studio Reflex dev server (port 7860)"
 
-[tool.poe.tasks.dev-native]
-cmd = "dex-studio"
-help = "Launch DEX Studio in native window mode"
+[tool.poe.tasks.dev-export]
+cmd = "reflex export"
+env = { PYTHONPATH = "src" }
+help = "Export Reflex app as static bundle"
 
-# ── Testing ────────────────────────────────────────────────────────────────
-[tool.poe.tasks.test-core]
-cmd = "pytest tests/ -v --tb=short"
-help = "Internal: run all tests without dependency sync"
-
-[tool.poe.tasks.test-unit-core]
-cmd = "pytest tests/unit/ -v --tb=short"
-help = "Internal: run unit tests without dependency sync"
-
+# ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]
 cmd = "pytest tests/ -v --cov=dex_studio --cov-report=html --cov-report=xml:coverage.xml --cov-report=term-missing"
 help = "Internal: run coverage tests without dependency sync"
-
-[tool.poe.tasks.test]
-shell = "poe uv-sync && poe test-core"
-help = "Run all tests"
-
-[tool.poe.tasks.test-unit]
-shell = "poe uv-sync && poe test-unit-core"
-help = "Run unit tests only"
 
 [tool.poe.tasks.test-cov]
 shell = "poe uv-sync && poe test-cov-core"
 help = "Run tests with coverage report (HTML + XML + terminal)"
 
-# ── Code Quality ───────────────────────────────────────────────────────────
+# ── Code Quality ──────────────────────────────────────────────────────────────
 [tool.poe.tasks.lint]
-shell = "ruff check src/ tests/"
-help = "Run ruff lint on source and test files"
+cmd = "ruff check src/ tests/"
+help = "Run ruff linter"
 
 [tool.poe.tasks.lint-fix]
-shell = "ruff check --fix src/ tests/ && ruff format src/ tests/"
-help = "Auto-fix lint issues and format code"
-
-[tool.poe.tasks.format]
-shell = "ruff format src/ tests/"
-help = "Format code with ruff"
+cmd = "ruff check --fix src/ tests/"
+help = "Run ruff linter with auto-fix"
 
 [tool.poe.tasks.typecheck]
 cmd = "mypy src/"
 help = "Run mypy strict type checking"
 
-[tool.poe.tasks.security]
-cmd = "uvx pip-audit --progress-spinner off"
-help = "Audit dependencies for known vulnerabilities"
+[tool.poe.tasks.test]
+cmd = "pytest tests/ -v --tb=short"
+help = "Run all tests"
+
+[tool.poe.tasks.test-core]
+cmd = "pytest tests/ -v --tb=short"
+help = "Internal: run tests without dependency sync"
 
 [tool.poe.tasks.check-all-core]
 shell = "poe lint && poe typecheck && poe test-core"
@@ -81,11 +67,7 @@ help = "Run full project checks: lint, typecheck, tests"
 shell = "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; find . -type f -name '*.pyc' -delete 2>/dev/null; rm -rf .pytest_cache .mypy_cache .ruff_cache dist build *.egg-info .nicegui 2>/dev/null; echo 'Cache and artifacts cleaned'"
 help = "Remove cache and build artifacts"
 
-# ── UV Package Manager ────────────────────────────────────────────────────
-[tool.poe.tasks.uv-lock]
-cmd = "uv lock"
-help = "Resolve dependencies from pyproject.toml and write uv.lock"
-
+# ── UV Package Manager ────────────────────────────────────────────────────────
 [tool.poe.tasks.uv-sync]
 cmd = "uv sync"
 help = "Install dependencies from uv.lock"
@@ -96,19 +78,39 @@ cmd = "uv sync --all-groups"
 help = "Install dependencies from uv.lock for all groups"
 env = { UV_PROJECT_ENVIRONMENT = ".venv" }
 
-# ── Version Management ─────────────────────────────────────────────────────
+[tool.poe.tasks.uv-lock]
+cmd = "uv lock"
+help = "Resolve dependencies from pyproject.toml and write uv.lock"
+
+# ── Version Management ────────────────────────────────────────────────────────
 [tool.poe.tasks.version]
 shell = "python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')); print(t['project']['version'])\""
 help = "Show current version"
 
-[tool.poe.tasks.version-patch]
-shell = "bash ../.github/scripts/bump-version.sh patch && uv lock"
-help = "Bump patch version (x.x.X) — bug fixes, no new features"
+# ── Code Quality (additional) ─────────────────────────────────────────────────
+[tool.poe.tasks.format]
+shell = "ruff format src/ tests/"
+help = "Format code with ruff"
 
-[tool.poe.tasks.version-minor]
-shell = "bash ../.github/scripts/bump-version.sh minor && uv lock"
-help = "Bump minor version (x.X.0) — new backward-compatible features"
+[tool.poe.tasks.security]
+cmd = "uvx pip-audit --progress-spinner off"
+help = "Audit dependencies for known vulnerabilities"
 
-[tool.poe.tasks.version-major]
-shell = "bash ../.github/scripts/bump-version.sh major && uv lock"
-help = "Bump major version (X.0.0) — breaking changes"
+# ── Claude Code Settings ──────────────────────────────────────────────────────
+[tool.poe.tasks.sync-claude-settings]
+shell = """
+mkdir -p .claude
+cp ../.github/.claude/settings.json .claude/settings.json
+echo "✓ .claude/settings.json synced from .github/.claude/settings.json"
+"""
+help = "Sync shared Claude Code settings from canonical .github/.claude/settings.json"
+
+# ── Git Hooks ─────────────────────────────────────────────────────────────────
+[tool.poe.tasks.install-hooks]
+shell = """
+cp ../.github/scripts/pre-commit-version-bump.sh .git/hooks/pre-commit
+cp ../.github/scripts/bump-version.sh .git/hooks/bump-version.sh
+chmod +x .git/hooks/pre-commit .git/hooks/bump-version.sh
+echo "✓ pre-commit hook installed"
+"""
+help = "Install git hooks (auto-bump patch version on commit if not manually changed)"

@@ -1,0 +1,11 @@
+product_id,name,category,price,stock,rating,description
+P001,Analytics Pro Dashboard,software,199.00,999,4.8,Real-time analytics with 50+ chart types and custom KPIs
+P002,Data Pipeline Builder,software,149.00,999,4.6,Visual drag-and-drop pipeline builder with 100+ connectors
+P003,ML Model Registry,software,299.00,999,4.9,Enterprise model versioning storage promotion and A/B testing
+P004,Vector Search Engine,software,399.00,999,4.7,Semantic search over your data warehouse with hybrid retrieval
+P005,Quality Gate Toolkit,software,99.00,999,4.5,Automated data quality checks completeness and drift alerts
+P006,Warehouse Connector Pack,software,79.00,999,4.4,Native connectors for Snowflake BigQuery Redshift DeltaLake
+P007,Streaming Ingestion Kit,software,189.00,999,4.6,Kafka Kinesis and Pulsar ingest with exactly-once semantics
+P008,Governance Dashboard,software,259.00,999,4.8,Column-level lineage PII detection and access auditing
+P009,AI Copilot Add-on,software,129.00,999,4.7,Natural-language interface for SQL generation and pipeline debugging
+P010,Enterprise Support Plan,service,499.00,50,4.9,24/7 SLA-backed support dedicated CSM and quarterly reviews

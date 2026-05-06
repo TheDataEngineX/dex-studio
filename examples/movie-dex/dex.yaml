@@ -1,0 +1,194 @@
+project:
+  name: MovieDEX
+  version: 0.1.0
+  description: Movie recommendation engine powered by DataEngineX
+data:
+  engine: duckdb
+  sources:
+    movies:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      query: null
+      url: null
+      connection: {}
+      options: {}
+    ratings:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      query: null
+      url: null
+      connection: {}
+      options: {}
+    credits:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      query: null
+      url: null
+      connection: {}
+      options: {}
+  pipelines:
+    load_movies:
+      source: movies
+      transforms:
+      - type: filter
+        condition: title IS NOT NULL
+        expression: null
+        name: null
+        columns: null
+        key: null
+        sql: null
+        options: {}
+      quality: null
+      destination: silver.load_movies
+      target: null
+      depends_on: []
+      schedule: '*/15 * * * *'
+    process_ratings:
+      source: ratings
+      transforms:
+      - type: filter
+        condition: rating > 0
+        expression: null
+        name: null
+        columns: null
+        key: null
+        sql: null
+        options: {}
+      quality: null
+      destination: silver.process_ratings
+      target: null
+      depends_on: []
+      schedule: '*/15 * * * *'
+    load_credits:
+      source: credits
+      transforms:
+      - type: filter
+        condition: person IS NOT NULL
+        expression: null
+        name: null
+        columns: null
+        key: null
+        sql: null
+        options: {}
+      quality: null
+      destination: silver.load_credits
+      target: null
+      depends_on: []
+      schedule: '*/15 * * * *'
+    genre_analysis:
+      source: silver.load_movies
+      transforms:
+      - type: sql
+        condition: null
+        expression: null
+        name: null
+        columns: null
+        key: null
+        sql: 'SELECT genre, COUNT(*) as count, AVG(rating) as avg_rating
+
+          FROM _data
+
+          GROUP BY genre
+
+          ORDER BY count DESC
+
+          '
+        options: {}
+      quality: null
+      destination: gold.genre_stats
+      target: null
+      depends_on: []
+      schedule: null
+ml:
+  tracker: builtin
+  tracking:
+    backend: builtin
+    uri: null
+  features:
+    backend: builtin
+    options: {}
+  experiments:
+    recommendation_model:
+      model_type: sklearn
+      target: rating
+      features:
+      - genre_encoded
+      - year
+      - votes
+      params:
+        n_estimators: 100
+        max_depth: 5
+  serving:
+    engine: builtin
+    endpoints: []
+  drift:
+    monitor: []
+    method: psi
+    threshold: 0.2
+ai:
+  llm:
+    provider: ollama
+    model: llama3.2
+    fallback: null
+    options: {}
+  retrieval:
+    strategy: hybrid
+    top_k: 10
+    reranker: true
+    options: {}
+  vectorstore:
+    backend: builtin
+    embedding_model: all-MiniLM-L6-v2
+    options: {}
+  collections:
+    movie_summaries:
+      source: null
+      embedding_model: null
+      chunk_size: 512
+      chunk_overlap: 50
+  agents:
+    movie_expert:
+      runtime: builtin
+      system_prompt: You are a helpful movie recommendation assistant. Help users
+        find movies they might enjoy based on their preferences.
+      tools:
+      - query
+      - echo
+      model: null
+      max_iterations: 10
+      memory: short_term
+    data_assistant:
+      runtime: builtin
+      system_prompt: You are a data engineering assistant. Help users understand their
+        data pipelines and quality.
+      tools:
+      - query
+      - list_tools
+      model: null
+      max_iterations: 10
+      memory: short_term
+secops:
+  pii:
+    scan: false
+    patterns:
+    - email
+    - ssn
+    - phone
+    - credit_card
+    action: warn
+  audit:
+    enabled: false
+    destination: file
+server:
+  host: 0.0.0.0
+  port: 17000
+  auth:
+    enabled: false
+    secret_key: null
+    algorithm: HS256
+  cors_origins:
+  - '*'
+observability:
+  metrics: true
+  tracing: false
+  log_level: INFO

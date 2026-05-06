@@ -1,224 +1,248 @@
-"""HTTP client for the DEX engine API.
-
-Wraps ``httpx.AsyncClient`` with retry logic, timeout handling, and
-structured error responses.  All public methods return typed dicts or
-raise ``DexAPIError``.
-"""
+"""HTTP API client for DEX Engine."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import httpx
 
 from dex_studio.config import StudioConfig
 
-__all__ = [
-    "DexAPIError",
-    "DexClient",
-]
+_MAX_ERROR_MSG = 500
 
 
 class DexAPIError(Exception):
-    """Raised when a DEX engine API call fails."""
+    """Raised when the DEX API returns an error response."""
 
     def __init__(self, status_code: int, message: str, url: str) -> None:
         self.status_code = status_code
+        self.message = message[:_MAX_ERROR_MSG] if message else message
         self.url = url
-        super().__init__(f"DEX API error {status_code} ({url}): {message}")
+        super().__init__(f"{status_code}: {self.message} ({url})")
 
 
-@dataclass(slots=True)
 class DexClient:
-    """Async HTTP client for the DEX engine REST API.
+    """Async HTTP client for the DEX Engine API."""
 
-    Usage::
+    def __init__(self, config: StudioConfig) -> None:
+        self._config = config
+        self._client: httpx.AsyncClient | None = None
 
-        client = DexClient(config)
-        await client.connect()
-        health = await client.health()
-        await client.close()
-    """
+    @property
+    def is_connected(self) -> bool:
+        return self._client is not None
 
-    config: StudioConfig
-    _client: httpx.AsyncClient | None = None
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    @property
+    def config(self) -> StudioConfig:
+        """Expose config for tests that access client.config."""
+        return self._config
 
     async def connect(self) -> None:
-        """Create the underlying ``httpx.AsyncClient``."""
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self.config.api_token:
-            headers["Authorization"] = f"Bearer {self.config.api_token}"
-
+        """Create the underlying HTTP client."""
         self._client = httpx.AsyncClient(
-            base_url=self.config.api_url,
-            timeout=httpx.Timeout(self.config.timeout),
-            headers=headers,
+            base_url=self._config.api_url,
+            timeout=self._config.timeout,
+            headers=self._build_headers(),
         )
 
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self._config.api_token:
+            headers["Authorization"] = f"Bearer {self._config.api_token}"
+        return headers
+
     async def close(self) -> None:
-        """Shut down the HTTP client."""
+        """Close the underlying HTTP client."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None
 
-    @property
-    def is_connected(self) -> bool:
-        return self._client is not None and not self._client.is_closed
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    async def _get(self, path: str, **params: Any) -> dict[str, Any]:
-        """Issue a GET and return parsed JSON, raising ``DexAPIError`` on failure."""
-        if self._client is None:
-            msg = "Client not connected — call connect() first"
-            raise RuntimeError(msg)
-
+    async def _get(self, path: str, **kwargs: Any) -> dict[str, object]:
+        self._assert_connected()
+        assert self._client is not None
         try:
-            resp = await self._client.get(path, params=params or None)
-        except httpx.HTTPError as exc:
+            resp = await self._client.get(path, **kwargs)
+        except httpx.ConnectTimeout as exc:
             raise DexAPIError(
                 status_code=0,
-                message=f"Connection failed: {exc}",
-                url=f"{self.config.api_url}{path}",
+                message=f"Connection timeout: {exc}",
+                url=self._config.api_url + path,
             ) from exc
+        return self._handle_response(resp)
 
-        if resp.status_code >= 400:
-            body = resp.text[:500]
-            raise DexAPIError(
-                status_code=resp.status_code,
-                message=body,
-                url=str(resp.url),
-            )
-        return cast(dict[str, Any], resp.json())
-
-    async def _post(self, path: str, json: Any = None) -> dict[str, Any]:
-        """Issue a POST and return parsed JSON."""
-        if self._client is None:
-            msg = "Client not connected — call connect() first"
-            raise RuntimeError(msg)
-
+    async def _post(self, path: str, **kwargs: Any) -> dict[str, object]:
+        self._assert_connected()
+        assert self._client is not None
         try:
-            resp = await self._client.post(path, json=json)
-        except httpx.HTTPError as exc:
+            resp = await self._client.post(path, **kwargs)
+        except httpx.ConnectTimeout as exc:
             raise DexAPIError(
                 status_code=0,
-                message=f"Connection failed: {exc}",
-                url=f"{self.config.api_url}{path}",
+                message=f"Connection timeout: {exc}",
+                url=self._config.api_url + path,
             ) from exc
+        return self._handle_response(resp)
 
+    def _assert_connected(self) -> None:
+        if self._client is None:
+            raise RuntimeError("not connected")
+
+    def _handle_response(self, resp: httpx.Response) -> dict[str, object]:
         if resp.status_code >= 400:
-            body = resp.text[:500]
             raise DexAPIError(
                 status_code=resp.status_code,
-                message=body,
+                message=resp.text,
                 url=str(resp.url),
             )
-        return cast(dict[str, Any], resp.json())
+        try:
+            result: dict[str, object] = resp.json()
+            return result
+        except ValueError as exc:
+            raise DexAPIError(
+                status_code=resp.status_code,
+                message=f"Invalid JSON response: {exc}",
+                url=str(resp.url),
+            ) from exc
 
-    # ------------------------------------------------------------------
-    # Health & System
-    # ------------------------------------------------------------------
+    # Health
+    async def ping(self) -> bool:
+        """Return True if the engine is reachable and healthy."""
+        try:
+            resp = await self._get("/api/v1/health")
+            status = resp.get("status", "")
+            return status in ("alive", "healthy")
+        except (httpx.RequestError, DexAPIError):
+            return False
 
-    async def health(self) -> dict[str, Any]:
-        """``GET /health``"""
-        return await self._get("/health")
+    async def health(self) -> dict[str, object]:
+        """Return full health status dict from /api/v1/health."""
+        return await self._get("/api/v1/health")
 
-    async def readiness(self) -> dict[str, Any]:
-        """``GET /ready``"""
-        return await self._get("/ready")
+    # Data endpoints
+    async def list_sources(self) -> dict[str, object]:
+        """List configured data sources."""
+        return await self._get("/api/v1/data/sources")
 
-    async def startup(self) -> dict[str, Any]:
-        """``GET /startup``"""
-        return await self._get("/startup")
+    async def get_source(self, name: str) -> dict[str, object]:
+        """Get details for a single data source."""
+        return await self._get(f"/api/v1/data/sources/{name}")
 
-    async def system_config(self) -> dict[str, Any]:
-        """``GET /api/v1/system/config``"""
-        return await self._get("/api/v1/system/config")
+    async def list_pipelines(self) -> dict[str, object]:
+        """List all pipelines."""
+        return await self._get("/api/v1/pipelines/")
 
-    async def root(self) -> dict[str, Any]:
-        """``GET /`` — returns API name + version."""
-        return await self._get("/")
+    async def get_pipeline(self, name: str) -> dict[str, object]:
+        """Get details for a single pipeline."""
+        return await self._get(f"/api/v1/pipelines/{name}")
 
-    # ------------------------------------------------------------------
-    # Data Quality
-    # ------------------------------------------------------------------
+    async def run_pipeline(self, name: str) -> dict[str, object]:
+        """Trigger a pipeline run."""
+        return await self._post(f"/api/v1/pipelines/{name}/run")
 
-    async def data_sources(self, cursor: str | None = None, limit: int = 20) -> dict[str, Any]:
-        """``GET /api/v1/data/sources``"""
-        params: dict[str, Any] = {"limit": limit}
-        if cursor:
-            params["cursor"] = cursor
-        return await self._get("/api/v1/data/sources", **params)
+    async def warehouse_layers(self) -> dict[str, object]:
+        """List warehouse layers (bronze, silver, gold)."""
+        return await self._get("/api/v1/data/warehouse/layers")
 
-    async def data_quality_summary(self) -> dict[str, Any]:
-        """``GET /api/v1/data/quality``"""
+    async def warehouse_tables(self, layer: str) -> dict[str, object]:
+        """List tables in a warehouse layer."""
+        return await self._get(f"/api/v1/data/warehouse/{layer}/tables")
+
+    async def list_lineage(self) -> dict[str, object]:
+        """List data lineage events."""
+        return await self._get("/api/v1/data/lineage")
+
+    async def data_quality_summary(self) -> dict[str, object]:
+        """Get data quality summary across pipelines."""
         return await self._get("/api/v1/data/quality")
 
-    async def data_quality_layer(self, layer: str, limit: int = 10) -> dict[str, Any]:
-        """``GET /api/v1/data/quality/{layer}``"""
-        return await self._get(f"/api/v1/data/quality/{layer}", limit=limit)
+    async def data_quality_pipeline(self, pipeline: str) -> dict[str, object]:
+        """Get data quality details for a specific pipeline."""
+        return await self._get(f"/api/v1/data/quality/{pipeline}")
 
-    # ------------------------------------------------------------------
-    # Warehouse / Lineage
-    # ------------------------------------------------------------------
+    # ML endpoints
+    async def list_experiments(self) -> dict[str, object]:
+        """List ML experiments."""
+        return await self._get("/api/v1/ml/experiments")
 
-    async def warehouse_layers(self) -> dict[str, Any]:
-        """``GET /api/v1/warehouse/layers``"""
-        return await self._get("/api/v1/warehouse/layers")
+    async def create_experiment(self, name: str) -> dict[str, object]:
+        """Create a new ML experiment."""
+        return await self._post("/api/v1/ml/experiments", json={"name": name})
 
-    async def lineage(self, event_id: str) -> dict[str, Any]:
-        """``GET /api/v1/warehouse/lineage/{event_id}``"""
-        return await self._get(f"/api/v1/warehouse/lineage/{event_id}")
+    async def list_runs(self, experiment: str) -> dict[str, object]:
+        """List runs for an experiment."""
+        return await self._get(f"/api/v1/ml/experiments/{experiment}/runs")
 
-    # ------------------------------------------------------------------
-    # ML (requires ML router mounted on DEX engine)
-    # ------------------------------------------------------------------
+    async def get_model(self, name: str) -> dict[str, object]:
+        """Get model details."""
+        return await self._get(f"/api/v1/ml/models/{name}")
 
-    async def list_models(self) -> dict[str, Any]:
-        """``GET /api/v1/models``"""
-        return await self._get("/api/v1/models")
+    async def predict(self, model_name: str, data: dict[str, object]) -> dict[str, object]:
+        """Get a prediction from a model."""
+        return await self._post(f"/api/v1/ml/models/{model_name}/predict", json=data)
 
-    async def model_metadata(self, name: str, version: str | None = None) -> dict[str, Any]:
-        """``GET /api/v1/models/{name}``"""
-        params: dict[str, Any] = {}
-        if version:
-            params["version"] = version
-        return await self._get(f"/api/v1/models/{name}", **params)
+    async def promote_model(self, name: str, stage: str) -> dict[str, object]:
+        """Promote a model to a given stage (staging, production)."""
+        return await self._post(f"/api/v1/ml/models/{name}/promote", json={"stage": stage})
 
-    async def predict(
-        self,
-        model_name: str,
-        features: list[dict[str, Any]],
-        *,
-        version: str | None = None,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """``POST /api/v1/predict``"""
-        payload: dict[str, Any] = {
-            "model_name": model_name,
-            "features": features,
-        }
-        if version:
-            payload["version"] = version
-        if request_id:
-            payload["request_id"] = request_id
-        return await self._post("/api/v1/predict", json=payload)
+    async def list_feature_groups(self) -> dict[str, object]:
+        """List ML feature groups."""
+        return await self._get("/api/v1/ml/features")
 
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
+    async def get_features(
+        self, group: str, entity_ids: list[str] | None = None
+    ) -> dict[str, object]:
+        """Get features from a feature group, optionally filtered by entity IDs."""
+        params: dict[str, object] = {"group": group}
+        if entity_ids:
+            params["entity_ids"] = ",".join(entity_ids)
+        return await self._get("/api/v1/ml/features", params=params)
 
-    async def ping(self) -> bool:
-        """Return ``True`` if DEX engine is reachable and healthy."""
-        try:
-            result = await self.health()
-            return result.get("status") == "alive"
-        except (DexAPIError, RuntimeError):
-            return False
+    async def save_features(
+        self, group: str, features: list[dict[str, object]], id_field: str
+    ) -> dict[str, object]:
+        """Save features to a feature group."""
+        return await self._post(
+            "/api/v1/ml/features",
+            json={"group": group, "features": features, "id_field": id_field},
+        )
+
+    async def check_drift(self, pipeline: str) -> dict[str, object]:
+        """Check data drift for a pipeline."""
+        return await self._get(f"/api/v1/ml/drift/{pipeline}")
+
+    # AI endpoints
+    async def list_agents(self) -> dict[str, object]:
+        """List available AI agents."""
+        return await self._get("/api/v1/ai/agents")
+
+    async def get_agent(self, name: str) -> dict[str, object]:
+        """Get details for a specific agent."""
+        return await self._get(f"/api/v1/ai/agents/{name}")
+
+    async def agent_chat(self, agent: str, message: str) -> dict[str, object]:
+        """Send a chat message to an agent."""
+        return await self._post(f"/api/v1/ai/agents/{agent}/chat", json={"message": message})
+
+    async def list_tools(self) -> dict[str, object]:
+        """List available AI tools."""
+        return await self._get("/api/v1/ai/tools")
+
+    async def get_tool(self, name: str) -> dict[str, object]:
+        """Get details for a specific tool."""
+        return await self._get(f"/api/v1/ai/tools/{name}")
+
+    # System endpoints
+    async def components(self) -> dict[str, object]:
+        """List system components."""
+        return await self._get("/api/v1/system/components")
+
+    async def logs(self, level: str | None = None, limit: int = 100) -> dict[str, object]:
+        """Fetch system logs with optional level filter."""
+        params: dict[str, object] = {"limit": limit}
+        if level:
+            params["level"] = level
+        return await self._get("/api/v1/system/logs", params=params)
+
+    async def traces(self, limit: int = 100) -> dict[str, object]:
+        """Fetch system traces."""
+        return await self._get("/api/v1/system/traces", params={"limit": limit})
