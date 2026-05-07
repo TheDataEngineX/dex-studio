@@ -2,17 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from dex_studio.engine import DexEngine
-
-
-@pytest.fixture
-def engine() -> DexEngine:
-    """Create a DexEngine with the movie-dex config."""
-    return DexEngine(Path("/home/jay/workspace/DataEngineX/dex-studio/movie-dex/dex.yaml"))
 
 
 def test_duckdb_context_manager_creates_connection(engine: DexEngine) -> None:
