@@ -10,9 +10,36 @@ from dex_studio.engine import DexEngine
 
 
 @pytest.fixture
-def engine() -> DexEngine:
-    """Create a DexEngine with the movie-dex config."""
-    return DexEngine(Path("/home/jay/workspace/DataEngineX/dex-studio/movie-dex/dex.yaml"))
+def engine(tmp_path: Path) -> DexEngine:
+    """Create a DexEngine with a minimal in-memory config (no local path dependency)."""
+    config_path = tmp_path / "dex.yaml"
+    config_path.write_text(
+        "project:\n"
+        "  name: TestProject\n"
+        "  version: 0.1.0\n"
+        "  description: Test config\n"
+        "data:\n"
+        "  engine: duckdb\n"
+        "  sources: {}\n"
+        "  pipelines:\n"
+        "    ingest:\n"
+        "      source: raw\n"
+        "      transforms: []\n"
+        "      quality: null\n"
+        "      destination: silver.ingest\n"
+        "      target: null\n"
+        "      depends_on: []\n"
+        "      schedule: '0 * * * *'\n"
+        "    process:\n"
+        "      source: raw\n"
+        "      transforms: []\n"
+        "      quality: null\n"
+        "      destination: silver.process\n"
+        "      target: null\n"
+        "      depends_on: []\n"
+        "      schedule: null\n"
+    )
+    return DexEngine(config_path)
 
 
 def test_pipeline_stats_returns_dict(engine: DexEngine) -> None:
