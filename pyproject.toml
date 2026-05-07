@@ -17,7 +17,6 @@ classifiers = [
 
 dependencies = [
     "dataenginex>=1.1.0",
-    "careerdex>=0.1.0",
     "reflex>=0.7.0",
     "httpx>=0.28.1",
     "pydantic>=2.13.2",
@@ -45,10 +44,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]
 
-[tool.uv.sources]
-careerdex = { path = "../careerdex", editable = true }
-dataenginex = { path = "../dex", editable = true }
 
+[tool.uv.sources]
+dataenginex = { path = "../dex", editable = true }
 
 [dependency-groups]
 dev = [

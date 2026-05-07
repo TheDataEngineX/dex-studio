@@ -28,14 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - run: |
-          git clone --depth=1 https://github.com/TheDataEngineX/DEX.git ../dex
-          git clone --depth=1 https://github.com/TheDataEngineX/careerdex.git ../careerdex
+      - run: git clone --depth=1 https://github.com/TheDataEngineX/DEX.git ../dex
       - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
-      - run: uv sync --all-groups
+      - run: uv sync --all-groups --frozen
       - run: uv run poe lint
       - run: uv run poe typecheck
       - run: uv run pytest tests/ -x --tb=short -q --cov=dex_studio --cov-report=xml
