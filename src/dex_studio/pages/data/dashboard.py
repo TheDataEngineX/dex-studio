@@ -20,7 +20,10 @@ def data_dashboard() -> rx.Component:
             ),  # type: ignore[attr-defined]
             metric_card("database", "Sources", SourceState.sources.length(), accent="indigo"),  # type: ignore[attr-defined]
             metric_card(
-                "shield-check", "Quality Score", QualityState.quality_score, accent="indigo"
+                "shield-check",
+                "Quality Score",
+                QualityState.quality_score,
+                accent="indigo",  # type: ignore[arg-type]
             ),
             columns="3",
             gap="4",
