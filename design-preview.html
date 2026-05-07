@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEX Studio — Design Preview</title>
+<style>
+  :root {
+    /* Radix Slate Dark approximation for preview */
+    --gray-1: #111113;
+    --gray-2: #18191b;
+    --gray-3: #212225;
+    --gray-4: #272a2d;
+    --gray-5: #2e3135;
+    --gray-6: #363a3f;
+    --gray-7: #43484e;
+    --gray-8: #5a6169;
+    --gray-9: #696e77;
+    --gray-10: #777b84;
+    --gray-11: #b0b4ba;
+    --gray-12: #edeef0;
+
+    --indigo-3: #182449;
+    --indigo-4: #1d2f6a;
+    --indigo-6: #304384;
+    --indigo-8: #4c62d8;
+    --indigo-9: #6e7fdb;
+    --indigo-10: #8b9de3;
+    --indigo-11: #c4caf9;
+
+    --violet-9: #8b5cf6;
+    --cyan-9: #22d3ee;
+    --orange-9: #f97316;
+    --teal-9: #14b8a6;
+    --green-9: #22c55e;
+    --amber-9: #f59e0b;
+    --red-9: #ef4444;
+    --blue-9: #3b82f6;
+
+    --radius-1: 4px;
+    --radius-2: 6px;
+    --radius-3: 8px;
+    --radius-4: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--gray-2);
+    color: var(--gray-12);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .preview-nav {
+    position: sticky; top: 0;
+    background: var(--gray-1);
+    border-bottom: 1px solid var(--gray-4);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 8px;
+    z-index: 100;
+  }
+  .logo-box {
+    background: var(--indigo-9);
+    padding: 6px; border-radius: var(--radius-2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; width: 28px; height: 28px;
+  }
+  .preview-nav h1 { font-size: 15px; font-weight: 700; }
+  .preview-nav span { font-size: 12px; color: var(--gray-9); margin-left: auto; }
+
+  .nav-tabs {
+    display: flex; gap: 4px;
+    padding: 0 24px;
+    background: var(--gray-1);
+    border-bottom: 1px solid var(--gray-4);
+  }
+  .nav-tab {
+    padding: 10px 16px; font-size: 13px; cursor: pointer;
+    border-bottom: 2px solid transparent; color: var(--gray-10);
+    transition: all 0.12s ease; background: none;
+    border-top: none; border-left: none; border-right: none;
+  }
+  .nav-tab:hover { color: var(--gray-12); }
+  .nav-tab.active { color: var(--indigo-11); border-bottom-color: var(--indigo-9); }
+
+  .section { display: none; padding: 32px 24px; max-width: 1100px; }
+  .section.active { display: block; }
+
+  h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  h3 {
+    font-size: 11px; font-weight: 600; color: var(--gray-9);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 24px 0 12px;
+  }
+  p.desc { font-size: 13px; color: var(--gray-10); margin-bottom: 24px; }
+
+  .grid { display: grid; gap: 12px; }
+  .grid-2 { grid-template-columns: repeat(2,1fr); }
+  .grid-3 { grid-template-columns: repeat(3,1fr); }
+  .grid-4 { grid-template-columns: repeat(4,1fr); }
+  .grid-5 { grid-template-columns: repeat(5,1fr); }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+
+  /* Swatches */
+  .swatch-group label { font-size: 11px; color: var(--gray-9); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.04em; display: block; }
+  .swatch {
+    height: 36px; border-radius: var(--radius-2);
+    display: flex; align-items: center; padding: 0 10px;
+    font-size: 11px; font-family: monospace;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .swatch-scale { display: flex; gap: 2px; margin-bottom: 4px; }
+  .swatch-scale .step {
+    flex: 1; height: 28px; border-radius: var(--radius-1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: rgba(255,255,255,0.4); cursor: default;
+  }
+
+  /* Type */
+  .type-row {
+    display: flex; align-items: baseline; gap: 16px;
+    padding: 12px 0; border-bottom: 1px solid var(--gray-3);
+  }
+  .type-meta { width: 90px; flex-shrink: 0; font-size: 11px; color: var(--gray-8); font-family: monospace; }
+
+  /* Spacing */
+  .space-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .space-bar { background: var(--indigo-9); height: 20px; border-radius: var(--radius-1); opacity: 0.7; }
+  .space-label { font-size: 12px; color: var(--gray-9); font-family: monospace; min-width: 100px; }
+  .space-px { font-size: 11px; color: var(--gray-7); }
+
+  /* Component preview wrapper */
+  .cp {
+    background: var(--gray-1); border: 1px solid var(--gray-4);
+    border-radius: var(--radius-3); padding: 24px; margin-bottom: 16px;
+  }
+  .cp-label {
+    font-size: 11px; color: var(--gray-8); font-family: monospace;
+    margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--gray-3);
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: var(--radius-2);
+    font-size: 13px; font-weight: 500; cursor: pointer; border: none;
+    transition: all 0.12s ease;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--indigo-9); color: white; }
+  .btn-primary:hover { background: var(--indigo-10); }
+  .btn-soft { background: var(--indigo-3); color: var(--indigo-11); }
+  .btn-soft:hover { background: var(--indigo-4); }
+  .btn-ghost { background: transparent; color: var(--gray-11); }
+  .btn-ghost:hover { background: var(--gray-3); }
+  .btn-outline { background: transparent; color: var(--gray-11); border: 1px solid var(--gray-6); }
+  .btn-outline:hover { border-color: var(--gray-8); color: var(--gray-12); }
+  .btn-danger { background: var(--red-9); color: white; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-lg { padding: 10px 20px; font-size: 15px; }
+
+  /* Badges */
+  .badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-green { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .badge-red { background: rgba(239,68,68,0.15); color: #f87171; }
+  .badge-amber { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .badge-indigo { background: var(--indigo-3); color: var(--indigo-11); }
+  .badge-gray { background: var(--gray-3); color: var(--gray-10); }
+  .badge-violet { background: rgba(139,92,246,0.15); color: #a78bfa; }
+
+  /* Cards */
+  .card {
+    background: var(--gray-2); border: 1px solid var(--gray-4);
+    border-radius: var(--radius-3); padding: 20px;
+    transition: all 0.15s ease;
+  }
+  .card:hover {
+    border-color: var(--indigo-6);
+    box-shadow: 0 0 0 1px var(--indigo-4), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .card-icon {
+    width: 36px; height: 36px; border-radius: var(--radius-2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; margin-bottom: 12px;
+  }
+  .metric-value { font-size: 28px; font-weight: 700; margin: 4px 0; }
+  .metric-label { font-size: 12px; color: var(--gray-9); }
+
+  /* Input */
+  .input {
+    width: 100%; background: var(--gray-1); border: 1px solid var(--gray-6);
+    border-radius: var(--radius-2); padding: 8px 12px;
+    font-size: 14px; color: var(--gray-12); outline: none;
+    transition: border-color 0.12s ease; font-family: inherit;
+  }
+  .input:focus {
+    border-color: var(--indigo-8);
+    box-shadow: 0 0 0 2px var(--gray-1), 0 0 0 4px var(--indigo-8);
+  }
+  .input::placeholder { color: var(--gray-7); }
+
+  /* Table */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th {
+    padding: 8px 12px; text-align: left;
+    font-size: 11px; font-weight: 600; color: var(--gray-9);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--gray-4);
+  }
+  .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--gray-3); color: var(--gray-11); }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: var(--gray-3); }
+
+  /* Sidebar */
+  .sidebar-demo {
+    width: 220px; background: var(--gray-1);
+    border: 1px solid var(--gray-4); border-radius: var(--radius-3);
+    padding: 12px 0; font-size: 13px;
+  }
+  .sb-logo { display: flex; align-items: center; gap: 8px; padding: 4px 12px 12px; }
+  .sb-logo-box {
+    width: 28px; height: 28px; background: var(--indigo-9);
+    border-radius: var(--radius-2);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .sb-title { font-size: 13px; font-weight: 700; }
+  .sb-sub { font-size: 10px; color: var(--gray-9); }
+  .sb-divider { height: 1px; background: var(--gray-4); margin: 4px 0 8px; }
+  .sb-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; cursor: pointer;
+    color: var(--gray-11); font-size: 13px;
+    transition: all 0.1s ease;
+  }
+  .sb-item:hover { background: var(--indigo-3); color: var(--indigo-11); }
+  .sb-item.active { background: var(--indigo-3); color: var(--indigo-11); }
+  .sb-icon {
+    width: 28px; height: 28px; border-radius: var(--radius-2);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .sb-item.active .sb-icon { background: rgba(110,127,219,0.2); }
+  .sb-subnav {
+    padding-left: 0; border-left: 1px solid var(--gray-4);
+    margin: 2px 0 2px 29px; padding-bottom: 2px;
+  }
+  .sb-subitem {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 12px; font-size: 12px; cursor: pointer;
+    color: var(--gray-10); border-radius: var(--radius-2);
+    position: relative; transition: all 0.1s ease;
+  }
+  .sb-subitem.active { color: var(--indigo-11); }
+  .sb-subitem.active::before {
+    content: '';
+    position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 14px; border-radius: 2px;
+    background: var(--indigo-9);
+  }
+  .sb-subitem:hover { color: var(--gray-12); }
+
+  /* Toast */
+  .toast {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--gray-2); border: 1px solid var(--gray-6);
+    border-radius: var(--radius-3); padding: 12px 14px;
+    min-width: 280px; font-size: 13px; margin-bottom: 8px;
+  }
+  .toast-icon { font-size: 16px; flex-shrink: 0; }
+  .toast-msg { flex: 1; color: var(--gray-11); }
+
+  /* Callout */
+  .callout {
+    display: flex; gap: 10px; padding: 12px 14px;
+    border-radius: var(--radius-3); font-size: 13px; margin-bottom: 8px;
+  }
+  .callout-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); color: #fca5a5; }
+  .callout-warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); color: #fcd34d; }
+  .callout-info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); color: #93c5fd; }
+
+  /* Skeleton */
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .skeleton {
+    background: linear-gradient(90deg, var(--gray-3) 25%, var(--gray-4) 50%, var(--gray-3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: var(--radius-1);
+  }
+
+  /* Motion */
+  .motion-demo {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 0; border-bottom: 1px solid var(--gray-3);
+  }
+  .motion-box {
+    width: 40px; height: 40px; background: var(--indigo-9);
+    border-radius: var(--radius-2); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: white; flex-shrink: 0;
+  }
+  .motion-box:hover { transform: translateY(-4px); }
+  .motion-meta strong { color: var(--gray-12); font-family: monospace; font-size: 11px; display: block; }
+  .motion-meta p { color: var(--gray-9); font-size: 11px; margin-top: 2px; }
+
+  /* Domain card */
+  .domain-card {
+    background: var(--gray-2); border: 1px solid var(--gray-4);
+    border-radius: var(--radius-4); padding: 20px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .domain-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.3); border-color: var(--gray-6); }
+  .domain-icon { font-size: 26px; margin-bottom: 10px; }
+  .domain-card h4 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .domain-card p { font-size: 12px; color: var(--gray-9); margin-bottom: 12px; line-height: 1.5; }
+
+  /* Audit */
+  .score-high { color: #4ade80; font-weight: 700; font-size: 16px; }
+  .score-mid  { color: #fbbf24; font-weight: 700; font-size: 16px; }
+  .score-low  { color: #f87171; font-weight: 700; font-size: 16px; }
+
+  /* Blink */
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor { animation: blink 1s step-end infinite; color: var(--indigo-9); }
+
+  .tag { display: inline-block; background: var(--gray-3); color: var(--gray-10); font-size: 11px; padding: 2px 7px; border-radius: 9999px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<nav class="preview-nav">
+  <div class="logo-box">⚡</div>
+  <h1>DEX Studio</h1>
+  <span>Design Preview · source scan 2026-04-28 · dark mode</span>
+</nav>
+
+<div class="nav-tabs">
+  <button class="nav-tab active" onclick="show('colors',this)">Colors</button>
+  <button class="nav-tab" onclick="show('typography',this)">Typography</button>
+  <button class="nav-tab" onclick="show('spacing',this)">Spacing</button>
+  <button class="nav-tab" onclick="show('components',this)">Components</button>
+  <button class="nav-tab" onclick="show('navigation',this)">Navigation</button>
+  <button class="nav-tab" onclick="show('motion',this)">Motion</button>
+  <button class="nav-tab" onclick="show('audit',this)">Audit 57/100</button>
+</div>
+
+<!-- COLORS -->
+<div id="colors" class="section active">
+  <h2>Color System</h2>
+  <p class="desc">All live code uses Radix UI semantic tokens. Values here are dark-mode approximations — the real app uses Radix-generated values from <code>rx.theme(accent_color="indigo", gray_color="slate")</code>.</p>
+
+  <h3>Brand / Accent (Indigo)</h3>
+  <div class="grid grid-5" style="margin-bottom:24px">
+    <div class="swatch-group"><label>Subtle bg</label><div class="swatch" style="background:var(--indigo-3);color:var(--indigo-11)">--indigo-3</div></div>
+    <div class="swatch-group"><label>Active</label><div class="swatch" style="background:var(--indigo-8);color:white">--indigo-8</div></div>
+    <div class="swatch-group"><label>Primary</label><div class="swatch" style="background:var(--indigo-9);color:white">--indigo-9</div></div>
+    <div class="swatch-group"><label>Hover</label><div class="swatch" style="background:var(--indigo-10);color:white">--indigo-10</div></div>
+    <div class="swatch-group"><label>Text</label><div class="swatch" style="background:var(--indigo-11);color:var(--gray-1)">--indigo-11</div></div>
+  </div>
+
+  <h3>Domain Colors</h3>
+  <div class="grid grid-5" style="margin-bottom:24px">
+    <div class="swatch-group"><label>Data</label><div class="swatch" style="background:var(--indigo-9);color:white">--indigo-9</div></div>
+    <div class="swatch-group"><label>ML</label><div class="swatch" style="background:var(--violet-9);color:white">--violet-9</div></div>
+    <div class="swatch-group"><label>AI</label><div class="swatch" style="background:var(--cyan-9);color:black">--cyan-9</div></div>
+    <div class="swatch-group"><label>System</label><div class="swatch" style="background:var(--orange-9);color:white">--orange-9</div></div>
+    <div class="swatch-group"><label>Career</label><div class="swatch" style="background:var(--teal-9);color:white">--teal-9</div></div>
+  </div>
+
+  <h3>Semantic</h3>
+  <div class="grid grid-4" style="margin-bottom:24px">
+    <div class="swatch-group"><label>Success</label><div class="swatch" style="background:var(--green-9);color:white">--green-9</div></div>
+    <div class="swatch-group"><label>Warning</label><div class="swatch" style="background:var(--amber-9);color:black">--amber-9</div></div>
+    <div class="swatch-group"><label>Error</label><div class="swatch" style="background:var(--red-9);color:white">--red-9</div></div>
+    <div class="swatch-group"><label>Info</label><div class="swatch" style="background:var(--blue-9);color:white">--blue-9</div></div>
+  </div>
+
+  <h3>Gray Scale (Slate)</h3>
+  <div class="swatch-scale">
+    <div class="step" style="background:var(--gray-1)" title="gray-1 — sidebar/app bg">1</div>
+    <div class="step" style="background:var(--gray-2)" title="gray-2 — page bg">2</div>
+    <div class="step" style="background:var(--gray-3)" title="gray-3 — hover bg">3</div>
+    <div class="step" style="background:var(--gray-4)" title="gray-4 — border subtle">4</div>
+    <div class="step" style="background:var(--gray-5)">5</div>
+    <div class="step" style="background:var(--gray-6)" title="gray-6 — input border">6</div>
+    <div class="step" style="background:var(--gray-7)" title="gray-7 — placeholder">7</div>
+    <div class="step" style="background:var(--gray-8)">8</div>
+    <div class="step" style="background:var(--gray-9)" title="gray-9 — muted">9</div>
+    <div class="step" style="background:var(--gray-10)" title="gray-10 — tertiary">10</div>
+    <div class="step" style="background:var(--gray-11);color:black" title="gray-11 — body text">11</div>
+    <div class="step" style="background:var(--gray-12);color:black" title="gray-12 — headings">12</div>
+  </div>
+  <div style="display:flex;font-size:10px;color:var(--gray-7);margin-top:4px;margin-bottom:24px">
+    <span style="flex:1;text-align:center">app bg</span><span style="flex:1;text-align:center">page bg</span>
+    <span style="flex:1;text-align:center">hover</span><span style="flex:1;text-align:center">border</span>
+    <span style="flex:1;text-align:center"></span><span style="flex:1;text-align:center">input</span>
+    <span style="flex:1;text-align:center">faint</span><span style="flex:1;text-align:center"></span>
+    <span style="flex:1;text-align:center">muted</span><span style="flex:1;text-align:center">label</span>
+    <span style="flex:1;text-align:center">body</span><span style="flex:1;text-align:center">heading</span>
+  </div>
+
+  <h3>Surface Hierarchy</h3>
+  <div class="grid grid-4">
+    <div class="swatch-group"><label>gray-1 — sidebar/header</label><div class="swatch" style="background:var(--gray-1);border:1px solid var(--gray-4)">Sidebar, overlay</div></div>
+    <div class="swatch-group"><label>gray-2 — page + cards</label><div class="swatch" style="background:var(--gray-2);border:1px solid var(--gray-4)">Content, cards</div></div>
+    <div class="swatch-group"><label>gray-3 — hover</label><div class="swatch" style="background:var(--gray-3);border:1px solid var(--gray-4)">Row/nav hover</div></div>
+    <div class="swatch-group"><label>gray-4 — border</label><div class="swatch" style="border:1px solid var(--gray-4);background:transparent">Card border</div></div>
+  </div>
+</div>
+
+<!-- TYPOGRAPHY -->
+<div id="typography" class="section">
+  <h2>Typography</h2>
+  <p class="desc">Fira Sans for all UI text. Fira Code for monospace (SQL, code, terminal). Radix size scale 1–8.</p>
+
+  <h3>Font Families</h3>
+  <div class="cp" style="margin-bottom:12px">
+    <div class="cp-label">Fira Sans — UI text</div>
+    <div style="font-size:24px;font-weight:700;margin-bottom:4px">DEX Studio — DataEngineX Platform</div>
+    <div style="font-size:14px;color:var(--gray-10)">Self-hosted control plane for your data, ML, and AI workloads.</div>
+  </div>
+  <div class="cp">
+    <div class="cp-label">Fira Code — monospace</div>
+    <div style="font-family:monospace;font-size:13px;color:var(--indigo-11)">SELECT * FROM events WHERE ts &gt; NOW() - INTERVAL '7 days'</div>
+  </div>
+
+  <h3>Scale</h3>
+  <div class="type-row"><span class="type-meta">size="1" 11px</span><span style="font-size:11px;color:var(--gray-9)">Badge text · metadata · tiny labels</span></div>
+  <div class="type-row"><span class="type-meta">size="2" 13px</span><span style="font-size:13px;color:var(--gray-10)">Table cells · nav sub-items · descriptions</span></div>
+  <div class="type-row"><span class="type-meta">size="3" 14px</span><span style="font-size:14px">Default body text — most content reads here</span></div>
+  <div class="type-row"><span class="type-meta">size="4" 16px</span><span style="font-size:16px;font-weight:500">Card titles · slightly larger body</span></div>
+  <div class="type-row"><span class="type-meta">size="5" 18px</span><span style="font-size:18px;font-weight:600">Section headings · page_shell title</span></div>
+  <div class="type-row"><span class="type-meta">size="6" 20px</span><span style="font-size:20px;font-weight:700">42 <span style="font-size:13px;font-weight:400;color:var(--gray-9)">metric values</span></span></div>
+  <div class="type-row"><span class="type-meta">size="7" 24px</span><span style="font-size:24px;font-weight:700">Domain Heading</span></div>
+  <div class="type-row" style="border:none"><span class="type-meta">size="8" 30px</span><span style="font-size:30px;font-weight:700">DEX Studio <span style="font-size:13px;font-weight:400;color:var(--gray-9)">hub title</span></span></div>
+</div>
+
+<!-- SPACING -->
+<div id="spacing" class="section">
+  <h2>Spacing</h2>
+  <p class="desc">4px base unit. Reflex/Radix numeric scale — use in padding, margin, gap, spacing props.</p>
+
+  <div class="space-row"><span class="space-label">1 → 4px</span><div class="space-bar" style="width:4px"></div><span class="space-px">icon padding, tight gaps</span></div>
+  <div class="space-row"><span class="space-label">2 → 8px</span><div class="space-bar" style="width:8px"></div><span class="space-px">spacing="2" icon+label pairs</span></div>
+  <div class="space-row"><span class="space-label">3 → 12px</span><div class="space-bar" style="width:12px"></div><span class="space-px">nav link padding_x</span></div>
+  <div class="space-row"><span class="space-label">4 → 16px</span><div class="space-bar" style="width:16px"></div><span class="space-px">form stacks spacing="4"</span></div>
+  <div class="space-row"><span class="space-label">5 → 20px</span><div class="space-bar" style="width:20px"></div><span class="space-px">metric card padding="5"</span></div>
+  <div class="space-row"><span class="space-label">6 → 24px</span><div class="space-bar" style="width:24px"></div><span class="space-px">page content padding="6"</span></div>
+  <div class="space-row"><span class="space-label">8 → 32px</span><div class="space-bar" style="width:32px"></div><span class="space-px">section gaps</span></div>
+  <div class="space-row"><span class="space-label">10 → 40px</span><div class="space-bar" style="width:40px"></div><span class="space-px">empty state icons (size=40)</span></div>
+
+  <h3>Border Radius</h3>
+  <div class="row" style="margin-top:8px;gap:24px">
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;background:var(--indigo-9);border-radius:var(--radius-1);margin-bottom:6px"></div>
+      <span class="tag">radius-1 · 4px</span>
+    </div>
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;background:var(--indigo-9);border-radius:var(--radius-2);margin-bottom:6px"></div>
+      <span class="tag">radius-2 · 6px</span>
+    </div>
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;background:var(--indigo-9);border-radius:var(--radius-3);margin-bottom:6px"></div>
+      <span class="tag">radius-3 · 8px · cards</span>
+    </div>
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;background:var(--indigo-9);border-radius:var(--radius-4);margin-bottom:6px"></div>
+      <span class="tag">radius-4 · 12px · hub cards</span>
+    </div>
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;background:var(--indigo-9);border-radius:9999px;margin-bottom:6px"></div>
+      <span class="tag">full · pills</span>
+    </div>
+  </div>
+</div>
+
+<!-- COMPONENTS -->
+<div id="components" class="section">
+  <h2>Components</h2>
+
+  <h3>Buttons</h3>
+  <div class="cp">
+    <div class="cp-label">rx.button — all variants</div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn btn-primary">Primary</button>
+      <button class="btn btn-soft">Soft</button>
+      <button class="btn btn-outline">Outline</button>
+      <button class="btn btn-ghost">Ghost</button>
+      <button class="btn btn-danger">Danger</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary btn-sm">Small</button>
+      <button class="btn btn-primary">Default</button>
+      <button class="btn btn-primary btn-lg">Large</button>
+      <button class="btn btn-primary" style="opacity:0.4;cursor:not-allowed">Disabled</button>
+    </div>
+  </div>
+
+  <h3>Metric Cards (layout.metric_card)</h3>
+  <div class="cp">
+    <div class="cp-label">layout.py:metric_card — canonical KPI surface. Use this, not inline variants.</div>
+    <div class="grid grid-3">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-icon" style="background:var(--indigo-3)">🗄</div>
+          <span class="badge badge-green">+12%</span>
+        </div>
+        <div class="metric-value">24</div>
+        <div class="metric-label">Active Pipelines</div>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(139,92,246,0.15)">🧠</div>
+        <div class="metric-value">7</div>
+        <div class="metric-label">Registered Models</div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-icon" style="background:rgba(34,211,238,0.15)">🤖</div>
+          <span class="badge badge-amber">3 pending</span>
+        </div>
+        <div class="metric-value">12</div>
+        <div class="metric-label">AI Agents</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Badges</h3>
+  <div class="cp">
+    <div class="cp-label">rx.badge — status pills, counts, metadata</div>
+    <div class="row">
+      <span class="badge badge-green">running</span>
+      <span class="badge badge-red">failed</span>
+      <span class="badge badge-amber">queued</span>
+      <span class="badge badge-blue">info</span>
+      <span class="badge badge-indigo">prod</span>
+      <span class="badge badge-violet">staging</span>
+      <span class="badge badge-gray">inactive</span>
+    </div>
+  </div>
+
+  <h3>Inputs</h3>
+  <div class="cp">
+    <div class="cp-label">rx.input / rx.text_area</div>
+    <div style="display:flex;flex-direction:column;gap:12px;max-width:400px">
+      <input class="input" type="text" placeholder="Enter query...">
+      <input class="input" type="text" value="dex.yaml" style="border-color:var(--indigo-8);box-shadow:0 0 0 2px var(--gray-1),0 0 0 4px var(--indigo-8)">
+      <textarea class="input" rows="3" placeholder="Ask about your data..." style="resize:none"></textarea>
+    </div>
+  </div>
+
+  <h3>Data Table</h3>
+  <div class="cp">
+    <div class="cp-label">rx.table — pipeline list example</div>
+    <table class="tbl">
+      <thead><tr><th>Pipeline</th><th>Status</th><th>Last Run</th><th>Duration</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>etl_events_daily</td>
+          <td><span class="badge badge-green">success</span></td>
+          <td style="color:var(--gray-9)">2026-04-28 06:00</td>
+          <td style="color:var(--gray-9)">1m 12s</td>
+          <td><button class="btn btn-soft btn-sm">Run</button></td>
+        </tr>
+        <tr>
+          <td>ml_feature_refresh</td>
+          <td><span class="badge badge-amber">running</span></td>
+          <td style="color:var(--gray-9)">2026-04-28 07:15</td>
+          <td style="color:var(--gray-9)">—</td>
+          <td><button class="btn btn-outline btn-sm">Cancel</button></td>
+        </tr>
+        <tr>
+          <td>model_score_batch</td>
+          <td><span class="badge badge-red">failed</span></td>
+          <td style="color:var(--gray-9)">2026-04-28 05:30</td>
+          <td style="color:var(--gray-9)">0m 08s</td>
+          <td><button class="btn btn-soft btn-sm">Retry</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Skeleton Loader (layout.skeleton_table)</h3>
+  <div class="cp">
+    <div class="cp-label">shimmer animation while data loads</div>
+    <table class="tbl">
+      <thead><tr><th>Name</th><th>Status</th><th>Last Run</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><div class="skeleton" style="height:14px;width:140px"></div></td><td><div class="skeleton" style="height:14px;width:60px"></div></td><td><div class="skeleton" style="height:14px;width:120px"></div></td><td><div class="skeleton" style="height:14px;width:40px"></div></td></tr>
+        <tr><td><div class="skeleton" style="height:14px;width:100px"></div></td><td><div class="skeleton" style="height:14px;width:80px"></div></td><td><div class="skeleton" style="height:14px;width:90px"></div></td><td><div class="skeleton" style="height:14px;width:40px"></div></td></tr>
+        <tr><td><div class="skeleton" style="height:14px;width:160px"></div></td><td><div class="skeleton" style="height:14px;width:50px"></div></td><td><div class="skeleton" style="height:14px;width:110px"></div></td><td><div class="skeleton" style="height:14px;width:40px"></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Toasts (layout.toast_overlay)</h3>
+  <div class="cp">
+    <div class="cp-label">notification system — fixed bottom-right</div>
+    <div class="toast" style="border-color:#166534"><span class="toast-icon" style="color:var(--green-9)">✓</span><span class="toast-msg">Pipeline etl_events_daily started successfully.</span></div>
+    <div class="toast" style="border-color:#7f1d1d"><span class="toast-icon" style="color:var(--red-9)">✕</span><span class="toast-msg">Agent 'assistant' not found — set DEX_COPILOT_AGENT.</span></div>
+    <div class="toast" style="border-color:#78350f"><span class="toast-icon" style="color:var(--amber-9)">⚠</span><span class="toast-msg">Engine not initialized — set DEX_CONFIG_PATH.</span></div>
+  </div>
+
+  <h3>Callouts (rx.callout)</h3>
+  <div class="cp">
+    <div class="cp-label">inline contextual alerts</div>
+    <div class="callout callout-error">Engine not initialized — set DEX_CONFIG_PATH or call init_engine() at startup.</div>
+    <div class="callout callout-warning">No evaluation data. Run RAG eval from the CLI or configure eval datasets.</div>
+    <div class="callout callout-info">Connect a DEX config file to enable live data from your pipelines.</div>
+  </div>
+
+  <h3>Empty State (inline pattern)</h3>
+  <div class="cp">
+    <div class="cp-label">use inline pattern, NOT the dead empty_state.py NiceGUI component</div>
+    <div style="display:flex;flex-direction:column;align-items:center;padding:40px;gap:10px">
+      <div style="font-size:40px;color:var(--gray-7)">📭</div>
+      <div style="font-size:15px;font-weight:600;color:var(--gray-10)">No pipelines found</div>
+      <div style="font-size:13px;color:var(--gray-8)">Connect a DEX config file or create your first pipeline.</div>
+      <button class="btn btn-soft" style="margin-top:8px">Create Pipeline</button>
+    </div>
+  </div>
+
+  <h3>Hub Domain Cards (project_hub)</h3>
+  <div class="cp">
+    <div class="cp-label">⚠ BUG: all 5 cards use indigo hover. Fix: use per-domain accent in box-shadow.</div>
+    <div class="grid grid-3">
+      <div class="domain-card">
+        <div class="domain-icon">🗄</div>
+        <h4 style="color:var(--indigo-11)">Data</h4>
+        <p>Pipelines, sources, SQL console, lineage, quality, catalog.</p>
+        <button class="btn btn-soft btn-sm">Open</button>
+      </div>
+      <div class="domain-card">
+        <div class="domain-icon">🧠</div>
+        <h4 style="color:#a78bfa">ML</h4>
+        <p>Models, experiments, features, drift, A/B testing.</p>
+        <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa">Open</button>
+      </div>
+      <div class="domain-card">
+        <div class="domain-icon">🤖</div>
+        <h4 style="color:var(--cyan-9)">AI</h4>
+        <p>Agents, playground, traces, memory, workflows, RAG.</p>
+        <button class="btn btn-sm" style="background:rgba(34,211,238,0.15);color:var(--cyan-9)">Open</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NAVIGATION -->
+<div id="navigation" class="section">
+  <h2>Navigation</h2>
+  <p class="desc">220px fixed sidebar — two levels: domain links + sub-nav (shown when domain is active).</p>
+
+  <div class="row" style="align-items:flex-start;gap:32px">
+    <div>
+      <h3 style="margin-top:0">Sidebar — Data domain active</h3>
+      <div class="sidebar-demo">
+        <div class="sb-logo">
+          <div class="sb-logo-box">⚡</div>
+          <div><div class="sb-title">DEX Studio</div><div class="sb-sub">DataEngineX Platform</div></div>
+        </div>
+        <div class="sb-divider"></div>
+        <div class="sb-item active"><div class="sb-icon">🗄</div>Data</div>
+        <div class="sb-subnav">
+          <div class="sb-subitem active">📊 Overview</div>
+          <div class="sb-subitem">⚙ Pipelines</div>
+          <div class="sb-subitem">📚 Catalog</div>
+          <div class="sb-subitem">🗃 Sources</div>
+          <div class="sb-subitem">💻 SQL</div>
+        </div>
+        <div class="sb-item"><div class="sb-icon">🧠</div>ML</div>
+        <div class="sb-item"><div class="sb-icon">🤖</div>AI</div>
+        <div class="sb-item"><div class="sb-icon">🖥</div>System</div>
+        <div class="sb-item"><div class="sb-icon">💼</div>Career</div>
+      </div>
+    </div>
+
+    <div style="flex:1">
+      <h3 style="margin-top:0">Page Shell Layout</h3>
+      <div style="background:var(--gray-1);border:1px solid var(--gray-4);border-radius:var(--radius-3);overflow:hidden">
+        <div style="background:var(--gray-1);border-bottom:1px solid var(--gray-4);padding:12px 24px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:11px;color:var(--gray-8)">Data / Pipelines /</span>
+          <span style="font-size:15px;font-weight:700">Pipeline Overview</span>
+        </div>
+        <div style="background:var(--gray-2);padding:24px;min-height:180px">
+          <div class="grid grid-3" style="margin-bottom:16px">
+            <div style="background:var(--gray-1);border:1px solid var(--gray-4);border-radius:var(--radius-3);padding:16px"><div style="font-size:11px;color:var(--gray-9);margin-bottom:4px">PIPELINES</div><div style="font-size:22px;font-weight:700">24</div></div>
+            <div style="background:var(--gray-1);border:1px solid var(--gray-4);border-radius:var(--radius-3);padding:16px"><div style="font-size:11px;color:var(--gray-9);margin-bottom:4px">SOURCES</div><div style="font-size:22px;font-weight:700">8</div></div>
+            <div style="background:var(--gray-1);border:1px solid var(--gray-4);border-radius:var(--radius-3);padding:16px"><div style="font-size:11px;color:var(--gray-9);margin-bottom:4px">QUALITY SCORE</div><div style="font-size:22px;font-weight:700">94%</div></div>
+          </div>
+          <div style="font-size:11px;color:var(--gray-8)">content area — padding="6" · background gray-2 · margin-left 220px</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MOTION -->
+<div id="motion" class="section">
+  <h2>Motion</h2>
+  <p class="desc">Only animate user-triggered state changes. Never on page load or scroll. Hover the boxes to see easing.</p>
+
+  <h3>Easing</h3>
+  <div class="motion-demo">
+    <div class="motion-box" style="transition:transform 200ms cubic-bezier(0.16,1,0.3,1)">↑</div>
+    <div class="motion-meta"><strong>ease-out-expo · 200ms</strong><p>Panel open/close, elements emerging. Snappy start, soft landing.</p></div>
+  </div>
+  <div class="motion-demo">
+    <div class="motion-box" style="transition:transform 120ms ease">↑</div>
+    <div class="motion-meta"><strong>ease · 120ms</strong><p>Hover states, nav link bg transitions, button press.</p></div>
+  </div>
+  <div class="motion-demo" style="border:none">
+    <div class="motion-box" style="transition:transform 350ms cubic-bezier(0.175,0.885,0.32,1.275)">⟳</div>
+    <div class="motion-meta"><strong>spring · 350ms</strong><p>Confirmation dialogs, scale-in. Use sparingly.</p></div>
+  </div>
+
+  <h3>Streaming Cursor (copilot.py)</h3>
+  <div class="cp">
+    <div class="cp-label">blink animation during LLM response streaming</div>
+    <div style="font-size:14px;color:var(--gray-11)">Analyzing your pipeline DAG<span class="cursor">▍</span></div>
+  </div>
+
+  <h3>Skeleton Shimmer</h3>
+  <div class="cp">
+    <div class="cp-label">layout.skeleton_table — data loading state</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="skeleton" style="height:16px;width:100%"></div>
+      <div class="skeleton" style="height:16px;width:75%"></div>
+      <div class="skeleton" style="height:16px;width:88%"></div>
+    </div>
+  </div>
+
+  <h3>⚠ Motion Tokens Not Injected</h3>
+  <div class="callout callout-warning">
+    <code>design_tokens.py:inject_design_tokens()</code> uses NiceGUI and is never called in the Reflex app. CSS vars <code>--duration-fast</code>, <code>--ease-out-expo</code>, etc. are undefined at runtime. Fix: add motion vars to <code>app.style</code> dict in <code>app.py</code>.
+  </div>
+</div>
+
+<!-- AUDIT -->
+<div id="audit" class="section">
+  <h2>Visual Audit — 57 / 100</h2>
+  <p class="desc">Source-only audit (dev server offline). 10 dimensions, 0–10 each.</p>
+
+  <div class="cp">
+    <div class="cp-label">score breakdown</div>
+    <table class="tbl">
+      <thead><tr><th>Dimension</th><th style="width:60px">Score</th><th>Key Finding</th></tr></thead>
+      <tbody>
+        <tr><td>Color consistency</td><td><span class="score-high">7</span></td><td>Radix semantic tokens consistent in live code. Dead parallel system (design_tokens.py) inert at runtime.</td></tr>
+        <tr><td>Typography hierarchy</td><td><span class="score-mid">6</span></td><td>Fira Sans good choice. No enforced hierarchy — page heading size varies across domains (size="5" to size="8").</td></tr>
+        <tr><td>Spacing rhythm</td><td><span class="score-high">7</span></td><td>Mostly consistent Radix scale in live code. Dead NiceGUI code has hardcoded px but doesn't affect runtime.</td></tr>
+        <tr><td>Component consistency</td><td><span class="score-low">3</span></td><td>KPI cards have 3+ implementations. No Reflex hub-nav strip — dead NiceGUI version unported.</td></tr>
+        <tr><td>Responsive behavior</td><td><span class="score-low">2</span></td><td>Sidebar fixed 220px, margin-left hardcoded, grid columns="3" fixed. No breakpoints. Mobile is broken.</td></tr>
+        <tr><td>Dark mode</td><td><span class="score-high">7</span></td><td>Dark-first with Radix. Light mode tokens exist but no user toggle — appearance="dark" hardcoded.</td></tr>
+        <tr><td>Animation</td><td><span class="score-mid">6</span></td><td>Motion tokens defined but not injected. Live code uses transition="all 0.15s ease" inline only.</td></tr>
+        <tr><td>Accessibility</td><td><span class="score-low">4</span></td><td>Skip-to-main ✓. Focus ring CSS not injected. icon_button calls in copilot.py missing aria-label.</td></tr>
+        <tr><td>Information density</td><td><span class="score-high">7</span></td><td>Clean hierarchy. Empty states present. Some pages (RAG eval, HITL) are near-empty stubs.</td></tr>
+        <tr><td>Polish</td><td><span class="score-high">8</span></td><td>Card hover ✓ · Toasts ✓ · Skeleton loaders ✓ · Streaming cursor ✓ · Spinners ✓</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>AI Slop Flags</h3>
+  <div class="cp">
+    <div class="cp-label">5 patterns detected — 2 high, 1 medium, 2 low</div>
+    <table class="tbl">
+      <thead><tr><th>Pattern</th><th>Severity</th><th>File</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Bootstrap dead load</td>
+          <td><span class="badge badge-red">HIGH</span></td>
+          <td style="font-family:monospace;font-size:12px">app.py:stylesheets</td>
+          <td>Remove bootstrap@5.3.3. Zero components used. +30KB, risk of Radix reset conflict.</td>
+        </tr>
+        <tr>
+          <td>Dead component graveyard</td>
+          <td><span class="badge badge-red">HIGH</span></td>
+          <td style="font-family:monospace;font-size:12px">components/ 18 files</td>
+          <td>Delete all 18 NiceGUI component files. Canonical components are layout.py + copilot.py.</td>
+        </tr>
+        <tr>
+          <td>Gratuitous logo gradient</td>
+          <td><span class="badge badge-amber">MEDIUM</span></td>
+          <td style="font-family:monospace;font-size:12px">layout.py:239</td>
+          <td>Replace gradient with flat --indigo-9. The ⚡ icon needs no visual enhancement.</td>
+        </tr>
+        <tr>
+          <td>Indigo hover on all hub cards</td>
+          <td><span class="badge badge-gray">LOW</span></td>
+          <td style="font-family:monospace;font-size:12px">project_hub.py:24</td>
+          <td>Use per-domain accent: ML→violet-4, AI→cyan-4, System→orange-4, Career→teal-4.</td>
+        </tr>
+        <tr>
+          <td>Generic glow shadow token</td>
+          <td><span class="badge badge-gray">LOW</span></td>
+          <td style="font-family:monospace;font-size:12px">design_tokens.py:70</td>
+          <td>Inert (not injected). Delete to prevent future misuse as AI-default glow effect.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Priority Action List</h3>
+  <div class="cp">
+    <div class="cp-label">ordered by impact</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-2);background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.15)">
+        <span class="badge badge-red" style="flex-shrink:0;margin-top:1px">P1</span>
+        <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Delete 18 dead NiceGUI component files</div><div style="font-size:12px;color:var(--gray-9)">badge.py · button.py · card.py · chat_message.py · command_palette.py · data_table.py · domain_sidebar.py · empty_state.py · hub_nav.py · input.py · inspector_panel.py · metric_card.py · page_layout.py · status_badge.py · toast.py · tool_call_block.py · breadcrumb.py · app_shell.py</div></div>
+      </div>
+      <div style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-2);background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.15)">
+        <span class="badge badge-red" style="flex-shrink:0;margin-top:1px">P1</span>
+        <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Remove Bootstrap from app.py stylesheets</div><div style="font-size:12px;color:var(--gray-9)">Zero Bootstrap components used. Pure dead weight.</div></div>
+      </div>
+      <div style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-2);background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.15)">
+        <span class="badge badge-amber" style="flex-shrink:0;margin-top:1px">P2</span>
+        <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Canonicalize KPI metric card component</div><div style="font-size:12px;color:var(--gray-9)">3+ inline variants across pages → single layout.metric_card() call.</div></div>
+      </div>
+      <div style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-2);background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.15)">
+        <span class="badge badge-amber" style="flex-shrink:0;margin-top:1px">P2</span>
+        <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Add aria-label to all icon_button calls</div><div style="font-size:12px;color:var(--gray-9)">copilot.py: trash, close, send buttons. layout.py: clear_toasts.</div></div>
+      </div>
+      <div style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-2);background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.15)">
+        <span class="badge badge-blue" style="flex-shrink:0;margin-top:1px">P3</span>
+        <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Implement Reflex hub_nav + dark/light toggle + responsive sidebar</div><div style="font-size:12px;color:var(--gray-9)">Hub nav: underline tab strip per domain group. Theme toggle: rx.theme(appearance=...). Responsive: collapse sidebar to icon-only &lt;768px.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>

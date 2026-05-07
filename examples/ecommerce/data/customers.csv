@@ -1,0 +1,21 @@
+customer_id,name,email,age,tenure_days,plan,monthly_spend,support_tickets,login_frequency,churned
+1,Alice Johnson,alice@shopmetrics.io,29,180,pro,89.99,1,22,false
+2,Bob Smith,bob@shopmetrics.io,35,420,starter,29.99,0,15,false
+3,Carol White,carol@shopmetrics.io,22,60,starter,29.99,5,3,true
+4,Dave Brown,dave@shopmetrics.io,41,730,enterprise,249.99,0,30,false
+5,Eve Davis,eve@shopmetrics.io,27,45,starter,29.99,8,2,true
+6,Frank Miller,frank@shopmetrics.io,38,550,pro,89.99,1,18,false
+7,Grace Wilson,grace@shopmetrics.io,31,200,pro,89.99,3,12,false
+8,Hank Moore,hank@shopmetrics.io,45,900,enterprise,249.99,0,28,false
+9,Iris Taylor,iris@shopmetrics.io,24,30,starter,29.99,6,1,true
+10,Jack Anderson,jack@shopmetrics.io,33,310,pro,89.99,2,20,false
+11,Karen Thomas,karen@shopmetrics.io,28,90,starter,29.99,4,5,true
+12,Leo Jackson,leo@shopmetrics.io,50,1200,enterprise,249.99,0,35,false
+13,Mia Harris,mia@shopmetrics.io,26,150,starter,29.99,3,8,false
+14,Nate Martin,nate@shopmetrics.io,39,480,pro,89.99,1,17,false
+15,Olivia Garcia,olivia@shopmetrics.io,23,25,starter,29.99,9,1,true
+16,Paul Martinez,paul@shopmetrics.io,44,680,pro,89.99,0,25,false
+17,Quinn Robinson,quinn@shopmetrics.io,30,120,starter,29.99,2,7,false
+18,Rachel Clark,rachel@shopmetrics.io,36,390,pro,89.99,1,19,false
+19,Sam Rodriguez,sam@shopmetrics.io,21,15,starter,29.99,7,1,true
+20,Tina Lewis,tina@shopmetrics.io,48,820,enterprise,249.99,0,32,false

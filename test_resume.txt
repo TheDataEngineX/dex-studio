@@ -1,0 +1,29 @@
+John Doe
+john.doe@email.com
+(555) 123-4567
+San Francisco, CA
+
+SUMMARY
+Experienced software engineer with 5+ years building web applications.
+
+SKILLS
+Python, JavaScript, TypeScript, React, Node.js, PostgreSQL, Docker, AWS
+
+EXPERIENCE
+Senior Software Engineer
+TechCorp Inc
+San Francisco, CA
+2020 - Present
+- Built microservices architecture serving 1M+ users
+- Led team of 5 engineers
+
+Software Engineer
+StartupXYZ
+San Francisco, CA
+2018 - 2020
+- Developed REST APIs using Python and Node.js
+
+EDUCATION
+BS Computer Science
+UC Berkeley
+2014 - 2018

@@ -1,69 +1,58 @@
-"""ML models page — model registry browser.
-
-Route: ``/ml/models``
-"""
-
 from __future__ import annotations
 
-import logging
-from typing import Any
+import reflex as rx
 
-from nicegui import ui
-
-from dex_studio.app import get_engine, get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.data_table import data_table
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.empty_state import empty_state
-from dex_studio.engine import DexEngine
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
-
-_MODEL_COLUMNS: list[dict[str, Any]] = [
-    {"name": "name", "label": "Name", "field": "name", "align": "left"},
-    {
-        "name": "versions",
-        "label": "Versions",
-        "field": "versions",
-        "align": "left",
-    },
-]
+from dex_studio.components.layout import page_shell
+from dex_studio.state.ml import MLState
 
 
-@ui.page("/ml/models")
-async def ml_models_page() -> None:
-    """Render the ML models registry page."""
-    apply_global_styles(get_theme())
-    engine: DexEngine | None = get_engine()
-
-    app_shell(active_domain="ml")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("ml", active_route="/ml/models")
-        with ui.column().classes("flex-1"):
-            breadcrumb("ML", "Models")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                if engine is None:
-                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
-                    return
-
-                model_names: list[str] = engine.model_registry.list_models()
-
-                ui.label("Model Registry").classes("section-title")
-
-                if not model_names:
-                    empty_state("No models registered", icon="model_training")
-                    return
-
-                rows: list[dict[str, Any]] = []
-                for name in model_names:
-                    versions = engine.model_registry.list_versions(name)
-                    rows.append(
-                        {
-                            "name": name,
-                            "versions": ", ".join(versions) if versions else "\u2014",
-                        }
-                    )
-
-                data_table(_MODEL_COLUMNS, rows, title="Models")
+def ml_models() -> rx.Component:
+    return page_shell(
+        "Model Registry",
+        rx.cond(
+            MLState.error != "",
+            rx.callout.root(rx.callout.text(MLState.error), color="red", margin_bottom="4"),
+            rx.fragment(),
+        ),
+        rx.cond(MLState.is_loading, rx.spinner(), rx.fragment()),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Name"),
+                    rx.table.column_header_cell("Version"),
+                    rx.table.column_header_cell("Stage"),
+                    rx.table.column_header_cell("Framework"),
+                    rx.table.column_header_cell("Action"),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    MLState.models,
+                    lambda m: rx.table.row(
+                        rx.table.cell(m["name"]),
+                        rx.table.cell(m["version"]),
+                        rx.table.cell(
+                            rx.badge(
+                                m["stage"],
+                                color_scheme=rx.cond(
+                                    m["stage"] == "production",
+                                    "green",
+                                    rx.cond(m["stage"] == "staging", "yellow", "gray"),
+                                ),
+                            )
+                        ),
+                        rx.table.cell(m["framework"]),
+                        rx.table.cell(
+                            rx.button(
+                                "Promote",
+                                size="1",
+                                on_click=MLState.promote_model(m["name"], "production"),
+                            )
+                        ),
+                    ),
+                )
+            ),
+            width="100%",
+        ),
+        on_mount=MLState.load_models,
+    )
