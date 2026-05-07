@@ -1,0 +1,16 @@
+name: Auto PR — feature → dev
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-pr:
+    uses: TheDataEngineX/.github/.github/workflows/auto-pr-to-dev.yml@main
+    secrets: inherit

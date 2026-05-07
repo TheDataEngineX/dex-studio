@@ -1,7 +1,7 @@
 # DEX Studio default config
 # Copy to ~/.dex-studio/config.yaml or .dex-studio.yaml in project root
 
-api_url: "http://localhost:8000"
+api_url: "http://localhost:17000"
 # api_token: "your-bearer-token"   # uncomment if auth is enabled
 timeout: 10.0
 theme: dark

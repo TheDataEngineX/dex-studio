@@ -6,15 +6,6 @@ on:
       - main
 
 jobs:
-  check-source-branch:
-    name: Verify PR source is dev
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check source branch
-        run: |
-          if [ "${{ github.head_ref }}" != "dev" ]; then
-            echo "PRs to main must come from the 'dev' branch."
-            echo "Source branch: ${{ github.head_ref }}"
-            exit 1
-          fi
-          echo "Source branch is 'dev' — OK"
+  enforce:
+    uses: TheDataEngineX/.github/.github/workflows/enforce-dev-to-main.yml@main
+    secrets: inherit

@@ -1,0 +1,142 @@
+project:
+  name: shopmetrics
+  version: "1.0.0"
+  description: >
+    ShopMetrics — full-stack e-commerce analytics platform.
+    Demonstrates every DataEngineX feature: data pipelines,
+    quality gates, medallion architecture, ML training, drift
+    detection, RAG, lineage tracking, and API serving.
+
+data:
+  engine: duckdb
+  sources:
+    raw_customers:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/ecommerce/data/customers.csv
+    raw_products:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/ecommerce/data/products.csv
+    raw_orders:
+      type: csv
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/ecommerce/data/orders.csv
+
+  pipelines:
+    clean_customers:
+      source: raw_customers
+      transforms:
+        - type: filter
+          condition: "age > 0 AND tenure_days >= 0"
+        - type: deduplicate
+          key: [customer_id]
+      quality:
+        completeness: 0.98
+        uniqueness: [customer_id, email]
+      destination: silver_customers
+
+    clean_orders:
+      source: raw_orders
+      depends_on: [clean_customers]
+      transforms:
+        - type: filter
+          condition: "total > 0"
+        - type: deduplicate
+          key: [order_id]
+      quality:
+        completeness: 0.99
+        uniqueness: [order_id]
+      destination: silver_orders
+
+    customer_revenue:
+      source: silver_orders
+      depends_on: [clean_orders, clean_customers]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              customer_id,
+              COUNT(*)                                        AS order_count,
+              SUM(total)                                      AS lifetime_value,
+              AVG(total)                                      AS avg_order_value,
+              SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) AS refund_count
+            FROM _data
+            GROUP BY customer_id
+      destination: gold_customer_revenue
+
+    product_performance:
+      source: silver_orders
+      depends_on: [clean_orders]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              product_id,
+              COUNT(*)        AS units_sold,
+              SUM(total)      AS gross_revenue,
+              AVG(unit_price) AS avg_price
+            FROM _data
+            WHERE status = 'completed'
+            GROUP BY product_id
+            ORDER BY gross_revenue DESC
+      destination: gold_product_performance
+
+ml:
+  tracker: builtin
+  experiments:
+    churn_prediction:
+      model_type: sklearn
+      target: churned
+      features: [age, tenure_days, monthly_spend, support_tickets, login_frequency]
+      params:
+        n_estimators: 100
+        max_depth: 4
+        random_state: 42
+
+  drift:
+    monitor: [monthly_spend, tenure_days, support_tickets, login_frequency]
+    method: psi
+    threshold: 0.15
+
+ai:
+  llm:
+    provider: ollama
+    model: ${LLM_MODEL:-qwen3:8b}
+    temperature: 0.1
+    max_tokens: 512
+
+  retrieval:
+    strategy: hybrid
+    top_k: 5
+    reranker: true
+
+  vectorstore:
+    backend: builtin
+    embedding_model: all-MiniLM-L6-v2
+
+  collections:
+    product_catalog:
+      chunk_size: 256
+      chunk_overlap: 32
+    knowledge_base:
+      chunk_size: 512
+      chunk_overlap: 64
+
+  agents:
+    assistant:
+      system_prompt: |
+        You are ShopMetrics AI, a data analytics assistant for e-commerce teams.
+        You have access to customer data, order history, product catalog, and
+        ML model insights. Always cite specific numbers from the data.
+      tools: [query, pipeline_status]
+      max_iterations: 10
+      memory: short_term
+
+server:
+  host: "0.0.0.0"
+  port: 17000
+  auth:
+    enabled: false
+
+observability:
+  metrics: true
+  tracing: true
+  log_level: INFO

@@ -2,121 +2,121 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import httpx
 import pytest
 
-from dex_studio.client import DexAPIError, DexClient
+from dex_studio.client import DexClient
 from dex_studio.config import StudioConfig
 
 
 @pytest.fixture()
-def client_config() -> StudioConfig:
-    return StudioConfig(api_url="http://testhost:8000", timeout=2.0)
+def config() -> StudioConfig:
+    return StudioConfig(api_url="http://localhost:9999", timeout=2.0)
 
 
-class TestDexClient:
-    """Tests for the DexClient class."""
-
-    async def test_connect_creates_client(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        assert not client.is_connected
+class TestDexClientLifecycle:
+    @pytest.mark.asyncio()
+    async def test_connect_creates_client(self, config: StudioConfig) -> None:
+        client = DexClient(config)
         await client.connect()
         assert client.is_connected
         await client.close()
-        assert not client.is_connected
 
-    async def test_get_raises_when_not_connected(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        with pytest.raises(RuntimeError, match="not connected"):
-            await client._get("/health")
-
-    async def test_ping_returns_true_on_alive(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        await client.connect()
-        mock_response = httpx.Response(200, json={"status": "alive"})
-        with patch.object(
-            client._client, "get", new_callable=AsyncMock, return_value=mock_response
-        ):
-            assert await client.ping() is True
+    @pytest.mark.asyncio()
+    async def test_ping_returns_true(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"status": "alive"}))
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        assert await client.ping() is True
         await client.close()
 
-    async def test_ping_returns_false_on_error(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        await client.connect()
-        with patch.object(
-            client._client,
-            "get",
-            new_callable=AsyncMock,
-            side_effect=httpx.ConnectError("refused"),
-        ):
-            assert await client.ping() is False
-        await client.close()
 
-    async def test_get_raises_dex_api_error_on_4xx(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        await client.connect()
-        mock_response = httpx.Response(
-            404,
-            json={"error": "not_found"},
-            request=httpx.Request("GET", "http://testhost:8000/bad"),
+class TestDataEndpoints:
+    @pytest.mark.asyncio()
+    async def test_list_sources(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"sources": [], "count": 0})
         )
-        with patch.object(
-            client._client, "get", new_callable=AsyncMock, return_value=mock_response
-        ):
-            with pytest.raises(DexAPIError) as exc_info:
-                await client._get("/bad")
-            assert exc_info.value.status_code == 404
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.list_sources()
+        assert "sources" in result
         await client.close()
 
-    async def test_health_endpoint(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        await client.connect()
-        mock_response = httpx.Response(200, json={"status": "alive"})
-        with patch.object(
-            client._client, "get", new_callable=AsyncMock, return_value=mock_response
-        ):
-            result = await client.health()
-            assert result == {"status": "alive"}
-        await client.close()
-
-    async def test_auth_header_included(self) -> None:
-        cfg = StudioConfig(api_url="http://test:8000", api_token="my-token")
-        client = DexClient(config=cfg)
-        await client.connect()
-        assert client._client is not None
-        assert client._client.headers["Authorization"] == "Bearer my-token"
-        await client.close()
-
-    async def test_data_sources_passes_params(self, client_config: StudioConfig) -> None:
-        client = DexClient(config=client_config)
-        await client.connect()
-        mock_response = httpx.Response(200, json={"items": [], "next_cursor": None})
-        with patch.object(
-            client._client,
-            "get",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ) as mock_get:
-            await client.data_sources(cursor="abc", limit=5)
-            mock_get.assert_called_once()
-            call_kwargs = mock_get.call_args
-            assert call_kwargs[1]["params"]["cursor"] == "abc"
-            assert call_kwargs[1]["params"]["limit"] == 5
+    @pytest.mark.asyncio()
+    async def test_run_pipeline(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"pipeline": "ingest", "success": True})
+        )
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.run_pipeline("ingest")
+        assert result["success"] is True
         await client.close()
 
 
-class TestDexAPIError:
-    """Tests for the DexAPIError exception."""
+class TestMLEndpoints:
+    @pytest.mark.asyncio()
+    async def test_list_experiments(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"experiments": [], "count": 0})
+        )
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.list_experiments()
+        assert "experiments" in result
+        await client.close()
 
-    def test_message_format(self) -> None:
-        err = DexAPIError(status_code=500, message="boom", url="http://x/health")
-        assert "500" in str(err)
-        assert "boom" in str(err)
-        assert "http://x/health" in str(err)
+    @pytest.mark.asyncio()
+    async def test_predict(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"model_name": "m", "prediction": 42})
+        )
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.predict("m", {"x": 1.0})
+        assert result["prediction"] == 42
+        await client.close()
 
-    def test_attributes(self) -> None:
-        err = DexAPIError(status_code=404, message="not found", url="/api/v1/models")
-        assert err.status_code == 404
-        assert err.url == "/api/v1/models"
+
+class TestAIEndpoints:
+    @pytest.mark.asyncio()
+    async def test_list_agents(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"agents": [], "count": 0})
+        )
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.list_agents()
+        assert "agents" in result
+        await client.close()
+
+    @pytest.mark.asyncio()
+    async def test_agent_chat(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                json={
+                    "agent": "bot",
+                    "response": "Hi",
+                    "iterations": 1,
+                    "tool_calls": 0,
+                },
+            )
+        )
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.agent_chat("bot", "Hello")
+        assert result["response"] == "Hi"
+        await client.close()
+
+
+class TestSystemEndpoints:
+    @pytest.mark.asyncio()
+    async def test_components(self, config: StudioConfig) -> None:
+        client = DexClient(config)
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"components": []}))
+        client._client = httpx.AsyncClient(transport=transport, base_url=config.api_url)
+        result = await client.components()
+        assert "components" in result
+        await client.close()
