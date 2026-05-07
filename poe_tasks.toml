@@ -16,12 +16,14 @@ help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash s
 
 # ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
-cmd = "dex-studio --no-native"
-help = "Launch DEX Studio in browser mode (development)"
+cmd = "reflex run --env dev"
+env = { PYTHONPATH = "src" }
+help = "Launch DEX Studio Reflex dev server (port 7860)"
 
-[tool.poe.tasks.dev-native]
-cmd = "dex-studio"
-help = "Launch DEX Studio in native window mode"
+[tool.poe.tasks.dev-export]
+cmd = "reflex export"
+env = { PYTHONPATH = "src" }
+help = "Export Reflex app as static bundle"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]
@@ -103,12 +105,12 @@ echo "✓ .claude/settings.json synced from .github/.claude/settings.json"
 """
 help = "Sync shared Claude Code settings from canonical .github/.claude/settings.json"
 
-# ── Git Hooks ─────────────────────────────────────────────────────────────────
-[tool.poe.tasks.install-hooks]
-shell = """
-cp ../.github/scripts/pre-commit-version-bump.sh .git/hooks/pre-commit
-cp ../.github/scripts/bump-version.sh .git/hooks/bump-version.sh
-chmod +x .git/hooks/pre-commit .git/hooks/bump-version.sh
-echo "✓ pre-commit hook installed"
-"""
-help = "Install git hooks (auto-bump patch version on commit if not manually changed)"
+# ── Docker ───────────────────────────────────────────────────────────────────
+[tool.poe.tasks.docker-build]
+shell = "docker build -f dex-studio/Dockerfile -t dex-studio ."
+cwd = ".."
+help = "Build Docker image (run from DataEngineX/ parent — needs ../dex)"
+
+[tool.poe.tasks.docker-serve]
+shell = "docker run --rm -p 7860:7860 -e DEX_STUDIO_API_URL=http://host.docker.internal:17000 dex-studio"
+help = "Run dex-studio in Docker (connects to local DEX API on host)"

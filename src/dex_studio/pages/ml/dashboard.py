@@ -1,53 +1,61 @@
-"""ML domain dashboard — overview of experiments and models.
-
-Route: ``/ml``
-"""
-
 from __future__ import annotations
 
-import logging
+import reflex as rx
 
-from nicegui import ui
-
-from dex_studio.app import get_engine, get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.metric_card import metric_card
-from dex_studio.engine import DexEngine
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
+from dex_studio.components.layout import metric_card, page_shell
+from dex_studio.state.ml import MLState
 
 
-@ui.page("/ml")
-async def ml_dashboard_page() -> None:
-    """Render the ML domain dashboard."""
-    apply_global_styles(get_theme())
-    engine: DexEngine | None = get_engine()
-
-    app_shell(active_domain="ml")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("ml", active_route="/ml")
-        with ui.column().classes("flex-1"):
-            breadcrumb("ML", "Dashboard")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                if engine is None:
-                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
-                    return
-
-                ui.label("Overview").classes("section-title")
-
-                experiments_count: str | int = "\u2014"
-                if engine.tracker is not None:
-                    try:
-                        exps = engine.tracker.list_experiments()
-                        experiments_count = len(exps)
-                    except Exception:
-                        experiments_count = "\u2014"
-
-                models_count = len(engine.model_registry.list_models())
-
-                with ui.row().classes("gap-4 flex-wrap"):
-                    metric_card("Experiments", experiments_count)
-                    metric_card("Models", models_count)
+def ml_dashboard() -> rx.Component:
+    return page_shell(
+        "ML Dashboard",
+        rx.cond(
+            MLState.error != "",
+            rx.callout.root(rx.callout.text(MLState.error), color="red", margin_bottom="4"),
+            rx.fragment(),
+        ),
+        rx.cond(MLState.is_loading, rx.spinner(), rx.fragment()),
+        rx.grid(
+            metric_card("box", "Models", MLState.models.length(), accent="violet"),  # type: ignore[attr-defined]
+            metric_card(
+                "flask-conical", "Experiments", MLState.experiments.length(), accent="violet"
+            ),  # type: ignore[attr-defined]
+            metric_card(
+                "layers", "Feature Groups", MLState.feature_groups.length(), accent="violet"
+            ),  # type: ignore[attr-defined]
+            columns="3",
+            gap="4",
+            margin_bottom="6",
+        ),
+        rx.heading("Recent Models", size="3", margin_bottom="2"),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Name"),
+                    rx.table.column_header_cell("Version"),
+                    rx.table.column_header_cell("Stage"),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    MLState.models,
+                    lambda m: rx.table.row(
+                        rx.table.cell(m["name"]),
+                        rx.table.cell(m["version"]),
+                        rx.table.cell(
+                            rx.badge(
+                                m["stage"],
+                                color_scheme=rx.cond(
+                                    m["stage"] == "production",
+                                    "green",
+                                    rx.cond(m["stage"] == "staging", "yellow", "gray"),
+                                ),
+                            )
+                        ),
+                    ),
+                )
+            ),
+            width="100%",
+        ),
+        on_mount=[MLState.load_models, MLState.load_experiments, MLState.load_features],
+    )

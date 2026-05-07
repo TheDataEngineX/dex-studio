@@ -1,91 +1,164 @@
-"""System status page — overall health and component summary.
-
-Route: ``/system``
-"""
-
 from __future__ import annotations
 
-import logging
-from typing import Any
+import reflex as rx
 
-from nicegui import ui
-
-from dex_studio.app import get_engine, get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.metric_card import metric_card
-from dex_studio.components.status_badge import status_badge
-from dex_studio.engine import DexEngine
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
+from dex_studio.components.layout import page_shell
+from dex_studio.state.system import SystemState
 
 
-@ui.page("/system")
-async def system_status_page() -> None:
-    """Render the system status page."""
-    apply_global_styles(get_theme())
-    engine: DexEngine | None = get_engine()
+def _health_banner() -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            rx.cond(
+                SystemState.health["status"] == "ok",
+                rx.icon("circle-check", size=20, color="var(--green-9)"),
+                rx.icon("circle-alert", size=20, color="var(--red-9)"),
+            ),
+            rx.vstack(
+                rx.text("Overall Health", size="1", color="var(--gray-9)", weight="medium"),
+                rx.badge(
+                    SystemState.health["status"],  # type: ignore[index]
+                    color_scheme=rx.cond(SystemState.health["status"] == "ok", "green", "red"),
+                    variant="soft",
+                    size="2",
+                ),
+                spacing="1",
+                align="start",
+            ),
+            spacing="3",
+            align="center",
+        ),
+        padding="5",
+        background="var(--gray-2)",
+        border=rx.cond(
+            SystemState.health["status"] == "ok",
+            "1px solid var(--green-6)",
+            "1px solid var(--red-6)",
+        ),
+        border_radius="var(--radius-3)",
+    )
 
-    app_shell(active_domain="system")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("system", active_route="/system")
-        with ui.column().classes("flex-1"):
-            breadcrumb("System", "Status")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                if engine is None:
-                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
-                    return
 
-                health_data = engine.health()
-                health_status: str = health_data.get("status", "unknown")
-                components: dict[str, Any] = health_data.get("components", {})
+def _component_card(comp: dict) -> rx.Component:  # type: ignore[type-arg]
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.box(
+                    width="10px",
+                    height="10px",
+                    border_radius="50%",
+                    background=rx.cond(
+                        comp["status"] == "ok",  # type: ignore[index]
+                        "var(--green-9)",
+                        "var(--red-9)",
+                    ),
+                    flex_shrink="0",
+                ),
+                rx.text(comp["name"], weight="medium", size="2"),  # type: ignore[index]
+                spacing="2",
+                align="center",
+            ),
+            rx.badge(
+                comp["status"],  # type: ignore[index]
+                color_scheme=rx.cond(comp["status"] == "ok", "green", "red"),  # type: ignore[index]
+                variant="soft",
+                size="1",
+            ),
+            spacing="2",
+            align="start",
+        ),
+        padding="4",
+        background="var(--gray-2)",
+        border="1px solid var(--gray-4)",
+        border_radius="var(--radius-3)",
+        _hover={"border_color": "var(--gray-6)"},
+        transition="border-color 0.12s ease",
+    )
 
-                # -- Health status --
-                ui.label("Overall Health").classes("section-title")
 
-                with ui.row().classes("items-center gap-4 flex-wrap"):
-                    with ui.card().classes("dex-card").style("padding: 16px; min-width: 180px;"):
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("monitor_heart", size="sm").style(f"color: {COLORS['accent']}")
-                            ui.label("Engine Status").classes("text-sm font-semibold").style(
-                                f"color: {COLORS['text_primary']}"
-                            )
-                        with ui.row().classes("items-center gap-2 mt-2"):
-                            status_badge(health_status, size="lg")
+def _skeleton_card() -> rx.Component:
+    return rx.box(
+        rx.box(
+            height="60px",
+            background="var(--gray-4)",
+            border_radius="var(--radius-2)",
+            animation="pulse 1.5s ease-in-out infinite",
+        ),
+        padding="4",
+        background="var(--gray-2)",
+        border="1px solid var(--gray-4)",
+        border_radius="var(--radius-3)",
+    )
 
-                    # Count healthy components (bool True or int > 0)
-                    healthy_count = sum(
-                        1
-                        for v in components.values()
-                        if v is True or (isinstance(v, int) and v > 0)
-                    )
-                    total_count = len(components)
-                    metric_card(
-                        "Components",
-                        f"{healthy_count}/{total_count}",
-                    )
 
-                # -- Component summary --
-                if components:
-                    ui.label("Component Summary").classes("section-title mt-4")
-                    with ui.grid(columns=3).classes("gap-3 w-full"):
-                        for comp_name, comp_val in components.items():
-                            comp_status = (
-                                "healthy"
-                                if comp_val is True or (isinstance(comp_val, int) and comp_val > 0)
-                                else "unavailable"
-                            )
-                            with (
-                                ui.card().classes("dex-card").style("padding: 12px;"),
-                                ui.row().classes("items-center justify-between"),
-                            ):
-                                ui.label(comp_name).classes("text-sm font-mono").style(
-                                    f"color: {COLORS['text_primary']}"
-                                )
-                                status_badge(comp_status)
-                else:
-                    ui.label("No component data available.").classes("text-sm").style(
-                        f"color: {COLORS['text_muted']}"
-                    )
+def system_status() -> rx.Component:
+    return page_shell(
+        "System Status",
+        rx.cond(
+            SystemState.error != "",
+            rx.callout.root(
+                rx.callout.text(SystemState.error),
+                color_scheme="red",
+                margin_bottom="4",
+            ),
+            rx.fragment(),
+        ),
+        rx.hstack(
+            rx.cond(
+                SystemState.is_loading,
+                rx.spinner(size="2"),
+                rx.fragment(),
+            ),
+            rx.button(
+                rx.icon("refresh-cw", size=14),
+                "Refresh",
+                variant="outline",
+                size="2",
+                on_click=[SystemState.load_health, SystemState.load_components],
+            ),
+            rx.cond(
+                SystemState.last_refreshed != "",
+                rx.text(
+                    "Auto-refreshed: ",
+                    SystemState.last_refreshed,
+                    size="1",
+                    color="var(--gray-9)",
+                ),
+                rx.fragment(),
+            ),
+            spacing="3",
+            align="center",
+            margin_bottom="5",
+        ),
+        rx.grid(
+            _health_banner(),
+            columns="4",
+            gap="4",
+            margin_bottom="5",
+        ),
+        rx.heading(
+            "Components",
+            size="3",
+            weight="medium",
+            color="var(--gray-12)",
+            margin_bottom="3",
+        ),
+        rx.cond(
+            SystemState.is_loading,
+            rx.grid(
+                *[_skeleton_card() for _ in range(8)],
+                columns="4",
+                gap="3",
+            ),
+            rx.grid(
+                rx.foreach(SystemState.components_list, _component_card),
+                columns="4",
+                gap="3",
+            ),
+        ),
+        on_mount=[
+            SystemState.load_health,
+            SystemState.load_components,
+            SystemState.start_auto_refresh,
+        ],
+    )

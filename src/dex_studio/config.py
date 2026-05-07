@@ -58,6 +58,12 @@ class StudioConfig:
     native_mode: bool = True
     host: str = "127.0.0.1"
     port: int = 7860
+    local_config_path: str | None = None
+    # LLM provider — used by Resume Matcher and other AI features
+    llm_provider: str = "ollama"  # ollama | openai | anthropic | groq | openai_compat
+    llm_model: str = "llama3.2"
+    llm_api_key: str | None = None
+    llm_base_url: str = "http://localhost:11434"
 
 
 def load_config(
@@ -106,19 +112,33 @@ def save_config(config: StudioConfig, path: Path | None = None) -> None:
 
 def load_projects() -> list[ProjectEntry]:
     """Load project list from ~/.dex-studio/projects.yaml."""
-    if not _PROJECTS_FILE.exists():
-        return []
-    data = _load_yaml(_PROJECTS_FILE)
+    projects_file = Path.home() / ".dex-studio" / "projects.yaml"
+    if not projects_file.exists():
+        return [_get_default_project()]
+    data = _load_yaml(projects_file)
     projects = data.get("projects", {})
     if not isinstance(projects, dict):
-        return []
-    return [
+        return [_get_default_project()]
+
+    entries = [
         ProjectEntry(
             name=name,
             **{k: v for k, v in cfg.items() if k in ("url", "token", "icon")},
         )
         for name, cfg in projects.items()
     ]
+
+    # Always ensure CareerDEX is present
+    names = {p.name for p in entries}
+    if "CareerDEX" not in names:
+        entries.insert(0, _get_default_project())
+
+    return entries
+
+
+def _get_default_project() -> ProjectEntry:
+    """Return the default CareerDEX project entry."""
+    return ProjectEntry(name="CareerDEX", url="local://careerdex", icon="work")
 
 
 def save_projects(projects: list[ProjectEntry]) -> None:

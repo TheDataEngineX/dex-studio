@@ -1,52 +1,66 @@
-"""System logs page — structured log viewer stub.
-
-Route: ``/system/logs``
-"""
-
 from __future__ import annotations
 
-import logging
+import reflex as rx
 
-from nicegui import ui
+from dex_studio.components.layout import page_shell
+from dex_studio.state.system import SystemState
 
-from dex_studio.app import get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.empty_state import empty_state
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
+_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 
 
-@ui.page("/system/logs")
-async def system_logs_page() -> None:
-    """Render the structured log viewer stub page."""
-    apply_global_styles(get_theme())
+def _log_row(log: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(log["ts"]),
+        rx.table.cell(
+            rx.badge(
+                log["level"],
+                color_scheme=rx.cond(
+                    log["level"] == "ERROR",
+                    "red",
+                    rx.cond(log["level"] == "WARNING", "yellow", "gray"),
+                ),
+            )
+        ),
+        rx.table.cell(log["msg"]),
+    )
 
-    app_shell(active_domain="system")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("system", active_route="/system/logs")
-        with ui.column().classes("flex-1"):
-            breadcrumb("System", "Logs")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                ui.label("Structured Logs").classes("text-lg font-semibold").style(
-                    f"color: {COLORS['text_primary']}"
+
+def _level_tab(level: str) -> rx.Component:
+    return rx.button(
+        level,
+        on_click=SystemState.set_log_level(level),
+        color_scheme=rx.cond(SystemState.log_level == level, "indigo", "gray"),
+        variant=rx.cond(SystemState.log_level == level, "solid", "soft"),
+        size="2",
+    )
+
+
+def system_logs() -> rx.Component:
+    return page_shell(
+        "Logs",
+        rx.heading("System Logs", size="5", margin_bottom="4"),
+        rx.hstack(
+            *[_level_tab(lv) for lv in _LEVELS],
+            spacing="2",
+            margin_bottom="4",
+        ),
+        rx.cond(SystemState.is_loading, rx.spinner(), rx.fragment()),
+        rx.cond(
+            SystemState.error != "",
+            rx.callout.root(
+                rx.callout.text(SystemState.error), color_scheme="red", margin_bottom="4"
+            ),
+            rx.fragment(),
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Timestamp"),
+                    rx.table.column_header_cell("Level"),
+                    rx.table.column_header_cell("Message"),
                 )
-
-                with (
-                    ui.card().classes("dex-card").style("padding: 16px;"),
-                    ui.row().classes("items-start gap-3"),
-                ):
-                    ui.icon("info", size="sm").style(f"color: {COLORS['accent_light']}")
-                    ui.label(
-                        "Logs are emitted via structlog."
-                        " Connect a log aggregator"
-                        " (Loki, ELK, CloudWatch) for"
-                        " persistent log viewing."
-                    ).classes("text-sm").style(f"color: {COLORS['text_primary']}")
-
-                empty_state(
-                    "Log viewer coming soon",
-                    icon="article",
-                )
+            ),
+            rx.table.body(rx.foreach(SystemState.logs, _log_row)),
+        ),
+        on_mount=SystemState.load_logs,
+    )

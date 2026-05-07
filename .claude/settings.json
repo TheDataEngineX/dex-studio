@@ -1,12 +1,5 @@
 {
-  "autoUpdatesChannel": "latest",
-  "statusLine": {
-    "type": "command",
-    "command": "b=$(git branch --show-current 2>/dev/null); [ -n \"$b\" ] && echo \"[$b]\" || echo \"\"",
-    "padding": 2
-  },
   "permissions": {
-    "defaultMode": "default",
     "allow": [
       "Read",
       "Edit",
@@ -40,7 +33,6 @@
       "Bash(npx -y @upstash/context7-mcp*)"
     ],
     "deny": [
-      "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(rm -rf *)",
       "Bash(git push --force*)",
@@ -49,6 +41,42 @@
       "Bash(sudo *)",
       "Bash(chmod 777*)",
       "Bash(curl * | bash*)"
+    ],
+    "defaultMode": "default"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "b=$(git branch --show-current 2>/dev/null); [ -n \"$b\" ] && echo \"[$b]\" || echo \"\"",
+    "padding": 2
+  },
+  "autoUpdatesChannel": "latest",
+  "enabledPlugins": {
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "code-review-graph update --skip-flows",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "code-review-graph status",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

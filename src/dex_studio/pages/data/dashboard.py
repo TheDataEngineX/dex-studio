@@ -1,50 +1,96 @@
-"""Data domain dashboard — overview of pipelines, sources, and quality.
-
-Route: ``/data``
-"""
-
 from __future__ import annotations
 
-import logging
+import reflex as rx
 
-from nicegui import ui
-
-from dex_studio.app import get_engine, get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.metric_card import metric_card
-from dex_studio.engine import DexEngine
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
+from dex_studio.components.layout import metric_card, page_shell, skeleton_table
+from dex_studio.state.data import PipelineState, QualityState, SourceState
 
 
-@ui.page("/data")
-async def data_dashboard_page() -> None:
-    """Render the data domain dashboard."""
-    apply_global_styles(get_theme())
-    engine: DexEngine | None = get_engine()
-
-    app_shell(active_domain="data")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("data", active_route="/data")
-        with ui.column().classes("flex-1"):
-            breadcrumb("Data", "Dashboard")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                if engine is None:
-                    ui.label("No engine configured.").style(f"color: {COLORS['error']}")
-                    return
-
-                ui.label("Overview").classes("section-title")
-
-                pipeline_count = len(engine.config.data.pipelines)
-                source_count = len(engine.config.data.sources)
-
-                # Count pipelines with quality checks configured
-                quality_count = sum(1 for p in engine.config.data.pipelines.values() if p.quality)
-
-                with ui.row().classes("gap-4 flex-wrap"):
-                    metric_card("Pipelines", pipeline_count)
-                    metric_card("Sources", source_count)
-                    metric_card("Quality Checks", quality_count)
+def data_dashboard() -> rx.Component:
+    return page_shell(
+        "Data Dashboard",
+        rx.cond(
+            PipelineState.error != "",
+            rx.callout.root(rx.callout.text(PipelineState.error), color="red", margin_bottom="4"),
+            rx.fragment(),
+        ),
+        rx.grid(
+            metric_card(
+                "git-branch-plus", "Pipelines", PipelineState.pipelines.length(), accent="indigo"
+            ),  # type: ignore[attr-defined]
+            metric_card("database", "Sources", SourceState.sources.length(), accent="indigo"),  # type: ignore[attr-defined]
+            metric_card(
+                "shield-check",
+                "Quality Score",
+                QualityState.quality_score,  # type: ignore[arg-type]
+                accent="indigo",
+            ),
+            columns="3",
+            gap="4",
+            margin_bottom="6",
+        ),
+        rx.heading("Pipelines", size="3", margin_bottom="2"),
+        rx.cond(
+            PipelineState.is_loading,
+            skeleton_table(rows=5, cols=4),
+            rx.cond(
+                PipelineState.pipelines.length() == 0,  # type: ignore[attr-defined]
+                rx.center(
+                    rx.vstack(
+                        rx.icon("inbox", size=40, color="var(--gray-7)"),
+                        rx.text("No pipelines found", weight="medium", color="var(--gray-10)"),
+                        rx.text(
+                            "Connect a DEX API or create your first pipeline.",
+                            size="2",
+                            color="var(--gray-8)",
+                        ),
+                        align="center",
+                        spacing="2",
+                        padding_y="10",
+                    ),
+                ),
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("Name"),
+                            rx.table.column_header_cell("Status"),
+                            rx.table.column_header_cell("Last Run"),
+                            rx.table.column_header_cell("Action"),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            PipelineState.pipelines,
+                            lambda p: rx.table.row(
+                                rx.table.cell(p["name"]),
+                                rx.table.cell(
+                                    rx.badge(
+                                        p["status"],
+                                        color_scheme=rx.cond(
+                                            p["status"] == "success",
+                                            "green",
+                                            rx.cond(p["status"] == "running", "yellow", "red"),
+                                        ),
+                                    )
+                                ),
+                                rx.table.cell(p["last_run"]),
+                                rx.table.cell(
+                                    rx.button(
+                                        "Run",
+                                        size="1",
+                                        on_click=PipelineState.run_pipeline(p["name"]),
+                                    )
+                                ),
+                            ),
+                        )
+                    ),
+                    width="100%",
+                ),
+            ),
+        ),
+        on_mount=[
+            PipelineState.load_pipelines,
+            SourceState.load_sources,
+            QualityState.load_quality,
+        ],
+    )

@@ -1,56 +1,46 @@
-"""System traces page — OpenTelemetry trace viewer (coming soon).
-
-Route: ``/system/traces``
-"""
-
 from __future__ import annotations
 
-import logging
+import reflex as rx
 
-from nicegui import ui
-
-from dex_studio.app import get_theme
-from dex_studio.components.app_shell import app_shell
-from dex_studio.components.breadcrumb import breadcrumb
-from dex_studio.components.domain_sidebar import domain_sidebar
-from dex_studio.components.empty_state import empty_state
-from dex_studio.theme import COLORS, apply_global_styles
-
-_log = logging.getLogger(__name__)
+from dex_studio.components.layout import page_shell
+from dex_studio.state.system import SystemState
 
 
-@ui.page("/system/traces")
-async def system_traces_page() -> None:
-    """Render the OpenTelemetry trace viewer placeholder page."""
-    apply_global_styles(get_theme())
+def _trace_row(trace: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(trace["id"]),
+        rx.table.cell(trace["name"]),
+        rx.table.cell(trace["duration_ms"]),
+        rx.table.cell(
+            rx.badge(
+                trace["status"],
+                color_scheme=rx.cond(trace["status"] == "ok", "green", "red"),
+            )
+        ),
+    )
 
-    app_shell(active_domain="system")
-    with ui.row().classes("w-full flex-1").style("min-height: calc(100vh - 50px);"):
-        domain_sidebar("system", active_route="/system/traces")
-        with ui.column().classes("flex-1"):
-            breadcrumb("System", "Traces")
-            with ui.column().classes("p-6 gap-4 w-full"):
-                ui.label("Distributed Traces").classes("text-lg font-semibold").style(
-                    f"color: {COLORS['text_primary']}"
+
+def system_traces() -> rx.Component:
+    return page_shell(
+        "System Traces",
+        rx.cond(SystemState.is_loading, rx.spinner(), rx.fragment()),
+        rx.cond(
+            SystemState.error != "",
+            rx.callout.root(
+                rx.callout.text(SystemState.error), color_scheme="red", margin_bottom="4"
+            ),
+            rx.fragment(),
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("ID"),
+                    rx.table.column_header_cell("Name"),
+                    rx.table.column_header_cell("Duration (ms)"),
+                    rx.table.column_header_cell("Status"),
                 )
-
-                with (
-                    ui.card().classes("dex-card").style("padding: 16px;"),
-                    ui.row().classes("items-start gap-3"),
-                ):
-                    ui.icon("info", size="sm").style(f"color: {COLORS['accent_light']}")
-                    with ui.column().classes("gap-1"):
-                        ui.label("OpenTelemetry trace visualisation is coming soon.").classes(
-                            "text-sm"
-                        ).style(f"color: {COLORS['text_primary']}")
-                        ui.label(
-                            "Connect an"
-                            " OpenTelemetry-compatible backend"
-                            " (Jaeger, Tempo, Zipkin) for full"
-                            " distributed tracing support."
-                        ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
-
-                empty_state(
-                    "Trace viewer coming soon",
-                    icon="timeline",
-                )
+            ),
+            rx.table.body(rx.foreach(SystemState.traces, _trace_row)),
+        ),
+        on_mount=SystemState.load_traces,
+    )

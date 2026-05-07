@@ -3,7 +3,7 @@
 ## 1. Purpose
 
 DEX Studio is a **local, Python-first, open-source UI application** that provides a single
-control plane for end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.com/TheDataEngineX/dataenginex).
+control plane for end-to-end data projects powered by [TheDataEngineX/dex](https://github.com/TheDataEngineX/dex).
 
 It does **not** fork or rebrand upstream DEX. It is a separate tool that connects to a local
 DEX engine instance and unifies workflows in one place:

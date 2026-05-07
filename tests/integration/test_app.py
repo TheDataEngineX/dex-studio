@@ -41,20 +41,8 @@ class TestAppBootstrap:
         )
 
     def test_components_import(self) -> None:
-        """All components should import without error."""
-        from dex_studio.components import (
-            app_shell,  # noqa: F401
-            breadcrumb,  # noqa: F401
-            chat_message,  # noqa: F401
-            data_table,  # noqa: F401
-            domain_sidebar,  # noqa: F401
-            empty_state,  # noqa: F401
-            inspector_panel,  # noqa: F401
-            metric_card,  # noqa: F401
-            project_card,  # noqa: F401
-            status_badge,  # noqa: F401
-            tool_call_block,  # noqa: F401
-        )
+        """Layout components should import without error."""
+        from dex_studio.components.layout import page_shell, sidebar  # noqa: F401
 
     def test_config_system(self) -> None:
         """Config loading should work with defaults."""
