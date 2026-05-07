@@ -22,8 +22,8 @@ def data_dashboard() -> rx.Component:
             metric_card(
                 "shield-check",
                 "Quality Score",
-                QualityState.quality_score,
-                accent="indigo",  # type: ignore[arg-type]
+                QualityState.quality_score,  # type: ignore[arg-type]
+                accent="indigo",
             ),
             columns="3",
             gap="4",
