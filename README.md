@@ -11,6 +11,23 @@ Built on [Reflex](https://reflex.dev) — Python-first reactive web framework (P
 
 ---
 
+## Architecture
+
+DEX Studio is Layer 2 in the three-layer DEX architecture:
+
+```text
+Layer 1: DEX (framework)     — dataenginex PyPI package, CLI, headless
+     ↓ HTTP API
+Layer 2: DEX Studio (shell)  — this repo, domain-agnostic UI
+     ↓ page plugin registration
+Layer 3: Domain Apps         — registers custom pages into Studio
+```
+
+Studio connects to a running DEX engine via HTTP. It does not import
+`dataenginex` directly — the API is the contract.
+
+______________________________________________________________________
+
 ## Quick Start
 
 ```bash
