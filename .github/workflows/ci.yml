@@ -28,10 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/checkout@v6
-        with:
-          repository: TheDataEngineX/careerdex
-          path: ../careerdex
+      - run: git clone --depth=1 https://github.com/TheDataEngineX/careerdex.git ../careerdex
       - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
