@@ -45,8 +45,6 @@ build-backend = "hatchling.build"
 packages = ["src/dex_studio"]
 
 
-[tool.uv.sources]
-dataenginex = { path = "../dex", editable = true }
 
 [dependency-groups]
 dev = [
