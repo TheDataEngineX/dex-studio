@@ -1,0 +1,44 @@
+name: Cleanup Preview
+
+on:
+  delete: {}
+
+jobs:
+  cleanup-preview:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Compute branch slug
+        id: slug
+        run: |
+          SLUG=$(echo "${{ github.event.ref }}" \
+            | tr '/' '-' | tr '_' '-' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9-]//g' \
+            | sed 's/^-*//' | sed 's/-*$//' \
+            | cut -c1-50)
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v6
+        with:
+          repository: TheDataEngineX/infradex
+          ref: main
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+
+      - name: Delete preview overlay
+        env:
+          SLUG: ${{ steps.slug.outputs.slug }}
+        run: |
+          OVERLAY="argocd/previews/dex-studio/$SLUG"
+          if [ -d "$OVERLAY" ]; then
+            rm -rf "$OVERLAY"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$OVERLAY"
+            git commit -m "chore(dex-studio-preview-$SLUG): remove preview (branch deleted)"
+            git push
+          else
+            echo "No preview overlay found for $SLUG — nothing to clean up"
+          fi
