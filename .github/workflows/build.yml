@@ -2,7 +2,7 @@ name: Build & Publish Image
 
 on:
   push:
-    branches: [dev]
+    branches-ignore: [main]
     paths:
       - 'src/**'
       - 'Dockerfile'
@@ -26,12 +26,21 @@ jobs:
       packages: write
     outputs:
       short_sha: ${{ steps.vars.outputs.short_sha }}
+      branch_slug: ${{ steps.vars.outputs.branch_slug }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Set image vars
         id: vars
-        run: echo "short_sha=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          echo "short_sha=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          SLUG=$(echo "$GITHUB_REF_NAME" \
+            | tr '/' '-' | tr '_' '-' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9-]//g' \
+            | sed 's/^-*//' | sed 's/-*$//' \
+            | cut -c1-50)
+          echo "branch_slug=$SLUG" >> $GITHUB_OUTPUT
 
       - uses: docker/setup-buildx-action@v3
 
@@ -47,7 +56,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
-            type=raw,value=dev
+            type=raw,value=${{ steps.vars.outputs.branch_slug }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -77,31 +86,73 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  deploy-dev:
-    name: Deploy to Dev
+  deploy-preview:
+    name: Deploy Preview
     needs: [build, security-scan]
     runs-on: ubuntu-latest
-    environment: dev
+    environment: preview
     steps:
       - uses: actions/checkout@v6
         with:
           repository: TheDataEngineX/infradex
-          ref: dev
+          ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
       - uses: imranismail/setup-kustomize@v2
 
-      - name: Pin image tag in dev overlay
+      - name: Create or update preview overlay
+        env:
+          SLUG: ${{ needs.build.outputs.branch_slug }}
+          SHA: ${{ needs.build.outputs.short_sha }}
         run: |
-          cd argocd/overlays/dex-studio-dev
+          OVERLAY="argocd/previews/dex-studio/$SLUG"
+          mkdir -p "$OVERLAY"
+          if [ ! -f "$OVERLAY/kustomization.yaml" ]; then
+            cat > "$OVERLAY/kustomization.yaml" <<YAML
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          namespace: dex-studio-preview-$SLUG
+          resources:
+            - ../../../../base-dex-studio
+          images:
+            - name: ghcr.io/thedataenginex/dex-studio
+              newTag: sha-00000000
+          patches:
+            - target:
+                kind: Deployment
+                name: dex-studio
+              patch: |
+                - op: replace
+                  path: /spec/replicas
+                  value: 1
+                - op: replace
+                  path: /spec/template/spec/containers/0/resources/requests/cpu
+                  value: 100m
+                - op: replace
+                  path: /spec/template/spec/containers/0/resources/requests/memory
+                  value: 256Mi
+                - op: replace
+                  path: /spec/template/spec/containers/0/resources/limits/cpu
+                  value: 250m
+                - op: replace
+                  path: /spec/template/spec/containers/0/resources/limits/memory
+                  value: 512Mi
+          commonLabels:
+            environment: preview
+          YAML
+          fi
+          cd "$OVERLAY"
           kustomize edit set image \
-            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-${{ needs.build.outputs.short_sha }}
+            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
 
-      - name: Commit & push to infradex dev branch
+      - name: Commit & push to infradex main
+        env:
+          SLUG: ${{ needs.build.outputs.branch_slug }}
+          SHA: ${{ needs.build.outputs.short_sha }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/overlays/dex-studio-dev/kustomization.yaml
+          git add argocd/previews/dex-studio/$SLUG/
           git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-dev): deploy sha-${{ needs.build.outputs.short_sha }}"
+            git commit -m "chore(dex-studio-preview-$SLUG): deploy sha-$SHA"
           git push

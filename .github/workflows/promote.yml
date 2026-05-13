@@ -3,15 +3,15 @@ name: Promote Image
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Image tag to promote (e.g. sha-abc12345)'
-        required: true
-        type: string
       environment:
         description: 'Target environment'
         required: true
         type: choice
         options: [stage, prod]
+      source_branch:
+        description: 'Feature branch to promote from (stage only, e.g. feature/my-feature)'
+        required: false
+        type: string
       strategy:
         description: 'Deployment strategy'
         required: true
@@ -19,14 +19,10 @@ on:
         options: [rolling, canary]
         default: rolling
       canary_weight:
-        description: 'Canary traffic % (canary strategy only, 1–50)'
+        description: 'Canary traffic % (canary + prod only, 1–50)'
         required: false
         type: number
         default: 20
-
-env:
-  INFRA_BRANCH: ${{ inputs.environment == 'prod' && 'main' || inputs.environment }}
-  OVERLAY: ${{ inputs.environment == 'prod' && 'dex-studio-prod' || 'dex-studio-stage' }}
 
 jobs:
   promote:
@@ -36,33 +32,51 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: TheDataEngineX/infradex
-          ref: ${{ env.INFRA_BRANCH }}
+          ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
       - uses: imranismail/setup-kustomize@v2
 
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ "${{ inputs.environment }}" = "stage" ]; then
+            SLUG=$(echo "${{ inputs.source_branch }}" \
+              | tr '/' '-' | tr '_' '-' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9-]//g' \
+              | sed 's/^-*//' | sed 's/-*$//' \
+              | cut -c1-50)
+            FILE="argocd/previews/dex-studio/$SLUG/kustomization.yaml"
+          else
+            FILE="argocd/overlays/dex-studio-stage/kustomization.yaml"
+          fi
+          TAG=$(grep 'newTag:' "$FILE" | awk '{print $2}')
+          echo "Promoting image tag: $TAG (from $FILE)"
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+
       - name: Pin image tag in ${{ inputs.environment }} overlay
         run: |
-          cd argocd/overlays/${{ env.OVERLAY }}
+          cd argocd/overlays/dex-studio-${{ inputs.environment }}
           kustomize edit set image \
-            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:${{ inputs.image_tag }}
+            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:${{ steps.tag.outputs.image_tag }}
 
       - name: Render canary ingress
         if: inputs.strategy == 'canary' && inputs.environment == 'prod'
         run: |
           sed "s/__WEIGHT__/${{ inputs.canary_weight }}/g" \
-            argocd/overlays/${{ env.OVERLAY }}/canary-ingress.yaml.tmpl \
-            > argocd/overlays/${{ env.OVERLAY }}/canary-ingress.yaml
+            argocd/overlays/dex-studio-prod/canary-ingress.yaml.tmpl \
+            > argocd/overlays/dex-studio-prod/canary-ingress.yaml
 
       - name: Remove canary ingress (rolling)
         if: inputs.strategy == 'rolling' && inputs.environment == 'prod'
-        run: rm -f argocd/overlays/${{ env.OVERLAY }}/canary-ingress.yaml
+        run: rm -f argocd/overlays/dex-studio-prod/canary-ingress.yaml
 
-      - name: Commit & push to infradex ${{ env.INFRA_BRANCH }} branch
+      - name: Commit & push to infradex main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/overlays/${{ env.OVERLAY }}/
+          git add argocd/overlays/dex-studio-${{ inputs.environment }}/
           git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-${{ inputs.environment }}): promote ${{ inputs.image_tag }} [${{ inputs.strategy }}]"
+            git commit -m "chore(dex-studio-${{ inputs.environment }}): promote ${{ steps.tag.outputs.image_tag }} [${{ inputs.strategy }}]"
           git push
