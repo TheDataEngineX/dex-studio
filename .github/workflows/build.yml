@@ -113,7 +113,7 @@ jobs:
           kind: Kustomization
           namespace: dex-studio-preview-$SLUG
           resources:
-            - ../../../../base-dex-studio
+            - ../../../base-dex-studio
           images:
             - name: ghcr.io/thedataenginex/dex-studio
               newTag: sha-00000000
