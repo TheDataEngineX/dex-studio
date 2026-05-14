@@ -4,10 +4,10 @@ FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /workspace/dex-studio
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY src/ src/
+COPY LICENSE README.md poe_tasks.toml src/ ./
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim
