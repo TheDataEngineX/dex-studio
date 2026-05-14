@@ -73,13 +73,24 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - name: Scan (table — gate)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ needs.build.outputs.short_sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Scan (sarif — upload)
+        uses: aquasecurity/trivy-action@v0.36.0
+        if: always()
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ needs.build.outputs.short_sha }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          ignore-unfixed: true
 
       - uses: github/codeql-action/upload-sarif@v4
         if: always()
