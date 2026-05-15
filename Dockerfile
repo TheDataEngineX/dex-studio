@@ -11,6 +11,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY README.md poe_tasks.toml rxconfig.py ./
+COPY assets/ assets/
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 
