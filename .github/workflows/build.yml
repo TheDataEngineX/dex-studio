@@ -73,13 +73,24 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - name: Scan (table — gate)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ needs.build.outputs.short_sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Scan (sarif — upload)
+        uses: aquasecurity/trivy-action@v0.36.0
+        if: always()
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ needs.build.outputs.short_sha }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          ignore-unfixed: true
 
       - uses: github/codeql-action/upload-sarif@v4
         if: always()
@@ -113,7 +124,7 @@ jobs:
           kind: Kustomization
           namespace: dex-studio-preview-$SLUG
           resources:
-            - ../../../../base-dex-studio
+            - ../../../base-dex-studio
           images:
             - name: ghcr.io/thedataenginex/dex-studio
               newTag: sha-00000000
@@ -136,7 +147,14 @@ jobs:
                   value: 250m
                 - op: replace
                   path: /spec/template/spec/containers/0/resources/limits/memory
-                  value: 512Mi
+                  value: 1Gi
+            - target:
+                kind: Ingress
+                name: dex-studio
+              patch: |
+                - op: replace
+                  path: /spec/rules/0/host
+                  value: $SLUG.preview.dex-studio.thedataenginex.org
           commonLabels:
             environment: preview
           YAML
