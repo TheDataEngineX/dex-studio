@@ -149,7 +149,11 @@ def start(**kwargs: object) -> None:
 
         init_engine(config.local_config_path)
 
-    import subprocess
+    import shutil
     import sys
 
-    subprocess.run([sys.executable, "-m", "reflex", "run"], check=False)
+    reflex = shutil.which("reflex")
+    if reflex is None:
+        sys.stderr.write("Error: reflex not found in PATH\n")
+        sys.exit(1)
+    os.execvp(reflex, [reflex, "run", "--env", "prod"])
