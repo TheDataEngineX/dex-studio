@@ -147,7 +147,14 @@ jobs:
                   value: 250m
                 - op: replace
                   path: /spec/template/spec/containers/0/resources/limits/memory
-                  value: 512Mi
+                  value: 1Gi
+            - target:
+                kind: Ingress
+                name: dex-studio
+              patch: |
+                - op: replace
+                  path: /spec/rules/0/host
+                  value: $SLUG.preview.dex-studio.thedataenginex.org
           commonLabels:
             environment: preview
           YAML
