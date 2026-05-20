@@ -273,6 +273,7 @@ def copilot_toggle_button() -> rx.Component:
             size="3",
             border_radius="full",
             box_shadow="var(--shadow-4)",
+            aria_label="Toggle AI Copilot",
             title="Toggle AI Copilot (Ctrl+K)",
         ),
     )

@@ -2,20 +2,12 @@ from __future__ import annotations
 
 import reflex as rx
 
-from dex_studio.components.layout import page_shell
+from dex_studio.components.layout import metric_card, page_shell
 from dex_studio.state.system import SystemState
 
 
 def _metric_card(entry: list) -> rx.Component:
-    return rx.card(
-        rx.vstack(
-            rx.text(entry[0], size="2", color_scheme="gray"),
-            rx.heading(rx.text(entry[1]), size="5"),
-            spacing="1",
-        ),
-        padding="4",
-        min_width="160px",
-    )
+    return metric_card("activity", entry[0], entry[1], accent="orange")
 
 
 def system_metrics() -> rx.Component:
