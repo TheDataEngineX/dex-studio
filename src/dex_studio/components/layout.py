@@ -128,7 +128,7 @@ def section_heading(
 ) -> rx.Component:
     return rx.hstack(
         rx.vstack(
-            rx.heading(title, size="3", weight="semibold"),
+            rx.heading(title, size="3", weight="bold"),
             rx.cond(
                 subtitle != "",
                 rx.text(subtitle, size="2", color="var(--gray-9)"),

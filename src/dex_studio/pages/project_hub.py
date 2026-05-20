@@ -188,7 +188,7 @@ def _domain_card(
                         flex_shrink="0",
                     ),
                     rx.vstack(
-                        rx.heading(title, size="3", weight="semibold"),
+                        rx.heading(title, size="3", weight="bold"),
                         rx.text(description, size="1", color="var(--gray-9)", line_height="1.5"),
                         spacing="1",
                         align="start",
