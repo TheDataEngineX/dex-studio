@@ -492,7 +492,7 @@ def project_hub() -> rx.Component:
                         rx.vstack(
                             rx.hstack(
                                 rx.icon("folder-open", size=16, color="var(--gray-9)"),
-                                rx.text("Open project", size="2", weight="semibold"),
+                                rx.text("Open project", size="2", weight="medium"),
                                 spacing="2",
                                 align="center",
                             ),
