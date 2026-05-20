@@ -135,7 +135,7 @@ Required:  WebSocket/SSE for:
            - Drift alerts
 ```
 
-NiceGUI 3.x supports this — add SSE endpoints to DEX API and use `ui.update()` from WebSocket callbacks.
+Reflex supports this — add SSE endpoints to DEX API and update state via `rx.State` event handlers triggered from WebSocket callbacks.
 
 ### State Management Gap
 
@@ -186,7 +186,7 @@ ______________________________________________________________________
 | Authentication | Without it, can't expose to non-localhost | DEX API + studio middleware |
 | Real-time pipeline logs | Users run pipelines and stare at spinner — no log streaming | WebSocket/SSE from pipeline runner |
 | Notification center | Bell icon decorative — no notification system | `StudioStore` pub/sub + notifications panel |
-| Global error boundary | Unhandled exception crashes silently or shows NiceGUI default error | Custom error page + Sentry integration |
+| Global error boundary | Unhandled exception crashes silently or shows Reflex default error | Custom error page + Sentry integration |
 | Responsive layout | Unusable on laptop 13" or iPad — no media queries | 768px breakpoint minimum |
 | Keyboard shortcuts | Only Ctrl+K works — modern tools have rich keyboard nav | Expand to full shortcut system |
 

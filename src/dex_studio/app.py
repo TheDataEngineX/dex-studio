@@ -75,7 +75,13 @@ app = rx.App(
         "https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap",
         "studio.css",
     ],
-    style={"font_family": "Fira Sans, Inter, system-ui, -apple-system, sans-serif"},
+    style={
+        "font_family": "Fira Sans, Inter, system-ui, -apple-system, sans-serif",
+        "--ease-out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "--duration-fast": "120ms",
+        "--duration-normal": "200ms",
+        "--duration-slow": "300ms",
+    },
 )
 
 # data
