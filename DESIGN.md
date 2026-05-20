@@ -238,11 +238,11 @@ ______________________________________________________________________
 
 | Pattern | Location | Severity | Fix |
 |---------|----------|----------|-----|
-| Logo gradient | `layout.py:239` — `linear-gradient(135deg, var(--indigo-9), var(--violet-9))` on zap icon container | Medium | Replace with flat `var(--indigo-9)` background. The lightning bolt icon is already distinctive. |
-| Bootstrap dead load | `app.py:stylesheets` — `bootstrap@5.3.3/dist/css/bootstrap.min.css` | High | Remove. Zero Bootstrap components used. Adds ~30KB, risks Radix reset conflicts. |
-| Generic glow shadow token | `design_tokens.py:70` — `"shadow-glow": "0 0 20px rgba(99, 102, 241, 0.3)"` | Low | Not injected, so inert. Delete the token. |
-| Indigo hover on all hub cards | `project_hub.py:24` — `"box_shadow": "0 4px 16px var(--indigo-4)"` for all 5 domain cards | Low | Use each domain's own color: `var(--{accent}-4)`. ML card should use violet, AI cyan, etc. |
-| Dead component graveyard | 18 files in `src/dex_studio/components/` | ~~High~~ Done | All NiceGUI component files deleted. `layout.py` is now the only component file. |
+| Logo gradient | `layout.py` — `linear-gradient(135deg, var(--indigo-9), var(--violet-9))` on zap icon container | Medium | Replace with flat `var(--indigo-9)` background. The lightning bolt icon is already distinctive. |
+| ~~Bootstrap dead load~~ | ~~`app.py:stylesheets`~~ | ~~High~~ Done | Removed. |
+| Generic glow shadow token | `design_tokens.py` — `"shadow-glow": "0 0 20px rgba(99, 102, 241, 0.3)"` | Low | Not injected, so inert. Delete the token. |
+| ~~Indigo hover on all hub cards~~ | ~~`project_hub.py`~~ | ~~Low~~ Done | `_domain_card()` now takes `accent` param — each domain uses its own color. |
+| ~~Dead component graveyard~~ | ~~18 files in `src/dex_studio/components/`~~ | ~~High~~ Done | All NiceGUI component files deleted. `layout.py` is now the only component file. |
 
 ______________________________________________________________________
 
@@ -251,12 +251,12 @@ ______________________________________________________________________
 **Priority 1 — Cleanup (no visual impact):**
 
 1. ~~Delete the 18 dead NiceGUI component files~~ ✓ Done
-1. Remove Bootstrap from `app.py` stylesheets
+1. ~~Remove Bootstrap from `app.py` stylesheets~~ ✓ Done (was already removed)
 1. Delete `inject_design_tokens()` from `design_tokens.py` or replace with `rx.GlobalStyle`
 
 **Priority 2 — Consistency:**
 4\. Create one canonical `dex_kpi_card()` in `layout.py`, replace 3+ inline variants
-5\. Fix domain hub card hover to use per-domain accent color
+5\. ~~Fix domain hub card hover to use per-domain accent color~~ ✓ Done (`_domain_card()` uses `accent` param)
 6\. Add `aria-label` to all `rx.icon_button` calls in `copilot.py` and `layout.py`
 7\. Wire motion tokens via `app.style` dict in `app.py`
 
