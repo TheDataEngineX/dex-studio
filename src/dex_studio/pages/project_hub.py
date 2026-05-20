@@ -62,14 +62,12 @@ class ProjectHubState(BaseState):
             yield
 
     async def _load_by_path(self, path: str) -> AsyncGenerator[None]:
-        """Internal: load a project by raw path string."""
         self.is_loading = True
         self.error = ""
         yield
         try:
             resolved = Path(path).expanduser().resolve()
             if not resolved.exists():
-                # Offer to create new project
                 self.new_project_path = str(resolved)
                 self.show_create_modal = True
                 return
@@ -85,12 +83,10 @@ class ProjectHubState(BaseState):
 
     @rx.event
     def show_create_dialog(self) -> None:
-        """Show the create project dialog."""
         self.show_create_modal = True
 
     @rx.event
     def hide_create_dialog(self) -> None:
-        """Hide the create project dialog."""
         self.show_create_modal = False
 
     @rx.event
@@ -103,7 +99,6 @@ class ProjectHubState(BaseState):
 
     @rx.event
     async def create_project(self) -> AsyncGenerator[None]:
-        """Create a new project with a dex.yaml."""
         self.is_loading = True
         self.error = ""
         yield
@@ -112,7 +107,6 @@ class ProjectHubState(BaseState):
             if not path.parent.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Create a minimal dex.yaml
             config_content = f"""project:
   name: {self.new_project_name or "My Project"}
   version: 0.1.0
@@ -156,7 +150,6 @@ observability:
             path.write_text(config_content)
             self._push_toast(f"Created project at {path}", "success")
 
-            # Load the new project
             from dex_studio._engine import init_engine
 
             eng = init_engine(path)
@@ -168,312 +161,407 @@ observability:
             self.is_loading = False
 
 
+# ── Domain navigation cards ───────────────────────────────────────────────────
+
+
 def _domain_card(
     title: str,
     description: str,
     href: str,
-    color: str,
     icon: str,
     accent: str,
 ) -> rx.Component:
-    return rx.card(
-        rx.vstack(
-            rx.hstack(
-                rx.icon(icon, size=24, color=color),
-                rx.heading(title, size="4"),
-                spacing="3",
-                align_items="center",
+    return rx.link(
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon(icon, size=20, color=f"var(--{accent}-11)"),
+                        width="40px",
+                        height="40px",
+                        border_radius="var(--radius-2)",
+                        background=f"var(--{accent}-3)",
+                        border=f"1px solid var(--{accent}-5)",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        flex_shrink="0",
+                    ),
+                    rx.vstack(
+                        rx.heading(title, size="3", weight="semibold"),
+                        rx.text(description, size="1", color="var(--gray-9)", line_height="1.5"),
+                        spacing="1",
+                        align="start",
+                    ),
+                    spacing="3",
+                    align="start",
+                    width="100%",
+                ),
+                rx.hstack(
+                    rx.text(
+                        f"Open {title}", size="1", color=f"var(--{accent}-11)", weight="medium"
+                    ),
+                    rx.icon("arrow-right", size=12, color=f"var(--{accent}-11)"),
+                    spacing="1",
+                    align="center",
+                ),
+                spacing="4",
+                align="start",
             ),
-            rx.text(description, size="2", color_scheme="gray"),
-            rx.link(
-                rx.button("Open", color_scheme=accent, variant="soft", size="2"),
-                href=href,
-            ),
-            spacing="3",
-            align_items="flex-start",
+            padding="5",
+            background="var(--gray-2)",
+            border=f"1px solid var(--{accent}-4)",
+            border_radius="var(--radius-3)",
+            _hover={
+                "background": f"var(--{accent}-2)",
+                "border_color": f"var(--{accent}-7)",
+                "box_shadow": f"0 4px 16px var(--{accent}-4)",
+            },
+            transition="all 0.15s ease",
+            cursor="pointer",
         ),
-        padding="5",
-        width="280px",
-        _hover={"box_shadow": f"0 4px 16px var(--{accent}-4)"},
-        cursor="pointer",
+        href=href,
+        text_decoration="none",
+        width="100%",
     )
 
 
-def _open_project_card() -> rx.Component:
-    return rx.vstack(
-        # Starter examples for quick load
-        rx.cond(
-            ProjectHubState.starter_configs.length() > 0,
-            rx.box(
-                rx.text(
-                    "Examples", size="2", weight="bold", color_scheme="gray", margin_bottom="2"
-                ),
-                rx.flex(
-                    rx.foreach(
-                        ProjectHubState.starter_configs,
-                        lambda starter: rx.card(
-                            rx.hstack(
-                                rx.icon("play", size=16, color="var(--green-9)"),
-                                rx.vstack(
-                                    rx.text(starter["name"], size="2", weight="medium"),
-                                    rx.text(starter["path"], size="1", color_scheme="gray"),
-                                    spacing="0",
-                                ),
-                                rx.button(
-                                    "Load",
-                                    on_click=lambda: ProjectHubState.load_project_by_path(
-                                        starter["path"]
-                                    ),
-                                    size="1",
-                                    color_scheme="green",
-                                    variant="soft",
-                                ),
-                                spacing="3",
-                                align_items="center",
-                                width="100%",
-                            ),
-                            padding="3",
-                            width="100%",
-                        ),
-                    ),
-                    direction="column",
-                    spacing="2",
-                    width="100%",
-                ),
-                width="100%",
-                margin_bottom="4",
-            ),
-            rx.fragment(),
-        ),
-        # Create New Project button
-        rx.button(
-            rx.hstack(
-                rx.icon("plus", size=16),
-                rx.text("Create New Project"),
-                spacing="2",
-            ),
-            on_click=ProjectHubState.show_create_dialog,
-            color_scheme="indigo",
-            size="2",
-            width="100%",
-            max_width="560px",
-        ),
-        # Custom path input
-        rx.card(
-            rx.vstack(
-                rx.hstack(
-                    rx.icon("folder-open", size=20, color="var(--gray-9)"),
-                    rx.heading("Open Custom Project", size="4"),
-                    spacing="2",
-                    align_items="center",
-                ),
-                rx.text(
-                    "Enter path to a dex.yaml to load a project.",
-                    size="2",
-                    color_scheme="gray",
-                ),
-                rx.hstack(
-                    rx.input(
-                        placeholder="/path/to/my-project/dex.yaml",
-                        value=ProjectHubState.project_path_input,
-                        on_change=ProjectHubState.set_project_path,
-                        width="340px",
-                        size="2",
-                    ),
-                    rx.button(
-                        "Load",
-                        on_click=ProjectHubState.load_project,
-                        loading=ProjectHubState.is_loading,
-                        size="2",
-                    ),
-                    spacing="2",
-                    align="center",
-                ),
-                rx.cond(
-                    ProjectHubState.error != "",
-                    rx.text(ProjectHubState.error, size="1", color="var(--red-9)"),
-                    rx.fragment(),
-                ),
-                spacing="3",
-                align_items="flex-start",
-            ),
-            padding="5",
-            width="100%",
-            max_width="560px",
-        ),
-        # Create Project Dialog
-        rx.cond(
-            ProjectHubState.show_create_modal,
-            rx.dialog.root(
-                rx.dialog.content(
+# ── Create project dialog ─────────────────────────────────────────────────────
+
+
+def _create_dialog() -> rx.Component:
+    return rx.cond(
+        ProjectHubState.show_create_modal,
+        rx.dialog.root(
+            rx.dialog.content(
+                rx.vstack(
                     rx.dialog.title("Create New Project"),
+                    rx.dialog.description(
+                        "A dex.yaml config file will be created at the specified path.",
+                        size="2",
+                        color="var(--gray-9)",
+                    ),
+                    rx.separator(size="4"),
                     rx.vstack(
-                        rx.text("Project Name", size="2", weight="bold"),
+                        rx.text("Project Name", size="2", weight="medium"),
                         rx.input(
                             placeholder="My Project",
                             value=ProjectHubState.new_project_name,
                             on_change=ProjectHubState.set_new_project_name,
                             width="100%",
-                            size="2",
+                            size="3",
                         ),
-                        rx.text("Path (dex.yaml)", size="2", weight="bold"),
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        rx.text("Config Path (dex.yaml)", size="2", weight="medium"),
                         rx.input(
                             value=ProjectHubState.new_project_path,
                             on_change=ProjectHubState.set_new_project_path,
                             width="100%",
-                            size="2",
+                            size="3",
                         ),
-                        rx.hstack(
-                            rx.spacer(),
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.cond(
+                        ProjectHubState.error != "",
+                        rx.callout.root(
+                            rx.callout.text(ProjectHubState.error),
+                            color_scheme="red",
+                            size="1",
+                        ),
+                        rx.fragment(),
+                    ),
+                    rx.hstack(
+                        rx.dialog.close(
                             rx.button(
                                 "Cancel",
                                 on_click=ProjectHubState.hide_create_dialog,
                                 variant="ghost",
                                 size="2",
                             ),
-                            rx.button(
-                                rx.cond(
-                                    ProjectHubState.is_loading,
-                                    rx.spinner(size="1"),
-                                    rx.text("Create"),
-                                ),
-                                on_click=ProjectHubState.create_project,
-                                color_scheme="indigo",
-                                size="2",
-                                disabled=ProjectHubState.is_loading,
-                            ),
-                            spacing="2",
-                            align="center",
                         ),
-                        spacing="3",
+                        rx.button(
+                            rx.cond(
+                                ProjectHubState.is_loading,
+                                rx.spinner(size="2"),
+                                rx.text("Create Project"),
+                            ),
+                            on_click=ProjectHubState.create_project,
+                            color_scheme="indigo",
+                            size="2",
+                            disabled=ProjectHubState.is_loading,
+                        ),
+                        spacing="2",
+                        justify="end",
                         width="100%",
                     ),
-                    padding="6",
-                    max_width="420px",
+                    spacing="4",
+                    width="100%",
                 ),
-                open=ProjectHubState.show_create_modal,
-                on_open_change=ProjectHubState.hide_create_dialog,
+                padding="6",
+                max_width="440px",
             ),
-            rx.fragment(),
+            open=ProjectHubState.show_create_modal,
+            on_open_change=ProjectHubState.hide_create_dialog,
         ),
-        spacing="3",
-        width="100%",
-        max_width="560px",
+        rx.fragment(),
     )
 
 
-def _active_project_badge() -> rx.Component:
-    return rx.cond(
-        ProjectHubState.current_project != "",
-        rx.hstack(
-            rx.icon("circle-check", size=14, color="var(--green-9)"),
-            rx.text(
-                "Active: ",
-                rx.el.strong(ProjectHubState.current_project),
-                size="2",
-                color="var(--gray-11)",
-            ),
-            rx.spacer(),
-            rx.button(
-                "Switch Project",
-                on_click=lambda: rx.redirect("/onboarding"),
-                size="1",
-                variant="ghost",
-                color_scheme="indigo",
-            ),
-            spacing="1",
-            align="center",
-        ),
-        rx.hstack(
-            rx.icon("circle-alert", size=14, color="var(--orange-9)"),
-            rx.text(
-                "No project loaded — use the form below or ", size="2", color="var(--orange-9)"
-            ),
-            rx.link("open onboarding →", href="/onboarding", size="2"),
-            spacing="1",
-            align="center",
-        ),
-    )
+# ── Main page ─────────────────────────────────────────────────────────────────
 
 
 def project_hub() -> rx.Component:
     return rx.box(
-        rx.vstack(
-            rx.heading("DEX Studio", size="8", margin_bottom="1"),
-            rx.text(
-                "DataEngineX — unified Data · ML · AI platform",
-                size="3",
-                color_scheme="gray",
-            ),
-            _active_project_badge(),
-            rx.divider(margin_y="5"),
-            # Show domain cards only when project is loaded (as navigation)
-            rx.cond(
-                ProjectHubState.current_project != "",
-                rx.flex(
-                    _domain_card(
-                        "Data",
-                        "Pipelines, sources, SQL console, lineage, quality, catalog.",
-                        "/data",
-                        "var(--indigo-9)",
-                        "database",
-                        "indigo",
-                    ),
-                    _domain_card(
-                        "ML",
-                        "Models, experiments, features, drift, A/B testing.",
-                        "/ml",
-                        "var(--violet-9)",
-                        "brain",
-                        "violet",
-                    ),
-                    _domain_card(
-                        "AI",
-                        "Agents, playground, traces, memory, workflows, RAG.",
-                        "/ai",
-                        "var(--cyan-9)",
-                        "bot",
-                        "cyan",
-                    ),
-                    _domain_card(
-                        "System",
-                        "Health, logs, metrics, components, incidents, settings.",
-                        "/system",
-                        "var(--orange-9)",
-                        "activity",
-                        "orange",
-                    ),
-                    wrap="wrap",
-                    gap="5",
-                    justify="center",
-                ),
-                # When no project loaded, show empty state
+        rx.center(
+            rx.vstack(
+                # ── Brand ──────────────────────────────────────────────────────
                 rx.vstack(
-                    rx.icon("folder-open", size=40, color="var(--gray-7)"),
-                    rx.text("No project loaded", size="4", weight="medium"),
-                    rx.text(
-                        "Load or create a project to get started", size="2", color="var(--gray-8)"
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("zap", size=20, color="white"),
+                            background="var(--indigo-9)",
+                            padding="10px",
+                            border_radius="var(--radius-3)",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.heading("DEX Studio", size="7", weight="bold"),
+                            rx.text(
+                                "DataEngineX — unified Data · ML · AI platform",
+                                size="3",
+                                color="var(--gray-9)",
+                            ),
+                            spacing="0",
+                            align="start",
+                        ),
+                        spacing="4",
+                        align="center",
                     ),
-                    rx.button(
-                        "Load Project",
-                        on_click=lambda: rx.redirect("/onboarding"),
-                        color_scheme="indigo",
-                        margin_top="3",
+                    # Project status badge
+                    rx.cond(
+                        ProjectHubState.current_project != "",
+                        rx.hstack(
+                            rx.badge(
+                                rx.hstack(
+                                    rx.icon("circle-check", size=12),
+                                    rx.text(f"Active: {ProjectHubState.current_project}"),
+                                    spacing="1",
+                                    align="center",
+                                ),
+                                color_scheme="green",
+                                variant="soft",
+                                radius="full",
+                                size="2",
+                            ),
+                            rx.button(
+                                "Switch",
+                                on_click=lambda: rx.redirect("/onboarding"),
+                                size="1",
+                                variant="ghost",
+                                color_scheme="gray",
+                            ),
+                            spacing="2",
+                            align="center",
+                        ),
+                        rx.hstack(
+                            rx.icon("circle-alert", size=14, color="var(--amber-9)"),
+                            rx.text(
+                                "No project loaded",
+                                size="2",
+                                color="var(--amber-11)",
+                                weight="medium",
+                            ),
+                            spacing="1",
+                            align="center",
+                        ),
                     ),
-                    spacing="2",
+                    spacing="4",
                     align="center",
-                    padding_y="10",
                 ),
+                rx.separator(size="4"),
+                # ── Domain cards (shown when project loaded) ───────────────────
+                rx.cond(
+                    ProjectHubState.current_project != "",
+                    rx.vstack(
+                        rx.text(
+                            "Navigate to",
+                            size="1",
+                            weight="medium",
+                            color="var(--gray-9)",
+                            text_transform="uppercase",
+                            letter_spacing="0.08em",
+                        ),
+                        rx.grid(
+                            _domain_card(
+                                "Data",
+                                "Pipelines, sources, SQL, lineage and quality gates.",
+                                "/data",
+                                "database",
+                                "indigo",
+                            ),
+                            _domain_card(
+                                "ML",
+                                "Models, experiments, features, drift and A/B tests.",
+                                "/ml",
+                                "brain",
+                                "violet",
+                            ),
+                            _domain_card(
+                                "AI",
+                                "Agents, playground, traces, memory and workflows.",
+                                "/ai",
+                                "sparkles",
+                                "cyan",
+                            ),
+                            _domain_card(
+                                "System",
+                                "Health, logs, metrics, components and settings.",
+                                "/system",
+                                "server",
+                                "orange",
+                            ),
+                            columns="2",
+                            gap="3",
+                            width="100%",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    rx.fragment(),
+                ),
+                # ── Load / create project ──────────────────────────────────────
+                rx.box(
+                    rx.vstack(
+                        # Starter examples
+                        rx.cond(
+                            ProjectHubState.starter_configs.length() > 0,  # type: ignore[attr-defined]
+                            rx.vstack(
+                                rx.text(
+                                    "Example projects",
+                                    size="1",
+                                    weight="medium",
+                                    color="var(--gray-9)",
+                                    text_transform="uppercase",
+                                    letter_spacing="0.08em",
+                                ),
+                                rx.vstack(
+                                    rx.foreach(
+                                        ProjectHubState.starter_configs,
+                                        lambda s: rx.hstack(
+                                            rx.icon("play-circle", size=15, color="var(--green-9)"),
+                                            rx.vstack(
+                                                rx.text(s["name"], size="2", weight="medium"),
+                                                rx.text(s["path"], size="1", color="var(--gray-8)"),
+                                                spacing="0",
+                                            ),
+                                            rx.spacer(),
+                                            rx.button(
+                                                "Load",
+                                                on_click=lambda: (
+                                                    ProjectHubState.load_project_by_path(s["path"])
+                                                ),
+                                                size="1",
+                                                color_scheme="green",
+                                                variant="soft",
+                                            ),
+                                            spacing="3",
+                                            align="center",
+                                            width="100%",
+                                            padding="3",
+                                            background="var(--gray-2)",
+                                            border="1px solid var(--gray-4)",
+                                            border_radius="var(--radius-2)",
+                                        ),
+                                    ),
+                                    spacing="2",
+                                    width="100%",
+                                ),
+                                spacing="2",
+                                width="100%",
+                            ),
+                            rx.fragment(),
+                        ),
+                        rx.separator(size="4"),
+                        # Open by path
+                        rx.vstack(
+                            rx.hstack(
+                                rx.icon("folder-open", size=16, color="var(--gray-9)"),
+                                rx.text("Open project", size="2", weight="semibold"),
+                                spacing="2",
+                                align="center",
+                            ),
+                            rx.text(
+                                "Enter the path to a dex.yaml config file.",
+                                size="2",
+                                color="var(--gray-9)",
+                            ),
+                            rx.hstack(
+                                rx.input(
+                                    placeholder="/path/to/my-project/dex.yaml",
+                                    value=ProjectHubState.project_path_input,
+                                    on_change=ProjectHubState.set_project_path,
+                                    size="3",
+                                    flex="1",
+                                ),
+                                rx.button(
+                                    "Load",
+                                    on_click=ProjectHubState.load_project,
+                                    loading=ProjectHubState.is_loading,
+                                    size="3",
+                                    color_scheme="indigo",
+                                ),
+                                spacing="2",
+                                align="center",
+                                width="100%",
+                            ),
+                            rx.cond(
+                                ProjectHubState.error != "",
+                                rx.callout.root(
+                                    rx.callout.text(ProjectHubState.error),
+                                    color_scheme="red",
+                                    size="1",
+                                ),
+                                rx.fragment(),
+                            ),
+                            spacing="3",
+                            align="start",
+                            width="100%",
+                        ),
+                        rx.separator(size="4"),
+                        rx.button(
+                            rx.hstack(
+                                rx.icon("plus", size=15),
+                                rx.text("Create new project"),
+                                spacing="2",
+                            ),
+                            on_click=ProjectHubState.show_create_dialog,
+                            variant="outline",
+                            size="3",
+                            width="100%",
+                        ),
+                        spacing="4",
+                        width="100%",
+                    ),
+                    padding="6",
+                    background="var(--gray-2)",
+                    border="1px solid var(--gray-4)",
+                    border_radius="var(--radius-4)",
+                    width="100%",
+                ),
+                _create_dialog(),
+                spacing="6",
+                width="100%",
+                max_width="640px",
             ),
-            rx.divider(margin_y="5"),
-            _open_project_card(),
-            spacing="0",
+            padding="8",
+            min_height="100vh",
             align_items="center",
         ),
-        min_height="100vh",
-        display="flex",
-        align_items="center",
-        justify_content="center",
-        padding="8",
         on_mount=ProjectHubState.on_load,
     )

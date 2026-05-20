@@ -111,30 +111,6 @@ disable_error_code = ["no-any-return", "attr-defined"]
 module = ["dex_studio.state.data", "dex_studio.state.ml", "dex_studio.state.system"]
 disable_error_code = ["operator"]
 
-[[tool.mypy.overrides]]
-# Legacy NiceGUI component files — not used in Reflex stack, excluded until removed
-module = [
-    "dex_studio.components.app_shell",
-    "dex_studio.components.badge",
-    "dex_studio.components.breadcrumb",
-    "dex_studio.components.button",
-    "dex_studio.components.card",
-    "dex_studio.components.chat_message",
-    "dex_studio.components.command_palette",
-    "dex_studio.components.data_table",
-    "dex_studio.components.domain_sidebar",
-    "dex_studio.components.empty_state",
-    "dex_studio.components.hub_nav",
-    "dex_studio.components.input",
-    "dex_studio.components.inspector_panel",
-    "dex_studio.components.metric_card",
-    "dex_studio.components.page_layout",
-    "dex_studio.components.project_card",
-    "dex_studio.components.status_badge",
-    "dex_studio.components.toast",
-    "dex_studio.components.tool_call_block",
-]
-ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

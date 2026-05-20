@@ -18,15 +18,8 @@ class LayoutState(rx.State):
     def close_sidebar(self) -> None:
         self.sidebar_open = False
 
-    @staticmethod
-    def is_project_loaded() -> bool:
-        """Check if a project is loaded."""
-        from dex_studio._engine import get_engine
 
-        return get_engine() is not None
-
-
-# ── Status helpers ───────────────────────────────────────────────────────────
+# ── Status helpers ────────────────────────────────────────────────────────────
 
 _STATUS_COLORS: dict[str, str] = {
     "running": "blue",
@@ -45,7 +38,8 @@ _STATUS_COLORS: dict[str, str] = {
     "inactive": "gray",
 }
 
-# ── Reusable metric card (exported for domain pages) ─────────────────────────
+
+# ── Metric card ───────────────────────────────────────────────────────────────
 
 
 def metric_card(
@@ -54,18 +48,32 @@ def metric_card(
     value: rx.Var[Any],
     accent: str = "indigo",
     trend: str = "",
+    subtitle: str = "",
 ) -> rx.Component:
     return rx.box(
+        # Accent top bar
+        rx.box(
+            height="3px",
+            background=f"var(--{accent}-9)",
+            border_radius="var(--radius-1) var(--radius-1) 0 0",
+            position="absolute",
+            top="0",
+            left="0",
+            right="0",
+        ),
         rx.vstack(
             rx.hstack(
                 rx.box(
-                    rx.icon(icon, size=17, color=f"var(--{accent}-9)"),
-                    padding="8px",
-                    background=f"var(--{accent}-3)",
+                    rx.icon(icon, size=16, color=f"var(--{accent}-11)"),
+                    width="34px",
+                    height="34px",
                     border_radius="var(--radius-2)",
+                    background=f"var(--{accent}-3)",
+                    border=f"1px solid var(--{accent}-5)",
                     display="flex",
                     align_items="center",
                     justify_content="center",
+                    flex_shrink="0",
                 ),
                 rx.spacer(),
                 rx.cond(
@@ -76,18 +84,31 @@ def metric_card(
                 align="center",
                 width="100%",
             ),
-            rx.heading(value, size="6", weight="bold"),
-            rx.text(label, size="2", color="var(--gray-9)"),
-            spacing="2",
+            rx.vstack(
+                rx.heading(value, size="7", weight="bold", line_height="1"),
+                rx.text(label, size="2", color="var(--gray-10)", weight="medium"),
+                rx.cond(
+                    subtitle != "",
+                    rx.text(subtitle, size="1", color="var(--gray-8)"),
+                    rx.fragment(),
+                ),
+                spacing="1",
+                align="start",
+            ),
+            spacing="3",
             align="start",
+            padding_top="3",
         ),
+        position="relative",
         padding="5",
+        padding_top="6",
         background="var(--gray-2)",
-        border="1px solid var(--gray-4)",
+        border=f"1px solid var(--{accent}-4)",
         border_radius="var(--radius-3)",
+        class_name="dex-metric-card",
         _hover={
-            "border_color": f"var(--{accent}-6)",
-            "box_shadow": f"0 0 0 1px var(--{accent}-4), 0 2px 8px rgba(0,0,0,0.2)",
+            "border_color": f"var(--{accent}-7)",
+            "background": f"var(--{accent}-2)",
         },
         transition="all 0.15s ease",
     )
@@ -96,10 +117,37 @@ def metric_card(
 def status_badge(value: Any, color_map: dict[str, str] | None = None) -> rx.Component:
     colors = color_map or _STATUS_COLORS
     color = colors.get(str(value).lower(), "gray")
-    return rx.badge(value, color_scheme=color, variant="soft")
+    return rx.badge(value, color_scheme=color, variant="soft", radius="full")
 
 
-# ── Nav definitions ──────────────────────────────────────────────────────────
+# ── Section heading ───────────────────────────────────────────────────────────
+
+
+def section_heading(
+    title: str, subtitle: str = "", action: rx.Component | None = None
+) -> rx.Component:
+    return rx.hstack(
+        rx.vstack(
+            rx.heading(title, size="3", weight="semibold"),
+            rx.cond(
+                subtitle != "",
+                rx.text(subtitle, size="2", color="var(--gray-9)"),
+                rx.fragment(),
+            )
+            if subtitle
+            else rx.fragment(),
+            spacing="0",
+            align="start",
+        ),
+        rx.spacer(),
+        action if action else rx.fragment(),
+        align="center",
+        margin_bottom="3",
+        width="100%",
+    )
+
+
+# ── Nav definitions ───────────────────────────────────────────────────────────
 
 _DOMAINS = [
     ("Data", "/data", "database", "indigo"),
@@ -113,7 +161,7 @@ _SUBNAV: dict[str, list[tuple[str, str, str]]] = {
     "/data": [
         ("Overview", "/data", "layout-dashboard"),
         ("Pipelines", "/data/pipelines", "git-branch-plus"),
-        ("Catalog", "/data/catalog", "book"),
+        ("Catalog", "/data/catalog", "book-open"),
         ("Sources", "/data/sources", "database"),
         ("SQL", "/data/sql", "terminal"),
         ("Quality", "/data/quality", "shield-check"),
@@ -159,7 +207,7 @@ def _domain_link(label: str, href: str, icon: str, accent: str) -> rx.Component:
                 rx.icon(
                     icon,
                     size=14,
-                    color=rx.cond(is_active, f"var(--{accent}-9)", "var(--gray-9)"),
+                    color=rx.cond(is_active, f"var(--{accent}-11)", "var(--gray-9)"),
                 ),
                 width="28px",
                 height="28px",
@@ -171,12 +219,16 @@ def _domain_link(label: str, href: str, icon: str, accent: str) -> rx.Component:
                 flex_shrink="0",
                 transition="background 0.1s ease",
             ),
-            rx.text(label, size="2", weight=rx.cond(is_active, "600", "400")),
+            rx.text(
+                label,
+                size="2",
+                weight=rx.cond(is_active, "600", "400"),
+                color=rx.cond(is_active, f"var(--{accent}-12)", "var(--gray-11)"),
+            ),
             spacing="2",
             align="center",
         ),
         href=href,
-        color=rx.cond(is_active, f"var(--{accent}-11)", "var(--gray-11)"),
         text_decoration="none",
         padding_x="3",
         padding_y="2",
@@ -184,8 +236,8 @@ def _domain_link(label: str, href: str, icon: str, accent: str) -> rx.Component:
         display="flex",
         align_items="center",
         border_radius="var(--radius-2)",
-        background=rx.cond(is_active, f"var(--{accent}-2)", "transparent"),
-        _hover={"background": f"var(--{accent}-2)", "color": f"var(--{accent}-11)"},
+        background=rx.cond(is_active, f"var(--{accent}-3)", "transparent"),
+        _hover={"background": f"var(--{accent}-2)", "text_decoration": "none"},
         transition="all 0.12s ease",
     )
 
@@ -196,29 +248,36 @@ def _sub_link(label: str, href: str, icon: str) -> rx.Component:
         rx.hstack(
             rx.box(
                 width="3px",
-                height="14px",
+                height="16px",
                 border_radius="2px",
                 background=rx.cond(is_active, "var(--accent-9)", "transparent"),
                 flex_shrink="0",
             ),
-            rx.icon(icon, size=13),
-            rx.text(label, size="1"),
+            rx.icon(
+                icon,
+                size=13,
+                color=rx.cond(is_active, "var(--accent-11)", "var(--gray-9)"),
+            ),
+            rx.text(
+                label,
+                size="2",
+                color=rx.cond(is_active, "var(--accent-12)", "var(--gray-10)"),
+                weight=rx.cond(is_active, "500", "400"),
+            ),
             spacing="2",
             align="center",
         ),
         href=href,
-        color=rx.cond(is_active, "var(--accent-11)", "var(--gray-10)"),
-        font_weight=rx.cond(is_active, "600", "400"),
         text_decoration="none",
         padding_x="3",
-        padding_y="1",
+        padding_y="2",
         padding_left="5",
         width="100%",
         display="flex",
         align_items="center",
         border_radius="var(--radius-2)",
         background=rx.cond(is_active, "var(--accent-2)", "transparent"),
-        _hover={"background": "var(--accent-2)", "color": "var(--accent-11)"},
+        _hover={"background": "var(--accent-2)", "text_decoration": "none"},
         transition="all 0.1s ease",
     )
 
@@ -235,8 +294,9 @@ def _subnav_section(prefix: str) -> rx.Component:
             spacing="0",
             width="100%",
             padding_y="1",
-            border_left="1px solid var(--gray-4)",
+            border_left="1px solid var(--gray-5)",
             margin_left="5",
+            padding_left="1",
             margin_bottom="1",
         ),
         rx.fragment(),
@@ -244,14 +304,22 @@ def _subnav_section(prefix: str) -> rx.Component:
 
 
 def sidebar() -> rx.Component:
+    # Show sidebar on any inner domain page — not on root or onboarding
+    is_inner = (
+        rx.State.router.page.path.startswith("/data")
+        | rx.State.router.page.path.startswith("/ml")
+        | rx.State.router.page.path.startswith("/ai")
+        | rx.State.router.page.path.startswith("/system")
+        | rx.State.router.page.path.startswith("/career")
+    )
     return rx.cond(
-        LayoutState.is_project_loaded(),
+        is_inner,
         rx.box(
             rx.vstack(
-                # Logo area
+                # ── Logo ──────────────────────────────────────────────────────
                 rx.hstack(
                     rx.box(
-                        rx.icon("zap", size=15, color="white"),
+                        rx.icon("zap", size=14, color="white"),
                         background="var(--indigo-9)",
                         padding="7px",
                         border_radius="var(--radius-2)",
@@ -262,7 +330,7 @@ def sidebar() -> rx.Component:
                     ),
                     rx.vstack(
                         rx.heading("DEX Studio", size="3", weight="bold"),
-                        rx.text("DataEngineX Platform", size="1", color="var(--gray-9)"),
+                        rx.text("DataEngineX", size="1", color="var(--gray-9)"),
                         spacing="0",
                         align="start",
                     ),
@@ -273,18 +341,26 @@ def sidebar() -> rx.Component:
                     padding_bottom="3",
                     width="100%",
                 ),
-                rx.divider(margin_y="1"),
-                *[
-                    rx.vstack(
-                        _domain_link(label, href, icon, accent),
-                        _subnav_section(href),
-                        spacing="0",
-                        width="100%",
-                    )
-                    for label, href, icon, accent in _DOMAINS
-                ],
+                rx.separator(size="4", color_scheme="gray"),
+                # ── Domain links ───────────────────────────────────────────────
+                rx.vstack(
+                    *[
+                        rx.vstack(
+                            _domain_link(label, href, icon, accent),
+                            _subnav_section(href),
+                            spacing="0",
+                            width="100%",
+                        )
+                        for label, href, icon, accent in _DOMAINS
+                    ],
+                    spacing="1",
+                    width="100%",
+                    padding_y="2",
+                    padding_x="2",
+                ),
                 rx.spacer(),
-                rx.divider(margin_y="2"),
+                # ── Footer ─────────────────────────────────────────────────────
+                rx.separator(size="4", color_scheme="gray"),
                 rx.hstack(
                     rx.link(
                         rx.hstack(
@@ -302,7 +378,7 @@ def sidebar() -> rx.Component:
                     rx.spacer(),
                     rx.color_mode.button(size="1", variant="ghost"),
                     rx.link(
-                        rx.icon("folder_git", size=13, color="var(--gray-9)"),
+                        rx.icon("github", size=13, color="var(--gray-9)"),
                         href="https://github.com/TheDataEngineX",
                         is_external=True,
                         _hover={"color": "var(--gray-12)"},
@@ -327,16 +403,14 @@ def sidebar() -> rx.Component:
             top="0",
             height="100vh",
             width="220px",
-            background="var(--gray-1)",
-            border_right="1px solid var(--gray-4)",
             z_index="100",
             overflow_y="auto",
         ),
-        rx.fragment(),  # No sidebar when no project loaded
+        rx.fragment(),
     )
 
 
-# ── Toast overlay ────────────────────────────────────────────────────────────
+# ── Toast overlay ─────────────────────────────────────────────────────────────
 
 
 def _toast_item(toast: dict[str, str]) -> rx.Component:
@@ -349,13 +423,13 @@ def _toast_item(toast: dict[str, str]) -> rx.Component:
     }.get(kind, "info")
     return rx.box(
         rx.hstack(
-            rx.icon(icon_name, size=16, color=f"var(--{color}-9)"),
+            rx.icon(icon_name, size=15, color=f"var(--{color}-9)"),
             rx.text(toast.get("message", ""), size="2", flex="1"),
             rx.icon_button(
                 rx.icon("x", size=12),
                 size="1",
                 variant="ghost",
-                aria_label="Dismiss notification",
+                aria_label="Dismiss",
                 on_click=BaseState.clear_toasts,
             ),
             spacing="2",
@@ -366,8 +440,9 @@ def _toast_item(toast: dict[str, str]) -> rx.Component:
         border_radius="var(--radius-3)",
         padding="3",
         min_width="280px",
-        max_width="400px",
-        box_shadow="var(--shadow-3)",
+        max_width="420px",
+        box_shadow="var(--shadow-md)",
+        class_name="animate-slide-up",
     )
 
 
@@ -379,13 +454,13 @@ def toast_overlay() -> rx.Component:
             align="end",
         ),
         position="fixed",
-        bottom="4",
-        right="4",
+        bottom="5",
+        right="5",
         z_index="9999",
     )
 
 
-# ── Skeleton loaders ─────────────────────────────────────────────────────────
+# ── Skeleton loaders ──────────────────────────────────────────────────────────
 
 
 def skeleton_row(cols: int = 4) -> rx.Component:
@@ -393,7 +468,7 @@ def skeleton_row(cols: int = 4) -> rx.Component:
         *[
             rx.table.cell(
                 rx.box(
-                    height="16px",
+                    height="14px",
                     background="var(--gray-4)",
                     border_radius="var(--radius-1)",
                     animation="pulse 1.5s ease-in-out infinite",
@@ -411,13 +486,14 @@ def skeleton_table(rows: int = 5, cols: int = 4) -> rx.Component:
     )
 
 
-# ── Page shell ───────────────────────────────────────────────────────────────
+# ── Page shell ────────────────────────────────────────────────────────────────
 
 
 def page_shell(
     title: str,
     *content: rx.Component,
     breadcrumb: list[tuple[str, str]] | None = None,
+    actions: rx.Component | None = None,
     **props: Any,
 ) -> rx.Component:
     crumbs: list[tuple[str, str]] = breadcrumb or []
@@ -426,21 +502,27 @@ def page_shell(
         rx.hstack(
             *[
                 rx.hstack(
-                    rx.link(rx.text(label, size="1", color="var(--gray-9)"), href=href),
-                    rx.text("/", size="1", color="var(--gray-6)"),
+                    rx.link(
+                        rx.text(label, size="1", color="var(--gray-9)"),
+                        href=href,
+                        text_decoration="none",
+                        _hover={"color": "var(--gray-12)"},
+                    ),
+                    rx.text("/", size="1", color="var(--gray-5)"),
                     spacing="1",
                 )
                 for label, href in crumbs
             ],
             rx.text(title, size="1", color="var(--gray-11)"),
             spacing="1",
-            margin_bottom="2",
+            margin_bottom="1",
         )
         if crumbs
         else rx.fragment()
     )
 
     return rx.box(
+        # Skip link for accessibility
         rx.link(
             "Skip to main content",
             href="#main-content",
@@ -458,7 +540,7 @@ def page_shell(
             transition="top 0.1s",
         ),
         sidebar(),
-        # Mobile header bar
+        # Mobile header
         rx.box(
             rx.hstack(
                 rx.icon_button(
@@ -476,6 +558,7 @@ def page_shell(
             ),
             class_name="dex-mobile-header",
         ),
+        # Main content column
         rx.box(
             # Sticky page header
             rx.box(
@@ -483,10 +566,11 @@ def page_shell(
                     rx.vstack(
                         breadcrumb_bar,
                         rx.heading(title, size="5", weight="bold"),
-                        spacing="1",
+                        spacing="0",
                         align="start",
                     ),
                     rx.spacer(),
+                    actions if actions else rx.fragment(),
                     align="center",
                     width="100%",
                 ),
@@ -494,6 +578,7 @@ def page_shell(
                 padding_y="4",
                 border_bottom="1px solid var(--gray-4)",
                 background="var(--gray-1)",
+                class_name="dex-page-header",
             ),
             # Content area
             rx.box(
@@ -501,6 +586,7 @@ def page_shell(
                 id="main-content",
                 padding="6",
                 width="100%",
+                max_width="1400px",
             ),
             class_name="dex-content",
             min_height="100vh",
@@ -511,14 +597,11 @@ def page_shell(
     )
 
 
-# ── Hub nav strip ─────────────────────────────────────────────────────────────
+# ── Hub nav strip ──────────────────────────────────────────────────────────────
 
 
 def hub_nav_strip(*items: tuple[str, str, str]) -> rx.Component:
-    """Underline tab strip for intra-domain sub-grouping.
-
-    Each item is (label, href, icon_name).
-    """
+    """Underline tab strip for intra-domain sub-grouping."""
     current_path = rx.State.router.page.path
 
     def _tab(label: str, href: str, icon: str) -> rx.Component:
@@ -541,25 +624,36 @@ def hub_nav_strip(*items: tuple[str, str, str]) -> rx.Component:
     )
 
 
-# ── Empty state ───────────────────────────────────────────────────────────────
+# ── Empty state ────────────────────────────────────────────────────────────────
 
 
 def empty_state(
     icon: str,
     title: str,
     body: str = "",
+    action: rx.Component | None = None,
 ) -> rx.Component:
     return rx.center(
         rx.vstack(
-            rx.icon(icon, size=40, color="var(--gray-7)"),
-            rx.text(title, weight="medium", color="var(--gray-10)"),
+            rx.box(
+                rx.icon(icon, size=32, color="var(--gray-8)"),
+                padding="4",
+                background="var(--gray-3)",
+                border_radius="50%",
+            ),
+            rx.text(title, size="3", weight="medium", color="var(--gray-11)"),
             rx.cond(
                 body != "",
-                rx.text(body, size="2", color="var(--gray-8)"),
+                rx.text(
+                    body, size="2", color="var(--gray-9)", text_align="center", max_width="320px"
+                ),
                 rx.fragment(),
-            ),
+            )
+            if body
+            else rx.fragment(),
+            action if action else rx.fragment(),
             align="center",
-            spacing="2",
-            padding_y="10",
+            spacing="3",
+            padding_y="12",
         ),
     )
