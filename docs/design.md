@@ -2,91 +2,84 @@
 
 ## 1. Purpose
 
-DEX Studio is a **local, Python-first, open-source UI application** that provides a single
+DEX Studio is a **local, Python-first, open-source web UI** that provides a single
 control plane for end-to-end data projects powered by [TheDataEngineX/dex](https://github.com/TheDataEngineX/dex).
 
-It does **not** fork or rebrand upstream DEX. It is a separate tool that connects to a local
-DEX engine instance and unifies workflows in one place:
+It does **not** fork or rebrand upstream DEX. It imports `dataenginex` directly as a library
+and unifies all workflows in one place:
 
-```
-Project Setup → Ingestion → Medallion Pipelines → ML/AI → Serving → Observability
+```text
+Project Setup → Ingestion → Medallion Pipelines → ML/AI → Observability
 ```
 
 ## 2. Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
-│                      DEX Studio (Reflex)                          │
+│                    DEX Studio (FastAPI)                           │
 │                                                                   │
-│  ┌──────────┐  ┌────────────┐  ┌──────────────────────────────┐  │
-│  │  Pages    │  │ Components │  │   State                      │  │
-│  │  (views)  │  │ (shared)   │  │   (Reflex State classes)     │  │
-│  └─────┬─────┘  └─────┬──────┘  └─────────────┬──────────────┘  │
-│        │               │                        │                 │
-│  ┌─────┴───────────────┴────────────────────────┴──────────────┐  │
-│  │                     Studio Core                              │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌────────────┐                │  │
-│  │  │  Config   │  │  Engine  │  │   Theme    │                │  │
-│  │  │  (YAML)   │  │ (direct) │  │  (Reflex)  │                │  │
-│  │  └──────────┘  └──────────┘  └────────────┘                │  │
-│  └──────────────────────────┬──────────────────────────────────┘  │
-└─────────────────────────────┼────────────────────────────────────┘
-                              │  direct import (same process)
-                              ▼
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │                      Routers                              │    │
+│  │  root · data · ml · ai · system                          │    │
+│  └────────────────────┬─────────────────────────────────────┘    │
+│                        │ Jinja2 templates + HTMX                  │
+│  ┌─────────────────────┴───────────────────────────────────┐     │
+│  │              Studio Core                                 │     │
+│  │  app.py · config.py · auth.py · _engine.py · utils.py  │     │
+│  └────────────────────┬────────────────────────────────────┘     │
+└───────────────────────┼───────────────────────────────────────────┘
+                        │  direct import (same process)
+                        ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                    DEX Engine (dataenginex)                        │
-│  Registry · Config · ML · AI · Observability · Workflows          │
+│                    DexEngine (dataenginex)                         │
+│  Config · DexStore · Data · ML · AI · Orchestration               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-DEX Studio embeds the `dataenginex` package directly (no HTTP hop) via `DexEngine` in
-`src/dex_studio/engine.py`. A separate DEX API server is not required for local use.
+Studio mounts `dataenginex` via `DexEngine` (see `src/dex_studio/_engine.py`).
+No separate DEX server process is required.
 
-### Why Reflex
+### Why FastAPI + Jinja2 + HTMX
 
-| Requirement | Reflex Capability |
+| Requirement | Approach |
 | --- | --- |
-| Python-first, no manual JS build step | ✅ Python components compile to React |
-| Real URL routing (`/data`, `/ml`, `/ai`) | ✅ `@rx.page` decorator |
-| Reactive state for live updates | ✅ Built-in async State classes |
-| Web-based (browser or embedded) | ✅ Serves on configurable port (7860) |
-| Type-safe component model | ✅ Full mypy strict compatibility |
-| Auth middleware (future) | ✅ FastAPI middleware support |
-
-### Why NOT Streamlit
-
-- No real URL routing (query params only)
-- No background tasks (script re-executes on every interaction)
-- Performance degrades with complex layouts
-- Can't embed into existing FastAPI infrastructure
+| Server-side rendering (fast initial load) | Jinja2 templates |
+| Partial page updates without a JS build step | HTMX attributes |
+| Type-safe route handlers | FastAPI + Pydantic |
+| Direct library access (no HTTP hop) | `dataenginex` imported in-process |
+| Standard Python tooling | pytest TestClient, mypy strict |
 
 ## 3. Project Structure
 
-```
+```text
 dex-studio/
-├── pyproject.toml                  # Hatchling build, deps
-├── rxconfig.py                     # Reflex config (ports, app_name)
+├── pyproject.toml                  # Hatchling build, deps, poe tasks
 ├── src/
 │   └── dex_studio/
 │       ├── __init__.py             # Package + version
-│       ├── cli.py                  # CLI entry (dex-studio command)
-│       ├── app.py                  # Reflex app + page registrations
-│       ├── config.py               # YAML config loading
-│       ├── engine.py               # DexEngine class (wraps dataenginex)
-│       ├── _engine.py              # DexEngine singleton
-│       ├── state/
-│       │   ├── base.py             # Base Reflex State
-│       │   ├── data.py             # Data domain state
-│       │   ├── ml.py               # ML domain state
-│       │   ├── ai.py               # AI domain state
-│       │   └── system.py           # System/config state
-│       ├── components/
-│       │   └── layout.py           # Sidebar, header, page_shell
-│       └── pages/
-│           ├── data/               # Data domain pages
-│           ├── ml/                 # ML domain pages
-│           ├── ai/                 # AI domain pages
-│           └── system/             # System/settings pages
+│       ├── app.py                  # FastAPI factory — mounts routers, templates, static
+│       ├── cli.py                  # CLI entry (dex-studio --host --port --config)
+│       ├── config.py               # StudioPrefs + ProjectEntry (projects.yaml, prefs.yaml)
+│       ├── auth.py                 # Session-based auth (cookie + optional API key)
+│       ├── _engine.py              # DexEngine singleton (get_engine / set_engine)
+│       ├── utils.py                # Shared template helpers
+│       ├── audit.py                # Audit logging
+│       ├── theme.py                # Design tokens
+│       ├── routers/
+│       │   ├── root.py             # Home, project selector, health
+│       │   ├── data.py             # Data domain routes
+│       │   ├── ml.py               # ML domain routes
+│       │   ├── ai.py               # AI domain routes
+│       │   ├── system.py           # System domain routes
+│       │   └── _deps.py            # Shared FastAPI deps (engine, auth, render)
+│       ├── templates/
+│       │   ├── base.html           # Layout shell (sidebar, nav)
+│       │   ├── data/               # Data domain templates
+│       │   ├── ml/                 # ML domain templates
+│       │   ├── ai/                 # AI domain templates
+│       │   └── system/             # System domain templates
+│       └── static/
+│           └── studio.css          # Styles
 ├── tests/
 │   ├── conftest.py
 │   └── unit/
@@ -96,57 +89,53 @@ dex-studio/
 
 ## 4. Configuration
 
-Config is loaded with this priority (highest wins):
-
-1. CLI arguments (`--url`, `--token`, `--theme`)
-1. Environment variables (`DEX_STUDIO_API_URL`, `DEX_STUDIO_API_TOKEN`, …)
-1. Project-local `.dex-studio.yaml`
-1. User-level `~/.dex-studio/config.yaml`
-1. Built-in defaults
-
 ```yaml
-# ~/.dex-studio/config.yaml
-api_url: "http://localhost:17000"
-api_token: null
-timeout: 10.0
-theme: dark
-poll_interval: 5.0
+# ~/.dex-studio/projects.yaml  — registered projects
+projects:
+  - name: my-project
+    path: /home/user/workspace/my-project/dex.yaml
 ```
 
-Key environment variables used by the container:
+```yaml
+# ~/.dex-studio/prefs.yaml  — UI preferences
+theme: dark
+last_project: my-project
+```
+
+Key environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DEX_STUDIO_HOST` | `0.0.0.0` | Bind address |
-| `DEX_STUDIO_PORT` | `7860` | Frontend port |
-| `DEX_STUDIO_API_URL` | `http://localhost:17000` | DEX engine URL |
+| `DEX_STUDIO_PORT` | `7860` | Port |
+| `DEX_STUDIO_API_KEY` | — | Enables auth; unset = no auth |
+| `DEX_STUDIO_SESSION_SECRET` | auto-generated | Cookie signing key |
 
-## 5. Lockstep Development Model
+## 5. Development Model
 
-Each Studio page drives corresponding DEX engine API endpoints.
-When Studio needs data that DEX doesn't expose yet, the engine API must be extended first.
+Each Studio page calls `DexEngine` methods directly. When Studio needs data that
+`dataenginex` doesn't expose yet, the library must be extended first.
 
-| Studio Domain | DEX Engine Backends Required | Status |
-| --- | --- | --- |
-| Data | `GET /api/v1/data/quality`, `/api/v1/warehouse/layers`, `/api/v1/data/sources` | ✅ Available |
-| ML | `GET /api/v1/models`, `POST /api/v1/predict` | ✅ Available |
-| AI | Routing, runtime, memory, observability backends | ✅ Available |
-| System | Config, registry, health | ✅ Available |
+| Studio Domain | DexEngine Methods Used |
+| --- | --- |
+| Data | `run_pipeline`, `source_schema`, `source_sample`, `warehouse_layers`, `warehouse_tables` |
+| ML | `model_registry.list_models`, `model_registry.predict` |
+| AI | `agents[name].chat` |
+| System | `health`, `config`, `store.list_pipeline_runs` |
 
-### Lockstep Rule
+### Rule
 
-> **No Studio page without a DEX API endpoint. No DEX API endpoint without a Studio page.**
+> **No Studio page without a DexEngine method. No DexEngine method without a Studio page.**
 
 ## 6. Technology Choices
 
 | Choice | Rationale |
 | --- | --- |
-| **Reflex** | Python-first, real routing, reactive state, compiles to React |
-| **dataenginex (direct)** | Direct package import — no HTTP overhead for local use |
-| **DuckDB** | Embedded analytics for Studio-local queries |
-| **structlog** | Structured logging, matches DEX engine patterns |
-| **Pydantic** | Config validation, matches DEX engine patterns |
-| **Hatchling** | Same build backend as DEX engine |
+| **FastAPI** | Standard ASGI, type-safe, TestClient for unit tests |
+| **Jinja2** | Server-side rendering, no JS build pipeline |
+| **HTMX** | Partial updates via HTTP attributes — minimal JS footprint |
+| **dataenginex (direct import)** | No HTTP overhead; single process for local use |
+| **DuckDB (via DexStore)** | Embedded persistence — zero ops |
 | **Separate repo** | Different release cadence, users, and dependency trees |
 
 ## 7. Deployment
@@ -154,45 +143,37 @@ When Studio needs data that DEX doesn't expose yet, the engine API must be exten
 DEX Studio ships as a Docker image (`ghcr.io/thedataenginex/dex-studio`) deployed via
 ArgoCD from [TheDataEngineX/infradex](https://github.com/TheDataEngineX/infradex).
 
-Environments:
-
 | Environment | Overlay | Triggered by |
 | --- | --- | --- |
 | Preview | `argocd/previews/dex-studio/<branch>/` | Push to feature branch (auto) |
 | Stage | `argocd/overlays/dex-studio-stage/` | Promote workflow (manual) |
 | Prod | `argocd/overlays/dex-studio-prod/` | Promote workflow (manual, after stage) |
 
-Promotion: **dex-studio → Actions → Promote Image** — pick `environment` and `source_branch`.
+## 8. Roadmap
 
-## 8. Phased Roadmap
+### Phase 0 — Foundation ✅
 
-### Phase 0 — Foundation (v0.1.0) ✅
+- FastAPI app factory + router scaffold
+- DexEngine singleton integration
+- Session auth + config system
+- CI pipeline
 
-- Project scaffold + CI
-- Config system (file + env + CLI)
-- DEX engine lockstep: mount ML router
+### Phase 1 — Data & ML ← current
 
-### Phase 1 — Data Operations (v0.2.0) ← current
+- Data domain: sources, pipelines, warehouse, quality, lineage
+- ML domain: models, experiments, predictions, drift
+- AI domain: agents, playground
+- System domain: status, logs, metrics, components
 
-- Data, ML, AI, System domain pages
-- Reflex reactive state for live updates
-- Containerised deployment via ArgoCD
+### Phase 2 — Interactivity
 
-### Phase 2 — ML Workflows (v0.3.0)
-
-- Experiment comparison page
-- Drift detection alerts
+- HTMX-driven partial updates (live pipeline status, metric charts)
+- Pipeline run trigger UI
 - Model promotion workflow
 
-### Phase 3 — Observability (v0.4.0)
+### Phase 3 — Multi-Project
 
-- Prometheus metrics charts
-- Log viewer
-- Trace explorer
-
-### Phase 4 — Project Management (v0.5.0)
-
-- Project scaffolder (`dex-studio init`)
+- Project switcher
 - Config editor
 - Multi-instance support
 
@@ -200,5 +181,5 @@ Promotion: **dex-studio → Actions → Promote Image** — pick `environment` a
 
 - **Cloud deployment** — Studio is local-first; no hosted SaaS version
 - **Multi-user auth** — single-user or small-team use
-- **Data editing** — read-only dashboard; mutations are pipeline triggers only
-- **Replacing Grafana** — Studio shows DEX-specific views, not generic metrics dashboards
+- **Data editing** — read-only; mutations are pipeline triggers only
+- **Replacing Grafana** — Studio shows DEX-specific views, not generic metric dashboards

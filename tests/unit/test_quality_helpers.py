@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dex_studio.engine import DexEngine
+from dataenginex.engine import DexEngine
 
 
 def test_duckdb_context_manager_creates_connection(engine: DexEngine) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dex_studio.engine import DexEngine
+from dataenginex.engine import DexEngine
 
 
 def test_warehouse_table_schema_returns_list(engine: DexEngine) -> None:

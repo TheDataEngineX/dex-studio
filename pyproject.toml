@@ -95,6 +95,9 @@ warn_unused_ignores = false
 
 
 
+[tool.uv.sources]
+dataenginex = { path = "../dex", editable = true }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
