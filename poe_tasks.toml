@@ -16,14 +16,14 @@ help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash s
 
 # ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
-cmd = "reflex run --env dev"
+cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --reload"
 env = { PYTHONPATH = "src" }
-help = "Launch DEX Studio Reflex dev server (port 7860)"
+help = "Launch DEX Studio dev server (port 7860, hot-reload)"
 
-[tool.poe.tasks.dev-export]
-cmd = "reflex export"
+[tool.poe.tasks.serve]
+cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860"
 env = { PYTHONPATH = "src" }
-help = "Export Reflex app as static bundle"
+help = "Launch DEX Studio production server (port 7860)"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]

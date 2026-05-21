@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Memory — DEX Studio{% endblock %}
+{% block page_title %}AI Memory{% endblock %}
+
+{% block content %}
+{% if collections %}
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+  {% for c in collections %}
+  {% set color = {"short":"cyan","long":"violet","episodic":"indigo"}.get(c.type,"gray") %}
+  <div class="rt-Card" style="padding:20px;flex:1;min-width:200px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div style="background:var(--{{ color }}-3);border-radius:6px;padding:6px;display:flex">
+        <i data-lucide="database" style="width:13px;height:13px;color:var(--{{ color }}-9)"></i>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gray-12)">{{ c.name }}</div>
+        <div style="font-size:11px;color:var(--gray-9)">{{ c.type }}-term memory</div>
+      </div>
+    </div>
+    <div style="font-size:28px;font-weight:700;color:var(--{{ color }}-11)">{{ c.entries }}</div>
+    <div style="font-size:11px;color:var(--gray-9);margin-top:2px">entries</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{{ empty_state("database", "No memory stores configured", "Configure ai.memory in your dex.yaml to enable memory tracking.") }}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Features — DEX Studio{% endblock %}
+{% block page_title %}Feature Store{% endblock %}
+
+{% block content %}
+{% if feature_groups %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Group</th>
+        <th class="rt-TableColumnHeaderCell">Entity</th>
+        <th class="rt-TableColumnHeaderCell">Features</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in feature_groups %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--violet-11)">{{ g.name }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ g.entity }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ g.feature_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("layers", "No feature groups configured", "Configure a feature store in your dex.yaml to see feature groups here.") }}
+{% endif %}
+{% endblock %}

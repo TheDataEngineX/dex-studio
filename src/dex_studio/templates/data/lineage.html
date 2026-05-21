@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Lineage — DEX Studio{% endblock %}
+{% block page_title %}Data Lineage{% endblock %}
+
+{% block content %}
+<!-- Filter -->
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+  <span style="font-size:12px;color:var(--gray-10);font-weight:500">Filter pipeline:</span>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <a href="/data/lineage" class="rt-Button" data-variant="{{ 'solid' if not filter_pipeline else 'soft' }}" data-color="indigo" data-size="1">All</a>
+    {% for name in pipeline_names %}
+    <a href="/data/lineage?pipeline={{ name }}" class="rt-Button" data-variant="{{ 'solid' if filter_pipeline == name else 'soft' }}" data-color="indigo" data-size="1">{{ name }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if events %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Time</th>
+        <th class="rt-TableColumnHeaderCell">Pipeline</th>
+        <th class="rt-TableColumnHeaderCell">Source</th>
+        <th class="rt-TableColumnHeaderCell"></th>
+        <th class="rt-TableColumnHeaderCell">Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ e.timestamp }}</td>
+        <td class="rt-TableCell">
+          <span class="rt-Badge" data-accent-color="indigo" data-variant="soft" data-size="1">{{ e.pipeline_name }}</span>
+        </td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">{{ e.source }}</td>
+        <td class="rt-TableCell" style="color:var(--gray-7)">
+          <i data-lucide="arrow-right" style="width:13px;height:13px"></i>
+        </td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">{{ e.target }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("git-branch", "No lineage events recorded", "Run pipelines to generate lineage data.") }}
+{% endif %}
+{% endblock %}

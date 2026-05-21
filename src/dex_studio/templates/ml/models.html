@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Models — DEX Studio{% endblock %}
+{% block page_title %}Model Registry{% endblock %}
+{% block page_actions %}
+<button onclick="document.getElementById('register-model-dialog').setAttribute('data-open','true')"
+        class="rt-Button" data-variant="solid" data-color="violet" data-size="2">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Register Model
+</button>
+{% endblock %}
+
+{% block content %}
+{% if models %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Name</th>
+        <th class="rt-TableColumnHeaderCell">Version</th>
+        <th class="rt-TableColumnHeaderCell">Stage</th>
+        <th class="rt-TableColumnHeaderCell">Framework</th>
+        <th class="rt-TableColumnHeaderCell">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in models %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--violet-11)">{{ m.name }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ m.version }}</td>
+        <td class="rt-TableCell">{{ status_badge(m.stage) }}</td>
+        <td class="rt-TableCell">
+          {% if m.framework and m.framework != "—" %}
+          <span class="rt-Badge" data-accent-color="gray" data-variant="soft" data-size="1">{{ m.framework }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="rt-TableCell">
+          <div style="display:flex;gap:4px;align-items:center" x-data="{promoteOpen:false}">
+            <button @click="promoteOpen=true" class="rt-Button" data-variant="soft" data-color="violet" data-size="1">Promote</button>
+            <form method="post" action="/ml/models/delete/{{ m.name }}" style="display:inline"
+                  onsubmit="return confirm('Delete model {{ m.name }}?')">
+              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1">
+                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+              </button>
+            </form>
+            <!-- Promote sub-dialog -->
+            <div x-show="promoteOpen" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center"
+                 @click.self="promoteOpen=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+              <div class="rt-Card" style="width:320px;padding:20px;background:var(--color-background)" @click.stop>
+                <h3 style="font-size:14px;font-weight:700;margin:0 0 12px">Promote {{ m.name }}</h3>
+                <form method="post" action="/ml/models/promote/{{ m.name }}">
+                  <select name="stage" style="width:100%;padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);margin-bottom:12px">
+                    {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+                  </select>
+                  <div style="display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" @click="promoteOpen=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+                    <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2">Promote</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("brain", "No models registered", "Register a model to get started.") }}
+{% endif %}
+
+<!-- Register Model Dialog -->
+<div id="register-model-dialog" x-data="{open:false}" x-init="$watch('$el.dataset.open', v => { if(v==='true') open=true })"
+     x-show="open" x-cloak class="dex-modal-overlay"
+     @click.self="open=false;$el.removeAttribute('data-open')" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+  <div class="rt-Card" style="width:420px;padding:24px;background:var(--color-background)" @click.stop>
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Register Model</h3>
+    <form method="post" action="/ml/models/register">
+      <div class="dex-form-row" style="margin-bottom:10px">
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
+          <input type="text" name="name" placeholder="my_model" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Version</label>
+          <input type="text" name="version" value="1.0.0" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+      </div>
+      <div class="dex-form-row" style="margin-bottom:10px">
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Framework</label>
+          <input type="text" name="framework" placeholder="sklearn" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-size:12px">
+        </div>
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Artifact Path</label>
+          <input type="text" name="artifact_path" placeholder="/models/my_model" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2">Register</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

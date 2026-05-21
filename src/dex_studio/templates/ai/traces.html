@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Traces — DEX Studio{% endblock %}
+{% block page_title %}AI Traces{% endblock %}
+
+{% block content %}
+{% if traces %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Time</th>
+        <th class="rt-TableColumnHeaderCell">Trace ID</th>
+        <th class="rt-TableColumnHeaderCell">Name</th>
+        <th class="rt-TableColumnHeaderCell">Duration</th>
+        <th class="rt-TableColumnHeaderCell">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in traces %}
+      <tr>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ t.timestamp }}</td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:11px;color:var(--gray-9)">{{ t.id[:12] }}…</td>
+        <td class="rt-TableCell" style="font-size:12px;font-weight:500">{{ t.name }}</td>
+        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace">{{ t.duration_ms }}{% if t.duration_ms != "—" %}ms{% endif %}</td>
+        <td class="rt-TableCell">{{ status_badge(t.status) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("git-branch", "No traces recorded", "Traces appear here when agents are invoked via the playground or API.") }}
+{% endif %}
+{% endblock %}

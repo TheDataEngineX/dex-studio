@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, section_heading, empty_state %}
+
+{% block title %}Data — DEX Studio{% endblock %}
+{% block page_title %}Data{% endblock %}
+{% block page_actions %}
+<a href="/data/pipelines" class="rt-Button" data-variant="solid" data-size="2">
+  <i data-lucide="workflow" style="width:13px;height:13px"></i> Pipelines
+</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Pipelines", stats.get("total",0), "workflow", "indigo") }}
+  {{ metric_card("Scheduled", stats.get("scheduled",0), "clock", "indigo") }}
+  {{ metric_card("Failed", stats.get("failed",0), "alert-circle", "red") }}
+  {{ metric_card("Sources", source_count, "database", "green") }}
+</div>
+
+{{ section_heading("Warehouse Layers") }}
+{% if layers %}
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
+  {% for layer in layers %}
+  <a href="/data/warehouse?layer={{ layer.name }}"
+     class="rt-Card" style="padding:14px 20px;text-decoration:none;display:flex;align-items:center;gap:8px;min-width:140px">
+    <i data-lucide="layers" style="width:15px;height:15px;color:var(--indigo-9)"></i>
+    <div>
+      <div style="font-weight:600;font-size:13px;color:var(--gray-12)">{{ layer.name|title }}</div>
+      <div style="font-size:11px;color:var(--gray-9)">{{ layer.table_count }} table{{ "s" if layer.table_count != 1 else "" }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+{{ empty_state("layers", "No warehouse layers configured") }}
+{% endif %}
+
+{{ section_heading("Quick Access") }}
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+  {% for label, href, icon in [("Pipelines","/data/pipelines","workflow"),("Sources","/data/sources","database"),("SQL Console","/data/sql","terminal"),("Warehouse","/data/warehouse","layers"),("Lineage","/data/lineage","git-branch"),("Quality","/data/quality","shield-check"),("Catalog","/data/catalog","book-open")] %}
+  <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="indigo" data-size="2">
+    <i data-lucide="{{ icon }}" style="width:13px;height:13px"></i> {{ label }}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

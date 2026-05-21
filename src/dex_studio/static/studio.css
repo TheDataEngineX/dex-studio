@@ -1,5 +1,19 @@
 /* DEX Studio — layout, motion tokens, component polish */
 
+/* Hide elements until Alpine.js initialises (prevents flash-of-open-dialog) */
+[x-cloak] { display: none !important; }
+
+/* Reusable modal overlay — apply instead of inline display:flex on dialogs */
+.dex-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ── Motion tokens ─────────────────────────────────────────────────────────── */
 
 :root {
@@ -327,17 +341,153 @@ textarea:focus,
 .rt-Card {
   border: 1px solid var(--gray-5) !important;
   box-shadow: var(--shadow-sm) !important;
+  border-radius: 8px !important;
 }
 
 /* Badges — slightly more padding for readability */
 .rt-Badge {
   padding: 2px 8px !important;
   font-weight: 500 !important;
+  font-size: 11px !important;
 }
 
 /* Callouts — visible left accent */
 .rt-CalloutRoot {
   border-left: 3px solid currentColor !important;
+}
+
+/* ── Component grid cards (system status) ──────────────────────────────────── */
+
+.dex-component-card {
+  border-radius: 7px;
+  border: 1px solid var(--gray-4);
+  padding: 12px 14px;
+  background: var(--color-background);
+  transition: box-shadow 0.15s var(--ease-out-expo);
+}
+
+.dex-component-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Health banner ───────────────────────────────────────────────────────────── */
+
+.dex-health-banner {
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dex-health-banner.healthy {
+  background: color-mix(in srgb, var(--green-3) 60%, transparent);
+  border: 1px solid var(--green-5);
+  border-left: 4px solid var(--green-8);
+}
+
+.dex-health-banner.degraded {
+  background: color-mix(in srgb, var(--red-3) 60%, transparent);
+  border: 1px solid var(--red-5);
+  border-left: 4px solid var(--red-8);
+}
+
+/* ── Metric card variants ────────────────────────────────────────────────────── */
+
+.dex-metric-card {
+  background: var(--color-background) !important;
+}
+
+.dex-metric-card .dex-metric-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gray-12);
+}
+
+/* ── Nav item active indicator ───────────────────────────────────────────────── */
+
+.dex-nav-item.active {
+  position: relative;
+}
+
+/* ── Page content fade in ────────────────────────────────────────────────────── */
+
+main > *:not(.dex-page-header) {
+  animation: fadeIn var(--duration-normal) var(--ease-out-expo) both;
+}
+
+/* ── Empty state centering ───────────────────────────────────────────────────── */
+
+.dex-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  color: var(--gray-9);
+  text-align: center;
+}
+
+/* ── Code/SQL textarea ───────────────────────────────────────────────────────── */
+
+.dex-sql-editor {
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: var(--gray-2);
+  border: 1px solid var(--gray-5);
+  border-radius: 6px;
+  resize: vertical;
+  width: 100%;
+  color: var(--gray-12);
+  min-height: 120px;
+}
+
+.dex-sql-editor:focus {
+  border-color: var(--accent-7);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-9) 18%, transparent);
+  outline: none;
+  background: var(--color-background);
+}
+
+/* ── Playground chat bubbles ─────────────────────────────────────────────────── */
+
+.dex-chat-bubble-user {
+  align-self: flex-end;
+  background: var(--accent-9);
+  color: white;
+  border-radius: 14px 14px 3px 14px;
+  padding: 10px 14px;
+  max-width: 72%;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.dex-chat-bubble-assistant {
+  align-self: flex-start;
+  background: var(--gray-3);
+  color: var(--gray-12);
+  border-radius: 14px 14px 14px 3px;
+  padding: 10px 14px;
+  max-width: 72%;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid var(--gray-4);
+}
+
+.dex-chat-bubble-error {
+  align-self: flex-start;
+  background: var(--red-2);
+  color: var(--red-11);
+  border-radius: 14px 14px 14px 3px;
+  padding: 10px 14px;
+  max-width: 72%;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid var(--red-5);
 }
 
 /* Spacing helpers used by page content */

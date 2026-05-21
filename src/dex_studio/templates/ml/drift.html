@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, status_badge, empty_state %}
+
+{% block title %}Drift — DEX Studio{% endblock %}
+{% block page_title %}Model Drift{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Drift Score", drift_score, "activity", "violet") }}
+  {{ metric_card("Features Monitored", drift_features|length, "layers", "violet") }}
+</div>
+
+{% if drift_features %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Feature</th>
+        <th class="rt-TableColumnHeaderCell">PSI</th>
+        <th class="rt-TableColumnHeaderCell">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in drift_features %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">{{ f.name }}</td>
+        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace">{{ f.psi }}</td>
+        <td class="rt-TableCell">{{ status_badge(f.status) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("activity", "No drift data available", "Configure the tracker with drift monitoring to see results here.") }}
+{% endif %}
+{% endblock %}

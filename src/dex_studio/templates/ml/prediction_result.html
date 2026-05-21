@@ -1,0 +1,12 @@
+{% if error %}
+<div class="rt-CalloutRoot" data-color="red" data-size="1">
+  <p class="rt-CalloutText" style="font-family:'Fira Code',monospace;font-size:12px">{{ error }}</p>
+</div>
+{% elif output %}
+<pre style="background:var(--gray-2);border:1px solid var(--gray-5);border-radius:6px;padding:12px;font-family:'Fira Code',monospace;font-size:12px;line-height:1.6;overflow:auto;max-height:400px;color:var(--gray-12);margin:0">{{ output }}</pre>
+{% else %}
+<div style="color:var(--gray-9);font-size:13px;text-align:center;padding:32px 0">
+  <i data-lucide="zap" style="width:24px;height:24px;display:block;margin:0 auto 8px;opacity:.4"></i>
+  Output will appear here
+</div>
+{% endif %}

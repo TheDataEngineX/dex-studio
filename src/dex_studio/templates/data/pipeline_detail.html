@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}{{ pipeline_name }} — DEX Studio{% endblock %}
+{% block page_title %}
+<div style="display:flex;align-items:center;gap:8px">
+  <a href="/data/pipelines" style="color:var(--gray-9);text-decoration:none;font-size:14px;font-weight:400">Pipelines</a>
+  <i data-lucide="chevron-right" style="width:13px;height:13px;color:var(--gray-7)"></i>
+  <span style="font-family:'Fira Code',monospace;font-size:15px">{{ pipeline_name }}</span>
+</div>
+{% endblock %}
+{% block page_actions %}
+<form method="post" action="/data/pipelines/run/{{ pipeline_name }}" style="display:inline">
+  <button type="submit" class="rt-Button" data-variant="solid" data-color="green" data-size="2">
+    <i data-lucide="play" style="width:13px;height:13px"></i> Run Now
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+<!-- Meta -->
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
+  <div class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px">
+    <i data-lucide="clock" style="width:13px;height:13px;color:var(--gray-9)"></i>
+    <span style="font-size:12px;color:var(--gray-10)">Schedule:</span>
+    <span style="font-size:12px;font-weight:600;color:var(--gray-12);font-family:'Fira Code',monospace">{{ schedule or "—" }}</span>
+  </div>
+  <div class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px">
+    <i data-lucide="database" style="width:13px;height:13px;color:var(--gray-9)"></i>
+    <span style="font-size:12px;color:var(--gray-10)">Source:</span>
+    <span style="font-size:12px;font-weight:600;color:var(--gray-12);font-family:'Fira Code',monospace">{{ source }}</span>
+  </div>
+  <div class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px">
+    <i data-lucide="arrow-right" style="width:13px;height:13px;color:var(--gray-9)"></i>
+    <span style="font-size:12px;color:var(--gray-10)">Destination:</span>
+    <span style="font-size:12px;font-weight:600;color:var(--gray-12);font-family:'Fira Code',monospace">{{ destination }}</span>
+  </div>
+</div>
+
+{% if steps %}
+<div style="margin-bottom:24px">
+  <h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Steps</h3>
+  <div style="display:flex;flex-direction:column;gap:6px">
+    {% for s in steps %}
+    <div class="rt-Card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">
+      <span class="rt-Badge" data-accent-color="indigo" data-variant="soft" data-size="1">{{ s.type }}</span>
+      <span style="font-size:13px;font-weight:500">{{ s.name }}</span>
+      {% if s.sql %}<code style="font-size:11px;color:var(--gray-9);font-family:'Fira Code',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ s.sql[:80] }}{% if s.sql|length > 80 %}…{% endif %}</code>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Run History</h3>
+{% if history %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Time</th>
+        <th class="rt-TableColumnHeaderCell">Status</th>
+        <th class="rt-TableColumnHeaderCell">Duration</th>
+        <th class="rt-TableColumnHeaderCell">Rows In</th>
+        <th class="rt-TableColumnHeaderCell">Rows Out</th>
+        <th class="rt-TableColumnHeaderCell">Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in history %}
+      <tr>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ r.timestamp }}</td>
+        <td class="rt-TableCell">{{ status_badge("success" if r.success else "failed") }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ r.duration_ms }}{% if r.duration_ms != "—" %}ms{% endif %}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ r.rows_input }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ r.rows_output }}</td>
+        <td class="rt-TableCell" style="font-size:11px;color:var(--red-11);font-family:'Fira Code',monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.error }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("history", "No run history yet", "Run the pipeline to see results here.") }}
+{% endif %}
+{% endblock %}

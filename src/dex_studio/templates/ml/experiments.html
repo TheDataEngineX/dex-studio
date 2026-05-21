@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Experiments — DEX Studio{% endblock %}
+{% block page_title %}Experiments{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+  <!-- Experiment list -->
+  <div style="flex:0 0 260px">
+    <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 8px">Experiments</h3>
+    {% if experiments %}
+    <div style="display:flex;flex-direction:column;gap:4px">
+      {% for exp in experiments %}
+      <a href="/ml/experiments?exp={{ exp.name }}"
+         class="rt-Card" style="padding:10px 14px;text-decoration:none;display:block;background:{{ 'var(--violet-2)' if selected_exp == exp.name else 'var(--color-background)' }};border-color:{{ 'var(--violet-6)' if selected_exp == exp.name else 'var(--gray-5)' }}">
+        <div style="font-size:13px;font-weight:{{ '600' if selected_exp == exp.name else '400' }};color:{{ 'var(--violet-11)' if selected_exp == exp.name else 'var(--gray-12)' }};margin-bottom:2px">{{ exp.name }}</div>
+        <div style="font-size:11px;color:var(--gray-9)">{{ exp.run_count }} run{{ "s" if exp.run_count != 1 else "" }} · {{ exp.created_at }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    {{ empty_state("flask-conical", "No experiments", "Start tracking experiments with the DEX tracker.") }}
+    {% endif %}
+  </div>
+
+  <!-- Run list -->
+  <div style="flex:1;min-width:320px">
+    {% if selected_exp %}
+    <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 8px">Runs — {{ selected_exp }}</h3>
+    {% if runs %}
+    <div class="rt-Card" style="overflow:hidden">
+      <table class="rt-TableRoot dex-table" style="width:100%">
+        <thead>
+          <tr>
+            <th class="rt-TableColumnHeaderCell">Run ID</th>
+            <th class="rt-TableColumnHeaderCell">Status</th>
+            <th class="rt-TableColumnHeaderCell">Primary Metric</th>
+            <th class="rt-TableColumnHeaderCell">Started</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:11px;color:var(--gray-9)">{{ r.run_id[:12] }}…</td>
+            <td class="rt-TableCell">{{ status_badge(r.status) }}</td>
+            <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">{{ r.primary_metric }}</td>
+            <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ r.started_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    {{ empty_state("history", "No runs for this experiment") }}
+    {% endif %}
+    {% else %}
+    {{ empty_state("mouse-pointer", "Select an experiment", "Click an experiment on the left to view its runs.") }}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

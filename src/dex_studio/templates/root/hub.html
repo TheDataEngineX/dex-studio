@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, section_heading %}
+
+{% block title %}Home — DEX Studio{% endblock %}
+
+{% block page_header %}
+<div class="dex-page-header" style="margin-bottom:20px;padding:14px 0;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
+  <div>
+    <h1 style="font-size:18px;font-weight:700;margin:0 0 2px">Welcome back</h1>
+    <p style="font-size:12px;color:var(--gray-10);margin:0;display:flex;align-items:center;gap:6px">
+      <span>{{ project_name }}</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:500;background:{{ 'var(--green-3)' if health_status in ('ok','healthy') else 'var(--red-3)' }};color:{{ 'var(--green-11)' if health_status in ('ok','healthy') else 'var(--red-11)' }}">
+        <span style="width:6px;height:6px;border-radius:50%;background:{{ 'var(--green-9)' if health_status in ('ok','healthy') else 'var(--red-9)' }};display:inline-block"></span>
+        {{ health_status }}
+      </span>
+    </p>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a href="/data/pipelines" class="rt-Button" data-variant="soft" data-size="2">
+      <i data-lucide="play" style="width:13px;height:13px"></i> Run Pipeline
+    </a>
+    <a href="/data/sql" class="rt-Button" data-variant="solid" data-size="2">
+      <i data-lucide="terminal" style="width:13px;height:13px"></i> SQL Console
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Top metrics row -->
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Pipelines", pipeline_count, "workflow", "indigo",
+      (stats.get('scheduled',0)|string + " scheduled") if stats.get('scheduled',0) else "") }}
+  {{ metric_card("Models", model_count, "brain", "violet") }}
+  {{ metric_card("Agents", agent_count, "cpu", "cyan") }}
+  {{ metric_card("Sources", source_count, "database", "green") }}
+</div>
+
+<!-- Pipeline health strip (if any pipelines exist) -->
+{% if stats and stats.get('total', 0) > 0 %}
+<div class="rt-Card" style="padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+  <span style="font-size:12px;font-weight:600;color:var(--gray-10);text-transform:uppercase;letter-spacing:.05em">Pipeline Health</span>
+  <div style="display:flex;gap:16px;flex:1;flex-wrap:wrap">
+    {% if stats.get('scheduled', 0) %}
+    <span style="font-size:12px;color:var(--indigo-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="clock" style="width:12px;height:12px"></i> {{ stats.get('scheduled', 0) }} scheduled
+    </span>
+    {% endif %}
+    {% if stats.get('running', 0) %}
+    <span style="font-size:12px;color:var(--cyan-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="loader" style="width:12px;height:12px"></i> {{ stats.get('running', 0) }} running
+    </span>
+    {% endif %}
+    {% if stats.get('failed', 0) %}
+    <span style="font-size:12px;color:var(--red-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="alert-circle" style="width:12px;height:12px"></i> {{ stats.get('failed', 0) }} failed
+    </span>
+    {% endif %}
+    {% if stats.get('failed', 0) == 0 %}
+    <span style="font-size:12px;color:var(--green-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="check-circle" style="width:12px;height:12px"></i> All healthy
+    </span>
+    {% endif %}
+  </div>
+  <a href="/data/pipelines" style="font-size:12px;color:var(--indigo-9);text-decoration:none;white-space:nowrap;display:flex;align-items:center;gap:4px">
+    View all <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
+  </a>
+</div>
+{% endif %}
+
+<!-- Domain quick-access grid -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+
+  <!-- Data -->
+  <div class="rt-Card" style="padding:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="background:var(--indigo-3);border-radius:8px;padding:8px;display:flex;flex-shrink:0">
+        <i data-lucide="database" style="width:16px;height:16px;color:var(--indigo-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--gray-12)">Data</div>
+        <div style="font-size:11px;color:var(--gray-9)">Pipelines, Sources, Warehouse</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for label, href in [("Pipelines","/data/pipelines"),("Sources","/data/sources"),("SQL","/data/sql"),("Lineage","/data/lineage"),("Quality","/data/quality")] %}
+      <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="indigo" data-size="1">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ML -->
+  <div class="rt-Card" style="padding:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="background:var(--violet-3);border-radius:8px;padding:8px;display:flex;flex-shrink:0">
+        <i data-lucide="brain" style="width:16px;height:16px;color:var(--violet-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--gray-12)">ML</div>
+        <div style="font-size:11px;color:var(--gray-9)">Models, Experiments, Features</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for label, href in [("Models","/ml/models"),("Experiments","/ml/experiments"),("Predictions","/ml/predictions"),("Features","/ml/features"),("Drift","/ml/drift")] %}
+      <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="violet" data-size="1">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- AI -->
+  <div class="rt-Card" style="padding:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="background:var(--cyan-3);border-radius:8px;padding:8px;display:flex;flex-shrink:0">
+        <i data-lucide="cpu" style="width:16px;height:16px;color:var(--cyan-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--gray-12)">AI</div>
+        <div style="font-size:11px;color:var(--gray-9)">Agents, Playground, Memory</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for label, href in [("Agents","/ai/agents"),("Playground","/ai/playground"),("Traces","/ai/traces"),("Tools","/ai/tools"),("Memory","/ai/memory")] %}
+      <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="cyan" data-size="1">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="rt-Card" style="padding:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="background:var(--orange-3);border-radius:8px;padding:8px;display:flex;flex-shrink:0">
+        <i data-lucide="settings" style="width:16px;height:16px;color:var(--orange-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--gray-12)">System</div>
+        <div style="font-size:11px;color:var(--gray-9)">Status, Logs, Metrics</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for label, href in [("Status","/system"),("Logs","/system/logs"),("Metrics","/system/metrics"),("Components","/system/components")] %}
+      <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="orange" data-size="1">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Switch project footer -->
+<div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--gray-4);display:flex;align-items:center;gap:10px">
+  <span style="font-size:12px;color:var(--gray-9)">Project: <strong style="color:var(--gray-11)">{{ project_name }}</strong></span>
+  <a href="/onboarding" class="rt-Button" data-variant="ghost" data-size="1">
+    <i data-lucide="folder-open" style="width:12px;height:12px"></i> Switch project
+  </a>
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card %}
+
+{% block title %}AI — DEX Studio{% endblock %}
+{% block page_title %}AI{% endblock %}
+{% block page_actions %}
+<a href="/ai/playground" class="rt-Button" data-variant="solid" data-color="cyan" data-size="2">
+  <i data-lucide="message-square" style="width:13px;height:13px"></i> Playground
+</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Agents", agent_count, "cpu", "cyan") }}
+  {{ metric_card("Tools", tool_count, "wrench", "cyan") }}
+  {{ metric_card("Memory Entries", memory_count, "database", "cyan") }}
+</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+  {% for label, href, icon in [("Agents","/ai/agents","cpu"),("Playground","/ai/playground","message-square"),("Traces","/ai/traces","git-branch"),("Tools","/ai/tools","wrench"),("Memory","/ai/memory","database"),("Workflows","/ai/workflows","workflow")] %}
+  <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="cyan" data-size="2">
+    <i data-lucide="{{ icon }}" style="width:13px;height:13px"></i> {{ label }}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Pipelines — DEX Studio{% endblock %}
+{% block page_title %}Pipelines{% endblock %}
+{% block page_actions %}
+<button onclick="document.getElementById('add-pipeline-dialog').setAttribute('data-open','true')"
+        class="rt-Button" data-variant="solid" data-size="2">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Add Pipeline
+</button>
+{% endblock %}
+
+{% block content %}
+{% if pipelines %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Name</th>
+        <th class="rt-TableColumnHeaderCell">Schedule</th>
+        <th class="rt-TableColumnHeaderCell">Status</th>
+        <th class="rt-TableColumnHeaderCell">Last Run</th>
+        <th class="rt-TableColumnHeaderCell">Duration</th>
+        <th class="rt-TableColumnHeaderCell">Rows In/Out</th>
+        <th class="rt-TableColumnHeaderCell">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pipelines %}
+      <tr>
+        <td class="rt-TableCell">
+          <a href="/data/pipelines/{{ p.name }}" style="font-weight:600;color:var(--indigo-11);text-decoration:none;font-family:'Fira Code',monospace;font-size:12px">{{ p.name }}</a>
+        </td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.schedule }}</td>
+        <td class="rt-TableCell">{{ status_badge(p.status) }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.last_run }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.duration_ms }}{% if p.duration_ms != "—" %}ms{% endif %}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.rows_in }} / {{ p.rows_out }}</td>
+        <td class="rt-TableCell">
+          <div style="display:flex;gap:4px">
+            <form method="post" action="/data/pipelines/run/{{ p.name }}" style="display:inline">
+              <button type="submit" class="rt-Button" data-variant="soft" data-color="green" data-size="1" title="Run">
+                <i data-lucide="play" style="width:12px;height:12px"></i>
+              </button>
+            </form>
+            <a href="/data/pipelines/{{ p.name }}" class="rt-Button" data-variant="ghost" data-size="1" title="View">
+              <i data-lucide="eye" style="width:12px;height:12px"></i>
+            </a>
+            <form method="post" action="/data/pipelines/delete/{{ p.name }}" style="display:inline"
+                  onsubmit="return confirm('Delete pipeline {{ p.name }}?')">
+              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1" title="Delete">
+                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("workflow", "No pipelines configured", "Add a pipeline to get started.") }}
+{% endif %}
+
+<!-- Add Pipeline Dialog -->
+<div id="add-pipeline-dialog" x-data="{open:false}" x-init="$watch('$el.dataset.open', v => { if(v==='true') open=true })"
+     x-show="open" x-cloak class="dex-modal-overlay"
+     @click.self="open=false;$el.removeAttribute('data-open')" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+  <div class="rt-Card" style="width:420px;padding:24px;background:var(--color-background)" @click.stop>
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Pipeline</h3>
+    <form method="post" action="/data/pipelines/add">
+      <div class="dex-form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
+        <input type="text" name="name" placeholder="etl_users" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+      </div>
+      <div class="dex-form-row" style="margin-bottom:10px">
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Source</label>
+          <select name="source" style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
+            <option value="">— none —</option>
+            {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Schedule (cron)</label>
+          <input type="text" name="schedule" placeholder="0 * * * *" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+      </div>
+      <div class="dex-form-group" style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Destination</label>
+        <input type="text" name="destination" placeholder="warehouse.gold.users" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-size="2">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% from "components/macros.html" import empty_state %}
+{% if tables %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Table</th>
+        <th class="rt-TableColumnHeaderCell">Rows</th>
+        <th class="rt-TableColumnHeaderCell">Size</th>
+        <th class="rt-TableColumnHeaderCell">Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tables %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500;color:var(--indigo-11)">{{ t.get("name","") }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ t.get("row_count","—") }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ t.get("size","—") }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ t.get("updated_at","—") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("layers", "No tables in this layer", "Run a pipeline to populate the warehouse.") }}
+{% endif %}
