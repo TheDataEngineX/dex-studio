@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="DEX Studio",
         description="DataEngineX control plane",
-        version="0.2.0",
+        version="0.3.0",
         docs_url="/api/docs",
         redoc_url=None,
         lifespan=_lifespan,
@@ -101,6 +101,14 @@ def create_app() -> FastAPI:
     app.include_router(ml.router, prefix="/ml")
     app.include_router(ai.router, prefix="/ai")
     app.include_router(system.router, prefix="/system")
+
+    @app.get("/health", tags=["health"])
+    def health() -> dict[str, str]:
+        from dex_studio._engine import get_engine as _ge
+
+        eng = _ge()
+        status = eng.health() if eng else {"status": "no engine"}
+        return {"status": status.get("status", "unknown")}
 
     logger.info("DEX Studio started", port=7860)
     return app
