@@ -58,7 +58,7 @@ jobs:
             type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
             type=raw,value=${{ steps.vars.outputs.branch_slug }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
