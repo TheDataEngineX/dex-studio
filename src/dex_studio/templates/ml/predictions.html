@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Predictions — DEX Studio{% endblock %}
+{% block page_title %}Predictions{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:flex-start">
+  <!-- Input panel -->
+  <div class="rt-Card" style="padding:20px">
+    <h3 style="font-size:13px;font-weight:700;margin:0 0 14px">Run Prediction</h3>
+    {% if model_names %}
+    <form hx-post="/ml/predictions/run" hx-target="#prediction-result" hx-swap="innerHTML">
+      <div class="dex-form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model</label>
+        <select name="model" style="width:100%;padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12)">
+          {% for m in model_names %}<option value="{{ m }}" {{ 'selected' if m == selected_model else '' }}>{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="dex-form-group" style="margin-bottom:12px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Input (JSON)</label>
+        <textarea name="input_json" rows="10" style="width:100%;font-family:'Fira Code',monospace;font-size:12px;padding:8px 10px;border:1px solid var(--gray-6);border-radius:5px;background:var(--gray-1);color:var(--gray-12);resize:vertical;line-height:1.5">{{ input_json }}</textarea>
+      </div>
+      <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2" style="width:100%">
+        <i data-lucide="zap" style="width:13px;height:13px"></i> Predict
+      </button>
+    </form>
+    {% else %}
+    {{ empty_state("brain", "No models available", "Register a model first to run predictions.") }}
+    {% endif %}
+  </div>
+
+  <!-- Result panel -->
+  <div class="rt-Card" style="padding:20px">
+    <h3 style="font-size:13px;font-weight:700;margin:0 0 14px">Result</h3>
+    <div id="prediction-result">
+      {% include "ml/prediction_result.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

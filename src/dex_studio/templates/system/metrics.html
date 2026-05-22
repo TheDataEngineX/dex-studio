@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card %}
+
+{% block title %}Metrics — DEX Studio{% endblock %}
+{% block page_title %}System Metrics{% endblock %}
+
+{% block content %}
+<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">Data</h3>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Total Pipelines", pipeline_total, "workflow", "indigo") }}
+  {{ metric_card("Scheduled", pipeline_scheduled, "clock", "indigo") }}
+  {{ metric_card("Failed", pipeline_failed, "alert-circle", "red") }}
+  {{ metric_card("Lineage Events", lineage_events, "git-branch", "indigo") }}
+</div>
+
+<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">ML & AI</h3>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+  {{ metric_card("Registered Models", model_count, "brain", "violet") }}
+  {{ metric_card("Active Agents", agent_count, "cpu", "cyan") }}
+</div>
+{% endblock %}

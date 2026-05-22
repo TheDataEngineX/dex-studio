@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Tools — DEX Studio{% endblock %}
+{% block page_title %}AI Tools{% endblock %}
+
+{% block content %}
+{% if tools %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter tools…" data-table="tools-table">
+</div>
+<div class="rt-Card" style="overflow:hidden">
+  <table id="tools-table" class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell sortable">Tool</th>
+        <th class="rt-TableColumnHeaderCell sortable">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tools %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--orange-11);white-space:nowrap">{{ t.name }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ t.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("wrench", "No tools registered", "Register tools in your DEX config to see them here.") }}
+{% endif %}
+{% endblock %}

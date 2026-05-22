@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Playground — DEX Studio{% endblock %}
+{% block page_title %}AI Playground{% endblock %}
+
+{% block content %}
+{% if agent_names %}
+<div style="display:flex;flex-direction:column;gap:0;height:calc(100vh - 160px)">
+  <!-- Agent selector -->
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-shrink:0">
+    <span style="font-size:12px;font-weight:500;color:var(--gray-10)">Agent:</span>
+    {% for name in agent_names %}
+    <button onclick="switchAgent('{{ name }}')"
+            id="agent-btn-{{ name }}"
+            class="rt-Button"
+            data-variant="{{ 'solid' if name == selected_agent else 'soft' }}"
+            data-color="cyan" data-size="2">{{ name }}</button>
+    {% endfor %}
+  </div>
+
+  <!-- Chat window -->
+  <div class="rt-Card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">
+      <div style="text-align:center;color:var(--gray-8);font-size:12px;padding:24px 0">
+        Start a conversation with <strong style="color:var(--cyan-11)">{{ selected_agent }}</strong>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div style="border-top:1px solid var(--gray-4);padding:12px 16px;display:flex;gap:8px;align-items:flex-end;flex-shrink:0">
+      <textarea id="chat-input" rows="2" placeholder="Ask anything…"
+                style="flex:1;font-size:13px;font-family:inherit;padding:8px 10px;border:1px solid var(--gray-6);border-radius:6px;background:var(--gray-1);color:var(--gray-12);resize:none;line-height:1.5"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button onclick="sendMessage()" id="send-btn"
+              class="rt-Button" data-variant="solid" data-color="cyan" data-size="2" style="flex-shrink:0">
+        <i data-lucide="send" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+  </div>
+</div>
+{% else %}
+{{ empty_state("cpu", "No agents available", "Add an agent on the Agents page first.") }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentAgent = {{ selected_agent | tojson }};
+  let ws = null;
+
+  function switchAgent(name) {
+    currentAgent = name;
+    document.querySelectorAll('[id^="agent-btn-"]').forEach(b => {
+      b.dataset.variant = b.id === 'agent-btn-' + name ? 'solid' : 'soft';
+    });
+    document.getElementById('chat-messages').innerHTML = `<div style="text-align:center;color:var(--gray-8);font-size:12px;padding:24px 0">Start a conversation with <strong style="color:var(--cyan-11)">${name}</strong></div>`;
+    if (ws) { ws.close(); ws = null; }
+  }
+
+  function connectWS() {
+    if (ws && ws.readyState === WebSocket.OPEN) return ws;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ai/playground/ws/${encodeURIComponent(currentAgent)}`);
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      appendMessage(data.role, data.content);
+      document.getElementById('send-btn').disabled = false;
+      document.getElementById('chat-input').disabled = false;
+    };
+    ws.onclose = () => { ws = null; };
+    return ws;
+  }
+
+  function appendMessage(role, content) {
+    const box = document.getElementById('chat-messages');
+    const isUser = role === 'user';
+    const isError = role === 'error';
+    const div = document.createElement('div');
+    div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'}`;
+    div.innerHTML = `<div style="max-width:75%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.55;
+      background:${isError ? 'var(--red-3)' : isUser ? 'var(--cyan-9)' : 'var(--gray-3)'};
+      color:${isError ? 'var(--red-11)' : isUser ? 'white' : 'var(--gray-12)'};
+      ${isUser ? 'border-bottom-right-radius:3px' : 'border-bottom-left-radius:3px'}">${escapeHtml(content)}</div>`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  }
+
+  function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    appendMessage('user', text);
+    input.value = '';
+    input.disabled = true;
+    document.getElementById('send-btn').disabled = true;
+    const sock = connectWS();
+    if (sock.readyState === WebSocket.OPEN) {
+      sock.send(text);
+    } else {
+      sock.onopen = () => sock.send(text);
+    }
+  }
+</script>
+{% endblock %}

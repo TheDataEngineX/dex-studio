@@ -1,5 +1,5 @@
-"""Reflex entry-point shim — app_name='dex_studio' expects dex_studio.dex_studio."""
+"""Legacy shim — kept for import compatibility. Entry point is dex_studio.app:create_app."""
 
 from __future__ import annotations
 
-from dex_studio.app import app  # noqa: F401  — re-exported for Reflex loader
+from dex_studio.app import create_app as create_app  # noqa: F401

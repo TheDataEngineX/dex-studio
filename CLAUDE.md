@@ -4,9 +4,9 @@
 
 ## Project Overview
 
-DEX Studio — self-hosted web UI for the DataEngineX platform. Built on Reflex (Python→React).
+DEX Studio — self-hosted web UI for the DataEngineX platform. Built on FastAPI + Jinja2 (server-side HTML, HTMX).
 
-**Stack:** Python 3.13+ · Reflex 0.7+ · DuckDB · structlog · uv · Ruff · mypy strict · pytest · Port 7860
+**Stack:** Python 3.13+ · FastAPI · Jinja2 · HTMX · structlog · uv · Ruff · mypy strict · pytest · Port 7860
 
 **Version:** `uv run poe version`
 
@@ -17,25 +17,22 @@ uv run poe lint
 uv run poe typecheck
 uv run poe test
 uv run poe check-all
-uv run poe dev          # Reflex dev server (port 7860)
+uv run poe dev          # uvicorn dev server (port 7860)
 ```
 
 ## Key Modules
 
 | Path | Purpose |
 |------|---------|
-| `rxconfig.py` | Reflex config (ports, app_name) |
-| `src/dex_studio/app.py` | Reflex app + all page registrations |
-| `src/dex_studio/state/` | Reflex state classes (base, data, ml, ai, system) |
-| `src/dex_studio/components/layout.py` | Sidebar, header, page_shell |
-| `src/dex_studio/pages/{data,ml,ai,system}/` | Domain pages |
+| `src/dex_studio/app.py` | FastAPI app factory — mounts routers, templates, static |
+| `src/dex_studio/routers/` | Domain routers: root, data, ml, ai, system |
+| `src/dex_studio/routers/_deps.py` | Shared FastAPI deps (engine, auth, template render) |
+| `src/dex_studio/templates/` | Jinja2 HTML templates (base.html + domain pages) |
+| `src/dex_studio/static/` | Static assets (CSS, JS) |
 | `src/dex_studio/_engine.py` | DexEngine singleton (direct package access, no HTTP) |
-| `src/dex_studio/engine.py` | DexEngine class — wraps all dataenginex backends |
-| `src/dex_studio/config.py` | Studio config (DEX_CONFIG_PATH, theme) |
-
-## CareerDEX
-
-Extracted to standalone package at `../careerdex`. Installed as editable dep via `[tool.uv.sources]`.
+| `src/dex_studio/config.py` | Projects registry (~/.dex-studio/projects.yaml) + UI prefs |
+| `src/dex_studio/auth.py` | Session-based auth |
+| `src/dex_studio/utils.py` | Shared template helpers |
 
 <!-- code-review-graph MCP tools -->
 

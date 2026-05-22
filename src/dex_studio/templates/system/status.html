@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state, status_badge %}
+
+{% block title %}System Status — DEX Studio{% endblock %}
+{% block page_title %}System Status{% endblock %}
+{% block page_actions %}
+<a href="/system/metrics" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+  <i data-lucide="bar-chart-2" style="width:13px;height:13px"></i> Metrics
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Overall health banner -->
+<div class="dex-health-banner {{ 'healthy' if is_healthy else 'degraded' }}" style="margin-bottom:20px">
+  <div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:{{ 'var(--green-4)' if is_healthy else 'var(--red-4)' }}">
+    <i data-lucide="{{ 'check-circle' if is_healthy else 'alert-triangle' }}"
+       style="width:20px;height:20px;color:{{ 'var(--green-9)' if is_healthy else 'var(--red-9)' }}"></i>
+  </div>
+  <div>
+    <div style="font-size:15px;font-weight:700;color:var(--gray-12)">
+      {{ "All Systems Operational" if is_healthy else "Degraded — Check Components" }}
+    </div>
+    <div style="font-size:12px;color:var(--gray-9);margin-top:2px">
+      Engine status: <code style="font-size:11px;background:var(--gray-3);padding:1px 5px;border-radius:3px">{{ health.get("status","unknown") }}</code>
+    </div>
+  </div>
+</div>
+
+<!-- Component cards grid -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+  <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0">
+    Components
+    <span style="margin-left:6px;font-size:11px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--gray-8)">
+      ({{ components | selectattr('available') | list | length }}/{{ components | length }} online)
+    </span>
+  </h3>
+</div>
+
+{% if components %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:24px">
+  {% for c in components %}
+  <div class="dex-component-card" style="border-left:3px solid {{ 'var(--green-6)' if c.available else 'var(--red-6)' }}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <span style="font-size:12px;font-weight:600;color:var(--gray-12)">{{ c.name }}</span>
+      <span class="status-dot {{ 'ok' if c.available else 'error' }}"></span>
+    </div>
+    <div style="font-size:11px;color:{{ 'var(--green-10)' if c.available else 'var(--red-10)' }};font-weight:500">
+      {{ "Online" if c.available else "Offline" }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{{ empty_state("cpu", "No components detected") }}
+{% endif %}
+
+<!-- Quick links -->
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+  <a href="/system/logs" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+    <i data-lucide="file-text" style="width:13px;height:13px"></i> Logs
+  </a>
+  <a href="/system/metrics" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+    <i data-lucide="bar-chart-2" style="width:13px;height:13px"></i> Metrics
+  </a>
+  <a href="/system/components" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+    <i data-lucide="cpu" style="width:13px;height:13px"></i> All Components
+  </a>
+</div>
+{% endblock %}

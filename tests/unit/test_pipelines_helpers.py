@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from dex_studio.engine import DexEngine
+from dataenginex.engine import DexEngine
 
 
 def test_pipeline_stats_returns_dict(engine: DexEngine) -> None:

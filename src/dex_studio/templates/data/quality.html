@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, status_badge, empty_state %}
+
+{% block title %}Data Quality — DEX Studio{% endblock %}
+{% block page_title %}Data Quality{% endblock %}
+{% block page_actions %}
+<form method="post" action="/data/quality/run" style="display:inline">
+  <button type="submit" class="rt-Button" data-variant="solid" data-size="2">
+    <i data-lucide="shield-check" style="width:13px;height:13px"></i> Run Checks
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  {{ metric_card("Overall Score", score_pct, "shield-check", "green") }}
+  {{ metric_card("Tables Checked", checks|length, "table", "indigo") }}
+  {{ metric_card("Total Runs", run_count, "history", "gray") }}
+</div>
+
+{% if checks %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter tables…" data-table="quality-table">
+</div>
+<div class="rt-Card" style="overflow:hidden">
+  <table id="quality-table" class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell sortable">Table</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Score</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Completeness</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Uniqueness</th>
+        <th class="rt-TableColumnHeaderCell sortable">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in checks %}
+      <tr>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">
+          {% set _layer = c.table.split('.')[0] if '.' in c.table else 'silver' %}
+          <a href="/data/warehouse?layer={{ _layer }}" style="color:var(--indigo-11);text-decoration:none">{{ c.table }}</a>
+        </td>
+        <td class="rt-TableCell" style="font-size:13px;font-weight:700;color:{{ 'var(--green-11)' if c.passed else 'var(--red-11)' }}">{{ c.score }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ c.completeness }}</td>
+        <td class="rt-TableCell" style="font-size:12px">{{ c.uniqueness }}</td>
+        <td class="rt-TableCell">{{ status_badge("passed" if c.passed else "failed") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("shield", "No quality checks run yet", "Click 'Run Checks' to evaluate data quality.") }}
+{% endif %}
+{% endblock %}

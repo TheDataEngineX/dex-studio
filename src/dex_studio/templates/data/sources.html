@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Sources — DEX Studio{% endblock %}
+{% block page_title %}Sources{% endblock %}
+{% block page_actions %}
+<button @click="$dispatch('open-add-source')"
+        class="rt-Button" data-variant="solid" data-size="2">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Add Source
+</button>
+{% endblock %}
+
+{% block content %}
+{% if sources %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter sources…" data-table="sources-table">
+</div>
+<div class="rt-Card" style="overflow:hidden">
+  <table id="sources-table" class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell sortable">Name</th>
+        <th class="rt-TableColumnHeaderCell sortable">Type</th>
+        <th class="rt-TableColumnHeaderCell sortable">Status</th>
+        <th class="rt-TableColumnHeaderCell">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+      <tr>
+        <td class="rt-TableCell">
+          <a href="/data/sources/{{ s.name }}" style="font-weight:600;color:var(--indigo-11);text-decoration:none;font-family:'Fira Code',monospace;font-size:12px">{{ s.name }}</a>
+        </td>
+        <td class="rt-TableCell">
+          <span class="rt-Badge" data-accent-color="blue" data-variant="soft" data-size="1">{{ s.type }}</span>
+        </td>
+        <td class="rt-TableCell">{{ status_badge(s.status) }}</td>
+        <td class="rt-TableCell">
+          <div style="display:flex;gap:4px">
+            <a href="/data/sources/{{ s.name }}" class="rt-Button" data-variant="ghost" data-size="1">
+              <i data-lucide="eye" style="width:12px;height:12px"></i>
+            </a>
+            <form method="post" action="/data/sources/delete/{{ s.name }}" style="display:inline"
+                  onsubmit="return confirm('Remove source {{ s.name }}?')">
+              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1">
+                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("database", "No sources configured", "Add a data source to get started.") }}
+{% endif %}
+
+<!-- Add Source Dialog -->
+<div x-data="{open:false}" @open-add-source.window="open=true"
+     x-show="open" x-cloak class="dex-modal-overlay"
+     @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+  <div class="rt-Card" style="width:400px;padding:24px;background:var(--color-background)" @click.stop>
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Source</h3>
+    <form method="post" action="/data/sources/add">
+      <div class="dex-form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
+        <input type="text" name="name" placeholder="my_source" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+      </div>
+      <div class="dex-form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Type *</label>
+        <select name="type" required style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
+          {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="dex-form-group" style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Path / URL</label>
+        <input type="text" name="path" placeholder="/data/file.csv" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-size="2">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

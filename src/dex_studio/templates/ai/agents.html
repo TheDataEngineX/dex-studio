@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Agents — DEX Studio{% endblock %}
+{% block page_title %}Agents{% endblock %}
+{% block page_actions %}
+<button onclick="document.getElementById('add-agent-dialog').setAttribute('data-open','true')"
+        class="rt-Button" data-variant="solid" data-color="orange" data-size="2">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Add Agent
+</button>
+{% endblock %}
+
+{% block content %}
+{% if agents %}
+<div class="rt-Card" style="overflow:hidden">
+  <table class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell">Name</th>
+        <th class="rt-TableColumnHeaderCell">Runtime</th>
+        <th class="rt-TableColumnHeaderCell">Status</th>
+        <th class="rt-TableColumnHeaderCell">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in agents %}
+      <tr>
+        <td class="rt-TableCell">
+          <a href="/ai/playground?agent={{ a.name }}" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--orange-11);text-decoration:none">{{ a.name }}</a>
+        </td>
+        <td class="rt-TableCell"><span class="rt-Badge" data-accent-color="gray" data-variant="soft" data-size="1">{{ a.type }}</span></td>
+        <td class="rt-TableCell">{{ status_badge(a.status) }}</td>
+        <td class="rt-TableCell">
+          <div style="display:flex;gap:4px">
+            <a href="/ai/playground?agent={{ a.name }}" class="rt-Button" data-variant="soft" data-color="orange" data-size="1">
+              <i data-lucide="message-square" style="width:12px;height:12px"></i> Chat
+            </a>
+            <form method="post" action="/ai/agents/delete/{{ a.name }}" style="display:inline"
+                  onsubmit="return confirm('Delete agent {{ a.name }}?')">
+              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1">
+                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("sparkles", "No agents configured", "Add an agent to get started.") }}
+{% endif %}
+
+<!-- Add Agent Dialog -->
+<div id="add-agent-dialog" x-data="{open:false}" x-init="$watch('$el.dataset.open', v => { if(v==='true') open=true })"
+     x-show="open" x-cloak class="dex-modal-overlay"
+     @click.self="open=false;$el.removeAttribute('data-open')" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+  <div class="rt-Card" style="width:440px;padding:24px;background:var(--color-background)" @click.stop>
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Agent</h3>
+    <form method="post" action="/ai/agents/add">
+      <div class="dex-form-row" style="margin-bottom:10px">
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
+          <input type="text" name="name" placeholder="my_agent" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+        <div class="dex-form-group">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Runtime</label>
+          <select name="runtime" style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
+            <option value="builtin">builtin</option>
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+          </select>
+        </div>
+      </div>
+      <div class="dex-form-group" style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">System Prompt</label>
+        <textarea name="system_prompt" rows="4" placeholder="You are a helpful data engineering assistant…"
+                  style="width:100%;font-size:12px;padding:8px 10px;border:1px solid var(--gray-6);border-radius:5px;background:var(--gray-1);color:var(--gray-12);resize:vertical;line-height:1.5"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-color="orange" data-size="2">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

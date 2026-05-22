@@ -1,4 +1,6 @@
-/* DEX Studio — motion tokens, layout, animations */
+/* DEX Studio — layout, motion tokens, component polish */
+
+/* ── Motion tokens ─────────────────────────────────────────────────────────── */
 
 :root {
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -9,10 +11,26 @@
   --duration-normal: 200ms;
   --duration-slow: 350ms;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.12), 0 2px 4px -1px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 12px 20px -4px rgba(0, 0, 0, 0.14), 0 4px 8px -2px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.28);
+
+  /* Sidebar width token */
+  --sidebar-w: 220px;
+}
+
+/* ── Font baseline ──────────────────────────────────────────────────────────── */
+
+body {
+  font-family: "Fira Sans", Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+code, pre, .mono {
+  font-family: "Fira Code", "JetBrains Mono", monospace;
 }
 
 /* ── Responsive layout ─────────────────────────────────────────────────────── */
@@ -20,15 +38,41 @@
 .dex-sidebar {
   display: flex;
   flex-direction: column;
+  /* Distinct from content in BOTH light and dark */
+  background: var(--gray-1) !important;
+  border-right: 1px solid var(--gray-4) !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+}
+
+/* Light-mode only: add a very subtle tint so sidebar stands out */
+@media (prefers-color-scheme: light) {
+  .dex-sidebar {
+    background: #f4f6f8 !important;
+    border-right: 1px solid #dde1e7 !important;
+  }
+
+  .dex-content {
+    background: #f9fafb !important;
+  }
+}
+
+/* Dark-mode explicit sidebar */
+.dark .dex-sidebar,
+[data-theme="dark"] .dex-sidebar {
+  background: #0f1117 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3);
 }
 
 .dex-content {
-  margin-left: 220px;
+  margin-left: var(--sidebar-w);
 }
 
 .dex-mobile-header {
   display: none;
 }
+
+/* ── Mobile ─────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
   .dex-sidebar {
@@ -38,11 +82,12 @@
     top: 0;
     left: 0;
     height: 100vh;
-    width: 220px;
+    width: var(--sidebar-w);
   }
 
   .dex-sidebar.dex-sidebar-open {
     display: flex;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
   }
 
   .dex-mobile-header {
@@ -62,89 +107,263 @@
   }
 }
 
-/* ── Animations ────────────────────────────────────────────────────────────── */
+/* ── Metric card accent variant ─────────────────────────────────────────────── */
+
+.dex-metric-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
+}
+
+.dex-metric-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Page header ────────────────────────────────────────────────────────────── */
+
+.dex-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── Table polish ───────────────────────────────────────────────────────────── */
+
+.dex-table tr:hover td {
+  background: var(--gray-2);
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
 
 @keyframes fadeIn {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(100px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
+  0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50%       { opacity: 0; }
 }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50%       { opacity: 0.4; }
 }
 
-/* ── Utility classes ───────────────────────────────────────────────────────── */
+/* ── Utility classes ────────────────────────────────────────────────────────── */
 
-.animate-fade-in {
-  animation: fadeIn var(--duration-normal) var(--ease-out-expo);
-}
-
-.animate-slide-up {
-  animation: slideUp var(--duration-normal) var(--ease-out-expo);
-}
-
-.animate-scale-in {
-  animation: scaleIn var(--duration-fast) var(--ease-spring);
-}
+.animate-fade-in   { animation: fadeIn   var(--duration-normal) var(--ease-out-expo) both; }
+.animate-slide-up  { animation: slideUp  var(--duration-normal) var(--ease-out-expo) both; }
+.animate-scale-in  { animation: scaleIn  var(--duration-fast)   var(--ease-spring)   both; }
 
 .focus-ring:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-9);
 }
 
-/* ── Hub nav strip ─────────────────────────────────────────────────────────── */
+/* ── Hub nav strip ──────────────────────────────────────────────────────────── */
 
 .hub-nav-strip {
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--gray-4);
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .hub-nav-tab {
-  padding: 8px 16px;
+  padding: 9px 16px;
   font-size: 13px;
+  font-weight: 450;
   color: var(--gray-11);
   text-decoration: none;
   border-bottom: 2px solid transparent;
-  transition: color 120ms ease, border-color 120ms ease;
+  margin-bottom: -1px;
+  transition: color var(--duration-fast) ease, border-color var(--duration-fast) ease;
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .hub-nav-tab:hover {
   color: var(--gray-12);
+  border-bottom-color: var(--gray-6);
 }
 
 .hub-nav-tab.active {
   color: var(--accent-11);
   border-bottom-color: var(--accent-9);
-  font-weight: 500;
+  font-weight: 550;
+}
+
+/* ── Scrollbar (webkit) ─────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--gray-5); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-7); }
+
+/* ── Status dot ─────────────────────────────────────────────────────────────── */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.ok     { background: var(--green-9); box-shadow: 0 0 6px var(--green-7); }
+.status-dot.error  { background: var(--red-9);   box-shadow: 0 0 6px var(--red-7);   }
+.status-dot.warn   { background: var(--amber-9); box-shadow: 0 0 6px var(--amber-7); }
+
+/* ── Section divider ────────────────────────────────────────────────────────── */
+
+.dex-section + .dex-section {
+  margin-top: 28px;
+}
+
+/* ── Bootstrap-inspired visual density ─────────────────────────────────────── */
+
+/* Form controls — visible borders, clear focus ring */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+textarea,
+[data-radix-collection-item],
+.rt-TextFieldInput,
+.rt-TextAreaInput {
+  border: 1px solid var(--gray-6) !important;
+  border-radius: 5px !important;
+  background: var(--color-background) !important;
+  color: var(--gray-12) !important;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease !important;
+}
+
+input:focus,
+textarea:focus,
+.rt-TextFieldInput:focus,
+.rt-TextAreaInput:focus {
+  border-color: var(--accent-8) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-9) 20%, transparent) !important;
+  outline: none !important;
+}
+
+/* Select triggers */
+.rt-SelectTrigger {
+  border: 1px solid var(--gray-6) !important;
+  border-radius: 5px !important;
+  background: var(--color-background) !important;
+}
+
+/* Buttons — more weight and definition */
+.rt-Button {
+  font-weight: 500 !important;
+}
+
+.rt-Button[data-variant="solid"] {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+.rt-Button[data-variant="outline"] {
+  border-width: 1px !important;
+}
+
+/* Tables — striped rows, visible column separators */
+.dex-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-10);
+  background: var(--gray-3);
+  border-bottom: 2px solid var(--gray-5) !important;
+  padding: 8px 12px !important;
+}
+
+.dex-table td {
+  padding: 9px 12px !important;
+  border-bottom: 1px solid var(--gray-4) !important;
+  vertical-align: middle !important;
+}
+
+.dex-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--gray-3) 50%, transparent);
+}
+
+.dex-table tbody tr:hover td {
+  background: var(--accent-2) !important;
+}
+
+/* Cards / boxes — consistent border + subtle shadow */
+.rt-Card {
+  border: 1px solid var(--gray-5) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Badges — slightly more padding for readability */
+.rt-Badge {
+  padding: 2px 8px !important;
+  font-weight: 500 !important;
+}
+
+/* Callouts — visible left accent */
+.rt-CalloutRoot {
+  border-left: 3px solid currentColor !important;
+}
+
+/* Spacing helpers used by page content */
+.dex-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.dex-form-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  align-items: flex-end;
+}
+
+/* Dialog — Bootstrap-style modal look */
+.rt-DialogContent {
+  border: 1px solid var(--gray-5) !important;
+  box-shadow: var(--shadow-xl) !important;
+  border-radius: 8px !important;
+}
+
+.rt-AlertDialogContent {
+  border: 1px solid var(--gray-5) !important;
+  box-shadow: var(--shadow-xl) !important;
+  border-radius: 8px !important;
 }
