@@ -2,7 +2,6 @@ name: Build & Publish Image
 
 on:
   push:
-    branches-ignore: [main]
     paths:
       - 'src/**'
       - 'Dockerfile'
@@ -97,9 +96,11 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
+  # ── Feature branches → ephemeral preview ─────────────────────────────────────
   deploy-preview:
     name: Deploy Preview
     needs: [build, security-scan]
+    if: github.ref_name != 'dev' && github.ref_name != 'main'
     runs-on: ubuntu-latest
     environment: preview
     steps:
@@ -173,4 +174,74 @@ jobs:
           git add argocd/previews/dex-studio/$SLUG/
           git diff --staged --quiet || \
             git commit -m "chore(dex-studio-preview-$SLUG): deploy sha-$SHA"
+          git push
+
+  # ── dev branch → stage ───────────────────────────────────────────────────────
+  deploy-stage:
+    name: Deploy Stage
+    needs: [build, security-scan]
+    if: github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    environment: stage
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: TheDataEngineX/infradex
+          ref: main
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+
+      - uses: imranismail/setup-kustomize@v3
+
+      - name: Update stage overlay image tag
+        env:
+          SHA: ${{ needs.build.outputs.short_sha }}
+        run: |
+          cd argocd/overlays/dex-studio-stage
+          kustomize edit set image \
+            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
+
+      - name: Commit & push to infradex main
+        env:
+          SHA: ${{ needs.build.outputs.short_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add argocd/overlays/dex-studio-stage/kustomization.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(dex-studio-stage): deploy sha-$SHA"
+          git push
+
+  # ── main branch → prod ───────────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy Prod
+    needs: [build, security-scan]
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: TheDataEngineX/infradex
+          ref: main
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+
+      - uses: imranismail/setup-kustomize@v3
+
+      - name: Update prod overlay image tag
+        env:
+          SHA: ${{ needs.build.outputs.short_sha }}
+        run: |
+          cd argocd/overlays/dex-studio-prod
+          kustomize edit set image \
+            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
+
+      - name: Commit & push to infradex main
+        env:
+          SHA: ${{ needs.build.outputs.short_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add argocd/overlays/dex-studio-prod/kustomization.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(dex-studio-prod): deploy sha-$SHA"
           git push
