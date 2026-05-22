@@ -107,9 +107,9 @@ help = "Sync shared Claude Code settings from canonical .github/.claude/settings
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.docker-build]
-shell = "docker build -f dex-studio/Dockerfile -t dex-studio ."
+shell = "docker build -t dex-studio dex-studio/"
 cwd = ".."
-help = "Build Docker image (run from DataEngineX/ parent — needs ../dex)"
+help = "Build Docker image"
 
 [tool.poe.tasks.docker-serve]
 shell = "docker run --rm -p 7860:7860 -e DEX_STUDIO_API_URL=http://host.docker.internal:17000 dex-studio"
