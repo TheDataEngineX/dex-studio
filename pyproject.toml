@@ -1,6 +1,6 @@
 [project]
 name = "dex-studio"
-version = "0.2.0"
+version = "0.3.0"
 description = "DEX Studio – local control plane for DataEngineX/DEX"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
@@ -48,17 +48,16 @@ build-backend = "hatchling.build"
 packages = ["src/dex_studio"]
 
 
-
 [dependency-groups]
 dev = [
-    "poethepoet>=0.45.0",
+    "poethepoet>=0.46.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.13",
+    "ruff>=0.15.14",
     "mypy>=2.1.0",
     "coverage>=7.14.0",
-    "types-pyyaml>=6.0.12.20260510",
+    "types-pyyaml>=6.0.12.20260518",
 ]
 
 [tool.poe]
@@ -94,9 +93,6 @@ disable_error_code = ["misc"]
 warn_unused_ignores = false
 
 
-
-[tool.uv.sources]
-dataenginex = { path = "../dex", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,21 +7,21 @@ data:
   sources:
     movies:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/movies.csv
+      path: data/movies.csv
       query: null
       url: null
       connection: {}
       options: {}
     ratings:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/ratings.csv
+      path: data/ratings.csv
       query: null
       url: null
       connection: {}
       options: {}
     credits:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/credits.csv
+      path: data/credits.csv
       query: null
       url: null
       connection: {}
