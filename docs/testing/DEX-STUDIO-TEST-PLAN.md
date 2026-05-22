@@ -2,7 +2,7 @@
 
 > Comprehensive QA Test Plan covering Manual Testing, Automated Testing, and Edge Cases
 
-**Stack:** Python 3.13+ · NiceGUI 3.x · DuckDB · pytest · Playwright
+**Stack:** Python 3.13+ · Reflex 0.9+ · DuckDB · pytest · Playwright
 **Version:** `uv run poe version`
 
 ______________________________________________________________________

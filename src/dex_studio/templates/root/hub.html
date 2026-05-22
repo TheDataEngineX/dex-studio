@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, section_heading %}
+
+{% block title %}Home — DEX Studio{% endblock %}
+
+{% block page_header %}
+<div class="dex-page-header" style="margin-bottom:20px;padding:14px 0;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
+  <div>
+    <h1 style="font-size:18px;font-weight:700;margin:0 0 2px">Welcome back</h1>
+    <p style="font-size:12px;color:var(--gray-10);margin:0;display:flex;align-items:center;gap:6px">
+      <span>{{ project_name }}</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:500;background:{{ 'var(--green-3)' if health_status in ('ok','healthy') else 'var(--red-3)' }};color:{{ 'var(--green-11)' if health_status in ('ok','healthy') else 'var(--red-11)' }}">
+        <span style="width:6px;height:6px;border-radius:50%;background:{{ 'var(--green-9)' if health_status in ('ok','healthy') else 'var(--red-9)' }};display:inline-block"></span>
+        {{ health_status }}
+      </span>
+    </p>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a href="/data/pipelines" class="rt-Button" data-variant="soft" data-size="2">
+      <i data-lucide="play" style="width:13px;height:13px"></i> Run Pipeline
+    </a>
+    <a href="/data/sql" class="rt-Button" data-variant="solid" data-size="2">
+      <i data-lucide="terminal" style="width:13px;height:13px"></i> SQL Console
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Top metrics row -->
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+  <a href="/data/pipelines" style="text-decoration:none;flex:1;min-width:140px">
+    {{ metric_card("Pipelines", pipeline_count, "workflow", "indigo",
+        (stats.get('scheduled',0)|string + " scheduled") if stats.get('scheduled',0) else "") }}
+  </a>
+  <a href="/ml/models" style="text-decoration:none;flex:1;min-width:140px">
+    {{ metric_card("Models", model_count, "flask-conical", "violet") }}
+  </a>
+  <a href="/ai/agents" style="text-decoration:none;flex:1;min-width:140px">
+    {{ metric_card("Agents", agent_count, "sparkles", "orange") }}
+  </a>
+  <a href="/data/sources" style="text-decoration:none;flex:1;min-width:140px">
+    {{ metric_card("Sources", source_count, "database", "green") }}
+  </a>
+</div>
+
+<!-- Pipeline health strip (if any pipelines exist) -->
+{% if stats and stats.get('total', 0) > 0 %}
+<div class="rt-Card" style="padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+  <span style="font-size:12px;font-weight:600;color:var(--gray-10);text-transform:uppercase;letter-spacing:.05em">Pipeline Health</span>
+  <div style="display:flex;gap:16px;flex:1;flex-wrap:wrap">
+    {% if stats.get('scheduled', 0) %}
+    <span style="font-size:12px;color:var(--indigo-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="clock" style="width:12px;height:12px"></i> {{ stats.get('scheduled', 0) }} scheduled
+    </span>
+    {% endif %}
+    {% if stats.get('running', 0) %}
+    <span style="font-size:12px;color:var(--cyan-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="loader" style="width:12px;height:12px"></i> {{ stats.get('running', 0) }} running
+    </span>
+    {% endif %}
+    {% if stats.get('failed', 0) %}
+    <span style="font-size:12px;color:var(--red-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="alert-circle" style="width:12px;height:12px"></i> {{ stats.get('failed', 0) }} failed
+    </span>
+    {% endif %}
+    {% if stats.get('failed', 0) == 0 %}
+    <span style="font-size:12px;color:var(--green-11);display:flex;align-items:center;gap:5px">
+      <i data-lucide="check-circle" style="width:12px;height:12px"></i> All healthy
+    </span>
+    {% endif %}
+  </div>
+  <a href="/data/pipelines" style="font-size:12px;color:var(--indigo-9);text-decoration:none;white-space:nowrap;display:flex;align-items:center;gap:4px">
+    View all <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
+  </a>
+</div>
+{% endif %}
+
+<!-- Domain quick-access: vertical link lists -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
+
+  <!-- Data -->
+  <div class="rt-Card" style="padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--gray-4)">
+      <div style="background:var(--indigo-4);border-radius:8px;padding:9px;display:flex;flex-shrink:0">
+        <i data-lucide="database" style="width:16px;height:16px;color:var(--indigo-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:15px;line-height:1.2;color:var(--gray-12)">Data</div>
+        <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">Ingest · transform · store</div>
+      </div>
+      <a href="/data" style="margin-left:auto;color:var(--indigo-9);text-decoration:none" title="Data overview">
+        <i data-lucide="arrow-right" style="width:14px;height:14px"></i>
+      </a>
+    </div>
+    <nav aria-label="Data section links" style="display:flex;flex-direction:column">
+      {% for icon, label, href, desc in [
+        ("workflow","Pipelines","/data/pipelines","Run & schedule data flows"),
+        ("database","Sources","/data/sources","CSV, DB, API connectors"),
+        ("layers","Lakehouse","/data/lakehouse","Bronze · Silver · Gold storage"),
+        ("table-2","Warehouse","/data/warehouse","BI-ready Gold layer"),
+        ("terminal","SQL Console","/data/sql","Query lakehouse tables"),
+        ("git-branch","Lineage","/data/lineage","Data flow graph"),
+        ("shield-check","Quality","/data/quality","Checks & scores")
+      ] %}
+      <a href="{{ href }}" class="dex-hub-link dex-hub-link-indigo">
+        <div class="dex-hub-row">
+          <span class="dex-hub-icon dex-hub-icon-indigo"><i data-lucide="{{ icon }}" style="width:13px;height:13px;color:var(--indigo-9)"></i></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;line-height:1.3;color:var(--gray-12)">{{ label }}</div>
+            <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">{{ desc }}</div>
+          </div>
+          <i data-lucide="chevron-right" class="dex-hub-chevron" style="width:13px;height:13px;color:var(--indigo-9)"></i>
+        </div>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <!-- ML -->
+  <div class="rt-Card" style="padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--gray-4)">
+      <div style="background:var(--violet-4);border-radius:8px;padding:9px;display:flex;flex-shrink:0">
+        <i data-lucide="flask-conical" style="width:16px;height:16px;color:var(--violet-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:15px;line-height:1.2;color:var(--gray-12)">ML</div>
+        <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">Train · track · serve</div>
+      </div>
+      <a href="/ml" style="margin-left:auto;color:var(--violet-9);text-decoration:none" title="ML overview">
+        <i data-lucide="arrow-right" style="width:14px;height:14px"></i>
+      </a>
+    </div>
+    <nav aria-label="ML section links" style="display:flex;flex-direction:column">
+      {% for icon, label, href, desc in [
+        ("box","Models","/ml/models","Registry & lifecycle"),
+        ("test-tubes","Experiments","/ml/experiments","Runs, params, metrics"),
+        ("zap","Predictions","/ml/predictions","Live inference"),
+        ("table-2","Features","/ml/features","Feature store"),
+        ("activity","Drift","/ml/drift","Distribution monitoring")
+      ] %}
+      <a href="{{ href }}" class="dex-hub-link dex-hub-link-violet">
+        <div class="dex-hub-row">
+          <span class="dex-hub-icon dex-hub-icon-violet"><i data-lucide="{{ icon }}" style="width:13px;height:13px;color:var(--violet-9)"></i></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;line-height:1.3;color:var(--gray-12)">{{ label }}</div>
+            <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">{{ desc }}</div>
+          </div>
+          <i data-lucide="chevron-right" class="dex-hub-chevron" style="width:13px;height:13px;color:var(--violet-9)"></i>
+        </div>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <!-- AI -->
+  <div class="rt-Card" style="padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--gray-4)">
+      <div style="background:var(--orange-4);border-radius:8px;padding:9px;display:flex;flex-shrink:0">
+        <i data-lucide="sparkles" style="width:16px;height:16px;color:var(--orange-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:15px;line-height:1.2;color:var(--gray-12)">AI</div>
+        <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">Agents · RAG · memory</div>
+      </div>
+      <a href="/ai" style="margin-left:auto;color:var(--orange-9);text-decoration:none" title="AI overview">
+        <i data-lucide="arrow-right" style="width:14px;height:14px"></i>
+      </a>
+    </div>
+    <nav aria-label="AI section links" style="display:flex;flex-direction:column">
+      {% for icon, label, href, desc in [
+        ("bot","Agents","/ai/agents","Autonomous task runners"),
+        ("message-square","Playground","/ai/playground","Interactive chat & test"),
+        ("radar","Traces","/ai/traces","Agent execution logs"),
+        ("wrench","Tools","/ai/tools","Function registry"),
+        ("brain","Memory","/ai/memory","Short & long-term store")
+      ] %}
+      <a href="{{ href }}" class="dex-hub-link dex-hub-link-orange">
+        <div class="dex-hub-row">
+          <span class="dex-hub-icon dex-hub-icon-orange"><i data-lucide="{{ icon }}" style="width:13px;height:13px;color:var(--orange-9)"></i></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;line-height:1.3;color:var(--gray-12)">{{ label }}</div>
+            <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">{{ desc }}</div>
+          </div>
+          <i data-lucide="chevron-right" class="dex-hub-chevron" style="width:13px;height:13px;color:var(--orange-9)"></i>
+        </div>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <!-- System -->
+  <div class="rt-Card" style="padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--gray-4)">
+      <div style="background:var(--gray-4);border-radius:8px;padding:9px;display:flex;flex-shrink:0">
+        <i data-lucide="settings-2" style="width:16px;height:16px;color:var(--gray-9)"></i>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:15px;line-height:1.2;color:var(--gray-12)">System</div>
+        <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">Health · ops · config</div>
+      </div>
+      <a href="/system" style="margin-left:auto;color:var(--gray-9);text-decoration:none" title="System overview">
+        <i data-lucide="arrow-right" style="width:14px;height:14px"></i>
+      </a>
+    </div>
+    <nav aria-label="System section links" style="display:flex;flex-direction:column">
+      {% for icon, label, href, desc in [
+        ("heart-pulse","Status","/system/status","Services & health"),
+        ("scroll-text","Logs","/system/logs","Structured log stream"),
+        ("bar-chart-2","Metrics","/system/metrics","Prometheus counters"),
+        ("cpu","Components","/system/components","Engine internals")
+      ] %}
+      <a href="{{ href }}" class="dex-hub-link dex-hub-link-gray">
+        <div class="dex-hub-row">
+          <span class="dex-hub-icon dex-hub-icon-gray"><i data-lucide="{{ icon }}" style="width:13px;height:13px;color:var(--gray-9)"></i></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;line-height:1.3;color:var(--gray-12)">{{ label }}</div>
+            <div style="font-size:11px;line-height:1.4;color:var(--gray-9)">{{ desc }}</div>
+          </div>
+          <i data-lucide="chevron-right" class="dex-hub-chevron" style="width:13px;height:13px;color:var(--gray-9)"></i>
+        </div>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+</div>
+{% endblock %}

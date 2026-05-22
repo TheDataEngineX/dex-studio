@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dex_studio.engine import DexEngine
+from dataenginex.engine import DexEngine
 
 
 def test_source_row_count_returns_int_or_none(engine: DexEngine) -> None:
@@ -85,7 +85,7 @@ def test_source_sample_pagination(engine: DexEngine) -> None:
 def test_get_source_path_returns_tuple_or_none(engine: DexEngine) -> None:
     """_get_source_path returns (src, Path) or None."""
     sources = list(engine.config.data.sources.keys())
-    result = engine._get_source_path(sources[0])
+    result = engine._source_path(sources[0])
     if result is not None:
         assert isinstance(result, tuple)
         assert len(result) == 2
@@ -95,5 +95,5 @@ def test_get_source_path_returns_tuple_or_none(engine: DexEngine) -> None:
 def test_source_read_function_returns_str_or_none(engine: DexEngine) -> None:
     """_source_read_function returns read function name or None."""
     sources = list(engine.config.data.sources.keys())
-    result = engine._source_read_function(sources[0])
+    result = engine._source_read_fn(sources[0])
     assert result is None or isinstance(result, str)

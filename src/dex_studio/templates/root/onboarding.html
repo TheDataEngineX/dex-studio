@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Project — DEX Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.4.0/styles.css">
+  <link rel="stylesheet" href="/static/studio.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium"
+      style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)"
+      x-data="{tab:'open'}">
+
+  <div class="rt-Card animate-scale-in" style="width:480px;padding:32px">
+    <!-- Header -->
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="background:var(--indigo-9);border-radius:10px;padding:10px;display:inline-flex;margin-bottom:12px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0 0 4px">DEX Studio</h1>
+      <p style="font-size:13px;color:var(--gray-10);margin:0">Open or create a DataEngineX project</p>
+    </div>
+
+    {% if error %}
+    <div class="rt-CalloutRoot" data-color="red" data-size="1" style="margin-bottom:16px">
+      <p class="rt-CalloutText">{{ error }}</p>
+    </div>
+    {% endif %}
+
+    {% if warnings %}
+    <div class="rt-CalloutRoot" data-color="orange" data-size="1" style="margin-bottom:16px">
+      {% for w in warnings %}
+      <p class="rt-CalloutText" style="margin:0">{{ w }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <div style="display:flex;border-bottom:1px solid var(--gray-4);margin-bottom:20px">
+      <button @click="tab='open'" type="button"
+              :style="tab==='open' ? 'border-bottom:2px solid var(--indigo-9);color:var(--indigo-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--gray-10)'"
+              style="padding:7px 14px;background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:-1px;display:flex;align-items:center;gap:5px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Open Project
+      </button>
+      <button @click="tab='new'" type="button"
+              :style="tab==='new' ? 'border-bottom:2px solid var(--indigo-9);color:var(--indigo-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--gray-10)'"
+              style="padding:7px 14px;background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:-1px;display:flex;align-items:center;gap:5px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Project
+      </button>
+    </div>
+
+    <!-- Open tab -->
+    <div x-show="tab==='open'">
+      {% if projects %}
+      <form method="post" action="/onboarding/open">
+        <div class="dex-form-group" style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project</label>
+          <select name="path" class="rt-SelectTrigger" style="width:100%;padding:8px 10px;font-size:13px;border-radius:5px;border:1px solid var(--gray-6);background:var(--color-background);color:var(--gray-12)">
+            {% for label, path in projects %}
+            <option value="{{ path }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">Open Selected</button>
+      </form>
+
+      <div style="display:flex;align-items:center;gap:8px;margin:16px 0">
+        <div style="flex:1;height:1px;background:var(--gray-4)"></div>
+        <span style="font-size:11px;color:var(--gray-9)">or enter path manually</span>
+        <div style="flex:1;height:1px;background:var(--gray-4)"></div>
+      </div>
+      {% endif %}
+
+      <form method="post" action="/onboarding/open">
+        <div class="dex-form-group" style="margin-bottom:12px">
+          {% if not projects %}<label style="font-size:12px;font-weight:500;color:var(--gray-11)">Config path</label>{% endif %}
+          <input type="text" name="path" placeholder="/path/to/dex.yaml"
+                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+        <button type="submit" class="rt-Button" data-variant="{% if projects %}outline{% else %}solid{% endif %}" data-size="2" style="width:100%">
+          Open from Path
+        </button>
+      </form>
+    </div>
+
+    <!-- New tab -->
+    <div x-show="tab==='new'" style="display:none">
+      <form method="post" action="/onboarding/create">
+        <div class="dex-form-group" style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project Name</label>
+          <input type="text" name="name" placeholder="my-project" required
+                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-size:13px">
+        </div>
+        <div class="dex-form-group" style="margin-bottom:16px">
+          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">
+            Location
+            <span style="font-weight:400;color:var(--gray-9)">(leave blank for ~/.dex-studio/projects/)</span>
+          </label>
+          <input type="text" name="path" placeholder="~/.dex-studio/projects/my-project"
+                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        </div>
+        <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">
+          Create &amp; Open
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

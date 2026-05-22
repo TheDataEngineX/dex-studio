@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Warehouse — DEX Studio{% endblock %}
+{% block page_title %}Warehouse{% endblock %}
+
+{% block content %}
+<p style="font-size:13px;color:var(--gray-10);margin:0 0 20px">
+  Business-ready Gold layer — highly structured, aggregated tables optimized for BI and reporting.
+  <a href="/data/lakehouse" style="color:var(--indigo-9);text-decoration:none;margin-left:6px">View full Lakehouse →</a>
+</p>
+
+<div id="warehouse-tables">
+  {% include "data/warehouse_tables.html" %}
+</div>
+{% endblock %}

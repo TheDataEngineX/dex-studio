@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DEX Studio{% endblock %}</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Radix Themes CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.4.0/styles.css">
+
+  <!-- DEX Studio custom styles -->
+  <link rel="stylesheet" href="/static/studio.css">
+
+  <!-- Theme init — runs before body renders to prevent flash -->
+  <script>
+    (function () {
+      const saved = localStorage.getItem('dex-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', saved);
+      if (saved === 'dark') document.documentElement.classList.add('dark');
+    })();
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- HTMX -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+
+  <!-- HTMX SSE extension -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
+
+  {% block head %}{% endblock %}
+</head>
+<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium" data-scaling="100%"
+      x-data="dexApp()" @keydown.escape="closeSidebar()">
+
+  <!-- Mobile header -->
+  <header class="dex-mobile-header">
+    <button @click="sidebarOpen = !sidebarOpen" style="background:none;border:none;cursor:pointer;padding:8px">
+      <i data-lucide="menu" style="width:20px;height:20px;color:var(--gray-11)"></i>
+    </button>
+    <a href="/" style="font-weight:600;font-size:15px;margin-left:8px;text-decoration:none;color:var(--gray-12)">DEX Studio</a>
+  </header>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div x-show="sidebarOpen" @click="sidebarOpen=false"
+       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150"
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"></div>
+
+  <!-- Sidebar -->
+  <nav class="dex-sidebar" aria-label="Main navigation" :class="sidebarOpen ? 'dex-sidebar-open' : ''"
+       style="position:fixed;top:0;left:0;height:100vh;width:var(--sidebar-w);z-index:200;display:flex;flex-direction:column;">
+
+    <!-- Logo — click navigates home -->
+    <div style="padding:14px 16px 10px;flex-shrink:0">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit"
+         title="Go to home">
+        <div style="background:var(--indigo-9);border-radius:7px;padding:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i data-lucide="zap" style="width:15px;height:15px;color:white"></i>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:14px;line-height:1.2;color:var(--gray-12)">DEX Studio</div>
+          <div style="font-size:10px;color:var(--gray-9)">DataEngineX</div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Project switcher -->
+    <div style="padding:0 8px 8px;flex-shrink:0">
+      {% if all_projects and all_projects|length > 1 %}
+      <div x-data="{open:false, pos:{top:0,left:0,width:0}}">
+        <button @click="const r=$el.getBoundingClientRect(); pos={top:r.bottom+4,left:r.left,width:r.width}; open=!open"
+                style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5);cursor:pointer;width:100%;text-align:left"
+                :style="open ? 'background:var(--indigo-3);border-color:var(--indigo-6)' : ''">
+          <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
+          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--gray-8)"></i>
+        </button>
+        <div x-show="open" x-cloak @click.outside="open=false"
+             :style="`top:${pos.top}px;left:${pos.left}px;width:${pos.width}px`"
+             style="position:fixed;z-index:9000;border-radius:8px;overflow:hidden;
+                    box-shadow:0 8px 32px rgba(0,0,0,0.18),0 2px 8px rgba(0,0,0,0.12);
+                    border:1px solid var(--gray-5)">
+          <div class="dex-switcher-panel">
+            {% for p in all_projects %}
+            <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--gray-4)">
+              <form method="post" action="/projects/switch" @submit="open=false" style="flex:1;min-width:0">
+                <input type="hidden" name="config_path" value="{{ p.config_path }}">
+                <button type="submit"
+                        style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-size:12px;text-align:left;border:none;cursor:pointer;
+                               background:{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }};
+                               color:{{ 'var(--indigo-11)' if p.config_path == current_config else 'var(--gray-12)' }}"
+                        @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }}'">
+                  <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
+                     style="width:12px;height:12px;flex-shrink:0;color:{{ 'var(--indigo-9)' if p.config_path == current_config else 'var(--gray-8)' }}"></i>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:{{ '600' if p.config_path == current_config else '400' }}">{{ p.name }}</span>
+                </button>
+              </form>
+              <form method="post" action="/projects/set-default" @submit="open=false" title="Set as startup default" style="display:flex">
+                <input type="hidden" name="config_path" value="{{ p.config_path }}">
+                <button type="submit" style="padding:0 10px;border:none;background:transparent;cursor:pointer;color:var(--gray-7);border-left:1px solid var(--gray-4)"
+                        @mouseenter="$el.style.color='var(--amber-9)'" @mouseleave="$el.style.color='var(--gray-7)'"
+                        title="Set as default">
+                  <i data-lucide="star" style="width:11px;height:11px"></i>
+                </button>
+              </form>
+            </div>
+            {% endfor %}
+            <a href="/onboarding" @click="open=false"
+               style="display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:12px;text-decoration:none;color:var(--indigo-10)"
+               @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='transparent'">
+              <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
+            </a>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5)">
+        <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
+        <a href="/onboarding" style="color:var(--gray-8);text-decoration:none" title="Switch project">
+          <i data-lucide="chevrons-up-down" style="width:11px;height:11px"></i>
+        </a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div style="height:1px;background:var(--gray-4);margin:0 16px 6px;flex-shrink:0"></div>
+
+    <!-- Scrollable nav area -->
+    <div style="flex:1;overflow-y:auto;padding:0 8px 8px">
+
+      <!-- Nav: Data -->
+      {% set data_active = current_path.startswith('/data') %}
+      <div style="padding-bottom:2px">
+        <a href="/data" class="dex-nav-item {{ 'active' if data_active else '' }}"
+           style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--indigo-11)' if data_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if data_active else '400' }};background:{{ 'var(--indigo-3)' if data_active else 'transparent' }}">
+          <i data-lucide="database" style="width:14px;height:14px;flex-shrink:0"></i>Data
+        </a>
+        {% if data_active %}
+        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--indigo-6);padding-left:10px">
+          {% for label, href in [('Pipelines','/data/pipelines'),('Sources','/data/sources'),('Lakehouse','/data/lakehouse'),('Warehouse','/data/warehouse'),('SQL Console','/data/sql'),('Lineage','/data/lineage'),('Quality','/data/quality'),('Catalog','/data/catalog')] %}
+          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--indigo-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--indigo-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Nav: ML -->
+      {% set ml_active = current_path.startswith('/ml') %}
+      <div style="padding-bottom:2px;margin-top:2px">
+        <a href="/ml" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--violet-11)' if ml_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ml_active else '400' }};background:{{ 'var(--violet-3)' if ml_active else 'transparent' }}">
+          <i data-lucide="flask-conical" style="width:14px;height:14px;flex-shrink:0"></i>ML
+        </a>
+        {% if ml_active %}
+        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--violet-6);padding-left:10px">
+          {% for label, href in [('Models','/ml/models'),('Experiments','/ml/experiments'),('Predictions','/ml/predictions'),('Features','/ml/features'),('Drift','/ml/drift')] %}
+          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--violet-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--violet-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Nav: AI -->
+      {% set ai_active = current_path.startswith('/ai') %}
+      <div style="padding-bottom:2px;margin-top:2px">
+        <a href="/ai" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--orange-11)' if ai_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ai_active else '400' }};background:{{ 'var(--orange-3)' if ai_active else 'transparent' }}">
+          <i data-lucide="sparkles" style="width:14px;height:14px;flex-shrink:0"></i>AI
+        </a>
+        {% if ai_active %}
+        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--orange-6);padding-left:10px">
+          {% for label, href in [('Agents','/ai/agents'),('Playground','/ai/playground'),('Traces','/ai/traces'),('Tools','/ai/tools'),('Memory','/ai/memory')] %}
+          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--orange-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--orange-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Nav: System -->
+      {% set sys_active = current_path.startswith('/system') %}
+      <div style="padding-bottom:2px;margin-top:2px">
+        <a href="/system" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--gray-12)' if sys_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if sys_active else '400' }};background:{{ 'var(--gray-4)' if sys_active else 'transparent' }}">
+          <i data-lucide="settings-2" style="width:14px;height:14px;flex-shrink:0"></i>System
+        </a>
+        {% if sys_active %}
+        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--gray-6);padding-left:10px">
+          {% for label, href in [('Status','/system/status'),('Logs','/system/logs'),('Metrics','/system/metrics'),('Components','/system/components'),('Settings','/system/settings')] %}
+          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--gray-12)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--gray-3)' if current_path == href else 'transparent' }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+    </div><!-- end scrollable nav -->
+
+    <!-- Sidebar footer -->
+    <div style="flex-shrink:0;padding:10px 16px;border-top:1px solid var(--gray-4);display:flex;gap:10px;align-items:center;background:inherit">
+      <a href="https://thedataenginex.org/docs" target="_blank"
+         style="font-size:11px;color:var(--gray-9);text-decoration:none;display:flex;align-items:center;gap:4px"
+         title="Documentation">
+        <i data-lucide="book-open" style="width:12px;height:12px"></i>Docs
+      </a>
+      <span style="color:var(--gray-5)">·</span>
+      <button id="dex-theme-toggle" onclick="toggleTheme()"
+              style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--gray-9);display:flex;align-items:center;gap:4px;padding:0"
+              aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
+        <i id="dex-theme-icon" data-lucide="moon" style="width:12px;height:12px"></i>
+        <span id="dex-theme-label">Dark</span>
+      </button>
+    </div>
+
+  </nav>
+
+  <!-- Main content -->
+  <main class="dex-content" style="min-height:100vh;padding:24px 28px 40px">
+
+    {% block page_header %}
+    {% set _domain = 'ml' if current_path.startswith('/ml') else 'ai' if current_path.startswith('/ai') else 'system' if current_path.startswith('/system') else 'data' %}
+    <div class="dex-page-header" data-domain="{{ _domain }}" style="margin-bottom:20px;padding:14px 0;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
+      <h1 style="font-size:18px;font-weight:700;margin:0">{% block page_title %}{% endblock %}</h1>
+      <div>{% block page_actions %}{% endblock %}</div>
+    </div>
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Toast container -->
+  <div id="toast-container" x-data="toastStore()"
+       @show-toast.window="add($event.detail.msg, $event.detail.kind)"
+       style="position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="rt-CalloutRoot"
+           :data-color="t.kind === 'success' ? 'green' : t.kind === 'error' ? 'red' : 'blue'"
+           data-size="1"
+           style="pointer-events:auto;min-width:260px;max-width:400px;animation:slideInRight .2s ease both;cursor:pointer"
+           @click="remove(t.id)"
+           x-transition:leave="transition-opacity duration-300"
+           x-transition:leave-end="opacity-0">
+        <p class="rt-CalloutText" x-text="t.msg"></p>
+      </div>
+    </template>
+  </div>
+
+  <!-- Flash message → auto-show as toast -->
+  {% if flash %}
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
+    });
+  </script>
+  {% endif %}
+
+  <!-- Lucide icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons();
+    document.addEventListener('htmx:afterSwap', () => lucide.createIcons());
+    document.addEventListener('htmx:afterSettle', () => lucide.createIcons());
+  </script>
+
+  <script>
+    // ── Dark/light mode ───────────────────────────────────────────────────────
+    function applyTheme(mode) {
+      const isDark = mode === 'dark';
+      document.documentElement.setAttribute('data-theme', mode);
+      document.documentElement.classList.toggle('dark', isDark);
+      document.body.setAttribute('data-appearance', isDark ? 'dark' : 'light');
+      localStorage.setItem('dex-theme', mode);
+      const icon = document.getElementById('dex-theme-icon');
+      const label = document.getElementById('dex-theme-label');
+      if (icon) { icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon'); lucide.createIcons(); }
+      if (label) label.textContent = isDark ? 'Light' : 'Dark';
+    }
+    function toggleTheme() {
+      applyTheme(localStorage.getItem('dex-theme') === 'dark' ? 'light' : 'dark');
+    }
+    // Apply on load (theme was set before body by inline script — sync icons)
+    document.addEventListener('DOMContentLoaded', () => {
+      applyTheme(localStorage.getItem('dex-theme') || 'light');
+    });
+
+    // ── Alpine app ────────────────────────────────────────────────────────────
+    function dexApp() {
+      return { sidebarOpen: false, closeSidebar() { this.sidebarOpen = false; } };
+    }
+    function toastStore() {
+      return {
+        toasts: [],
+        add(msg, kind = 'info') {
+          const id = Date.now();
+          this.toasts.push({ id, msg, kind });
+          setTimeout(() => this.remove(id), 4500);
+        },
+        remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); }
+      };
+    }
+    document.addEventListener('htmx:afterRequest', (e) => {
+      const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
+      if (!trigger) return;
+      try {
+        const t = JSON.parse(trigger)['show-toast'];
+        if (t) window.dispatchEvent(new CustomEvent('show-toast', { detail: t }));
+      } catch {}
+    });
+  </script>
+
+  <!-- Sortable + filterable tables -->
+  <script>
+  (function () {
+    function initSortable(table) {
+      const ths = table.querySelectorAll('th.sortable');
+      ths.forEach((th, ci) => {
+        th.addEventListener('click', () => {
+          const asc = !th.classList.contains('sort-asc');
+          ths.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+          const tbody = table.querySelector('tbody');
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort((a, b) => {
+            const av = a.cells[ci]?.textContent.trim() ?? '';
+            const bv = b.cells[ci]?.textContent.trim() ?? '';
+            const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
+            const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
+            const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+            return asc ? cmp : -cmp;
+          });
+          rows.forEach(r => tbody.appendChild(r));
+        });
+      });
+    }
+    function initFilter(input) {
+      const tableId = input.dataset.table;
+      const table = tableId ? document.getElementById(tableId) : input.closest('.rt-Card')?.querySelector('table');
+      if (!table) return;
+      input.addEventListener('input', () => {
+        const q = input.value.toLowerCase();
+        table.querySelectorAll('tbody tr').forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+    }
+    function boot() {
+      document.querySelectorAll('table.dex-table').forEach(initSortable);
+      document.querySelectorAll('.dex-table-filter').forEach(initFilter);
+    }
+    document.addEventListener('DOMContentLoaded', boot);
+    document.addEventListener('htmx:afterSwap', boot);
+  })();
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

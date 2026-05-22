@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}{{ page_title }} — DEX Studio{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div style="margin-top:40px">
+  {{ empty_state("construction", page_title ~ " — Coming Soon", "This section is under active development.") }}
+</div>
+{% endblock %}

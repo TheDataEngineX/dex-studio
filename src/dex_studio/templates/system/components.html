@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import status_badge, empty_state %}
+
+{% block title %}Components — DEX Studio{% endblock %}
+{% block page_title %}System Components{% endblock %}
+
+{% block content %}
+{% if components %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter components…" data-table="components-table">
+</div>
+<div class="rt-Card" style="overflow:hidden">
+  <table id="components-table" class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell sortable">Component</th>
+        <th class="rt-TableColumnHeaderCell sortable">Status</th>
+        <th class="rt-TableColumnHeaderCell sortable">Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in components %}
+      <tr>
+        <td class="rt-TableCell" style="font-weight:600;font-size:13px">{{ c.name }}</td>
+        <td class="rt-TableCell">{{ status_badge("ok" if c.available else "offline") }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ c.message or ("Online" if c.available else "Not initialized") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state("cpu", "No components detected") }}
+{% endif %}
+{% endblock %}

@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **DEX Studio** — self-hosted web UI for the [DataEngineX](https://github.com/TheDataEngineX/dex) platform.
-Single control plane for Data · ML · AI · System · Career intelligence.
+Single control plane for Data · ML · AI · System.
 
-Built on [Reflex](https://reflex.dev) — Python-first reactive web framework (Python → React).
+Built on FastAPI + Jinja2 + HTMX. Imports `dataenginex` directly — no separate API server needed.
 
 ---
 
@@ -16,17 +16,16 @@ Built on [Reflex](https://reflex.dev) — Python-first reactive web framework (P
 DEX Studio is Layer 2 in the three-layer DEX architecture:
 
 ```text
-Layer 1: DEX (framework)     — dataenginex PyPI package, CLI, headless
-     ↓ HTTP API
-Layer 2: DEX Studio (shell)  — this repo, domain-agnostic UI
-     ↓ page plugin registration
-Layer 3: Domain Apps         — registers custom pages into Studio
+Layer 1: dataenginex (library)  — PyPI package, DexEngine, DexStore, CLI
+     ↓ direct Python import (same process)
+Layer 2: DEX Studio (shell)     — this repo, FastAPI + Jinja2 + HTMX
+     ↓ page router registration
+Layer 3: Domain Apps            — register custom pages into Studio
 ```
 
-Studio connects to a running DEX engine via HTTP. It does not import
-`dataenginex` directly — the API is the contract.
+Studio imports `dataenginex` as a library via `DexEngine`. No HTTP hop to a separate engine process.
 
-______________________________________________________________________
+---
 
 ## Quick Start
 
@@ -34,11 +33,11 @@ ______________________________________________________________________
 git clone https://github.com/TheDataEngineX/dex-studio && cd dex-studio
 uv sync
 
-# Start DEX engine first
-cd ../dex && uv run poe dev          # starts at http://localhost:17000
+# Launch Studio (opens with an empty project list)
+uv run poe dev   # http://localhost:7860
 
-# Launch Studio
-cd ../dex-studio && uv run poe dev   # starts at http://localhost:7860
+# Or point to a specific dex.yaml
+dex-studio --config /path/to/dex.yaml
 ```
 
 ---
@@ -47,21 +46,22 @@ cd ../dex-studio && uv run poe dev   # starts at http://localhost:7860
 
 | Domain | Pages |
 |--------|-------|
-| Data | Dashboard, Pipelines, Sources, SQL Console, Warehouse, Lineage, Quality, Catalog, Asset Graph |
-| ML | Dashboard, Models, Experiments, Predictions, Features, Drift, A/B Tests, Model Cards |
-| AI | Dashboard, Agents, Playground, Traces, Tools, Memory, Workflows, Router, Cost, HITL, RAG Eval |
-| System | Status, Logs, Metrics, Traces, Components, Activity, Incidents, Settings, Connection |
-| Career | Powered by [CareerDEX](https://github.com/TheDataEngineX/careerdex) |
+| Data | Dashboard, Pipelines, Sources, SQL Console, Warehouse, Lineage, Quality, Catalog |
+| ML | Dashboard, Models, Experiments, Predictions, Drift |
+| AI | Dashboard, Agents, Playground |
+| System | Status, Logs, Metrics, Components |
 
 ---
 
 ## Configuration
 
 ```bash
-export DEX_API_URL=http://localhost:17000   # default
+export DEX_STUDIO_API_KEY=your-key   # optional — disables auth if unset
+export DEX_STUDIO_HOST=0.0.0.0       # default
+export DEX_STUDIO_PORT=7860          # default
 ```
 
-Config file: `~/.dex-studio/config.yaml`
+Projects registry: `~/.dex-studio/projects.yaml`
 
 ---
 
@@ -69,13 +69,15 @@ Config file: `~/.dex-studio/config.yaml`
 
 | Component | Technology |
 |-----------|------------|
-| UI Framework | Reflex 0.7+ (Python → React) |
-| HTTP Client | httpx (async) |
+| Server | FastAPI + Uvicorn |
+| Templates | Jinja2 |
+| Interactivity | HTMX |
+| Engine | dataenginex (direct import) |
 | Config | PyYAML + Pydantic |
 | Build | Hatchling + uv |
-| Testing | pytest + pytest-asyncio |
+| Testing | pytest + httpx TestClient |
 | Linting | Ruff |
-| Type Checking | mypy (strict) |
+| Type Checking | mypy strict |
 
 ---
 
@@ -86,7 +88,7 @@ uv run poe lint          # ruff lint
 uv run poe typecheck     # mypy strict
 uv run poe test          # pytest
 uv run poe check-all     # lint + typecheck + test
-uv run poe dev           # Reflex dev server (port 7860)
+uv run poe dev           # uvicorn dev server (port 7860, reload)
 ```
 
 ---

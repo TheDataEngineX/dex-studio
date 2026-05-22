@@ -7,21 +7,21 @@ data:
   sources:
     movies:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/movies.csv
       query: null
       url: null
       connection: {}
       options: {}
     ratings:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/ratings.csv
       query: null
       url: null
       connection: {}
       options: {}
     credits:
       type: csv
-      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/
+      path: /home/jay/workspace/DataEngineX/dex-studio/examples/movie-dex/data/credits.csv
       query: null
       url: null
       connection: {}
@@ -38,7 +38,11 @@ data:
         key: null
         sql: null
         options: {}
-      quality: null
+      quality:
+        completeness: 0.95
+        uniqueness:
+        - title
+        freshness_hours: 1.0
       destination: silver.load_movies
       target: null
       depends_on: []
@@ -54,7 +58,11 @@ data:
         key: null
         sql: null
         options: {}
-      quality: null
+      quality:
+        completeness: 0.98
+        uniqueness:
+        - ratingId
+        freshness_hours: 0.5
       destination: silver.process_ratings
       target: null
       depends_on: []
@@ -70,13 +78,16 @@ data:
         key: null
         sql: null
         options: {}
-      quality: null
+      quality:
+        completeness: 0.90
+        uniqueness:
+        - creditId
       destination: silver.load_credits
       target: null
       depends_on: []
       schedule: '*/15 * * * *'
     genre_analysis:
-      source: silver.load_movies
+      source: movies
       transforms:
       - type: sql
         condition: null
@@ -84,21 +95,16 @@ data:
         name: null
         columns: null
         key: null
-        sql: 'SELECT genre, COUNT(*) as count, AVG(rating) as avg_rating
-
-          FROM _data
-
-          GROUP BY genre
-
-          ORDER BY count DESC
-
-          '
+        sql: 'SELECT genres, COUNT(*) as movie_count, AVG(rating) as avg_rating, AVG(votes)
+          as avg_votes FROM _data GROUP BY genres ORDER BY movie_count DESC'
         options: {}
-      quality: null
-      destination: gold.genre_stats
-      target: null
+      quality:
+        completeness: 0.99
+        custom_sql: 'SELECT COUNT(*) > 0 FROM _data'
+      destination: genre_analysis
+      target: {layer: gold}
       depends_on: []
-      schedule: null
+      schedule: 0 * * * *
 ml:
   tracker: builtin
   tracking:
@@ -179,15 +185,6 @@ secops:
   audit:
     enabled: false
     destination: file
-server:
-  host: 0.0.0.0
-  port: 17000
-  auth:
-    enabled: false
-    secret_key: null
-    algorithm: HS256
-  cors_origins:
-  - '*'
 observability:
   metrics: true
   tracing: false

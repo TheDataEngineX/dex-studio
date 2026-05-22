@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}SQL Console — DEX Studio{% endblock %}
+{% block page_title %}SQL Console{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:16px">
+  <form hx-post="/data/sql/execute" hx-target="#sql-results" hx-swap="innerHTML" hx-indicator="#sql-spinner">
+    <div class="rt-Card" style="padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="font-size:12px;font-weight:600;color:var(--gray-10)">SQL Query</label>
+        <span id="sql-spinner" class="htmx-indicator" style="font-size:11px;color:var(--gray-9)">Running…</span>
+      </div>
+      <textarea name="query" rows="8" style="width:100%;font-family:'Fira Code',monospace;font-size:13px;padding:10px;border:1px solid var(--gray-6);border-radius:5px;background:var(--gray-1);color:var(--gray-12);resize:vertical;line-height:1.6">{{ query }}</textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button type="submit" class="rt-Button" data-variant="solid" data-size="2">
+          <i data-lucide="play" style="width:13px;height:13px"></i> Run Query
+        </button>
+        <span style="font-size:11px;color:var(--gray-8);align-self:center">DuckDB in-memory — no data is persisted</span>
+      </div>
+    </div>
+  </form>
+
+  <div id="sql-results">
+    {% include "data/sql_results.html" %}
+  </div>
+</div>
+{% endblock %}

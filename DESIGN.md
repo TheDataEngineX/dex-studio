@@ -190,7 +190,7 @@ Every domain page uses `page_shell(title, *content)` from `layout.py`. The shell
 
 ### Empty States
 
-Use the inline pattern (not the dead `empty_state.py` NiceGUI component):
+Use the inline pattern (the old `empty_state.py` NiceGUI component has been deleted):
 
 ```python
 rx.center(
@@ -209,32 +209,9 @@ Use `layout.status_badge(value)` — maps status strings to Radix color schemes.
 
 ______________________________________________________________________
 
-## Dead Code Inventory
+## Dead Code Notes
 
-18 component files in `src/dex_studio/components/` import `nicegui` and are **completely inert** in the Reflex app. Safe to delete.
-
-| File | Replacement |
-|------|-------------|
-| `app_shell.py` | `layout.py:page_shell` |
-| `badge.py` | `rx.badge()` + `layout.status_badge` |
-| `breadcrumb.py` | `layout.py:page_shell(breadcrumb=...)` |
-| `button.py` | `rx.button()` |
-| `card.py` | `layout.py:metric_card` |
-| `chat_message.py` | `copilot.py:_message_bubble` |
-| `command_palette.py` | No Reflex equivalent yet |
-| `data_table.py` | `rx.table.*` |
-| `domain_sidebar.py` | `layout.py:sidebar` |
-| `empty_state.py` | Inline pattern (see above) |
-| `hub_nav.py` | No Reflex equivalent yet |
-| `input.py` | `rx.input()`, `rx.text_area()` |
-| `inspector_panel.py` | No Reflex equivalent yet |
-| `metric_card.py` | `layout.py:metric_card` |
-| `page_layout.py` | `layout.py:page_shell` |
-| `status_badge.py` | `layout.py:status_badge` |
-| `toast.py` | `layout.py:toast_overlay` |
-| `tool_call_block.py` | No Reflex equivalent yet |
-
-Also dead: `src/dex_studio/theme.py` and `src/dex_studio/design_tokens.py:inject_design_tokens()`.
+NiceGUI component files from the pre-Reflex era have been deleted. `layout.py` is the single canonical Reflex component file. `src/dex_studio/theme.py` and `src/dex_studio/design_tokens.py:inject_design_tokens()` are still present but unused.
 
 ______________________________________________________________________
 
@@ -246,8 +223,8 @@ ______________________________________________________________________
 |-----------|-------|---------|
 | Color consistency | 7/10 | Radix semantic tokens used consistently in live code. Two dead parallel systems (`design_tokens.py` + `theme.py`) cause confusion but don't affect runtime. |
 | Typography hierarchy | 6/10 | Fira Sans good choice. Radix size scale used but inconsistently — `ai_dashboard` uses `size="6"` for page heading, `data_dashboard` uses `size="3"` for a section header with no page-level heading. No enforced hierarchy contract. |
-| Spacing rhythm | 7/10 | Mostly consistent Radix scale in live Reflex code. Dead NiceGUI code has hardcoded px values that don't affect runtime. |
-| Component consistency | 3/10 | KPI cards have 3+ implementations (inline in `data_dashboard`, `_kpi_card` in `ai_dashboard`, `metric_card` in `layout.py`). Hub nav defined in dead NiceGUI code with no Reflex equivalent. |
+| Spacing rhythm | 7/10 | Mostly consistent Radix scale in live Reflex code. |
+| Component consistency | 3/10 | KPI cards have 3+ implementations (inline in `data_dashboard`, `_kpi_card` in `ai_dashboard`, `metric_card` in `layout.py`). Hub nav has no Reflex equivalent yet. |
 | Responsive behavior | 2/10 | Sidebar hard-fixed at 220px, `margin_left="220px"` hardcoded on content, grid columns hardcoded (`columns="3"`). No breakpoints. Mobile is broken. |
 | Dark mode | 7/10 | Dark-first, Radix handles semantic token inversion. Light mode tokens exist but no user toggle — `appearance="dark"` hardcoded in `app.py`. |
 | Animation | 6/10 | Motion tokens defined but not injected (dead). Live code uses `transition="all 0.15s ease"` inline — functional but not systematized. |
@@ -261,11 +238,11 @@ ______________________________________________________________________
 
 | Pattern | Location | Severity | Fix |
 |---------|----------|----------|-----|
-| Logo gradient | `layout.py:239` — `linear-gradient(135deg, var(--indigo-9), var(--violet-9))` on zap icon container | Medium | Replace with flat `var(--indigo-9)` background. The lightning bolt icon is already distinctive. |
-| Bootstrap dead load | `app.py:stylesheets` — `bootstrap@5.3.3/dist/css/bootstrap.min.css` | High | Remove. Zero Bootstrap components used. Adds ~30KB, risks Radix reset conflicts. |
-| Generic glow shadow token | `design_tokens.py:70` — `"shadow-glow": "0 0 20px rgba(99, 102, 241, 0.3)"` | Low | Not injected, so inert. Delete the token. |
-| Indigo hover on all hub cards | `project_hub.py:24` — `"box_shadow": "0 4px 16px var(--indigo-4)"` for all 5 domain cards | Low | Use each domain's own color: `var(--{accent}-4)`. ML card should use violet, AI cyan, etc. |
-| Dead component graveyard | 18 files in `src/dex_studio/components/` | High | Delete all 18. Not a visual issue but causes confusion about which component is canonical. |
+| Logo gradient | `layout.py` — `linear-gradient(135deg, var(--indigo-9), var(--violet-9))` on zap icon container | Medium | Replace with flat `var(--indigo-9)` background. The lightning bolt icon is already distinctive. |
+| ~~Bootstrap dead load~~ | ~~`app.py:stylesheets`~~ | ~~High~~ Done | Removed. |
+| Generic glow shadow token | `design_tokens.py` — `"shadow-glow": "0 0 20px rgba(99, 102, 241, 0.3)"` | Low | Not injected, so inert. Delete the token. |
+| ~~Indigo hover on all hub cards~~ | ~~`project_hub.py`~~ | ~~Low~~ Done | `_domain_card()` now takes `accent` param — each domain uses its own color. |
+| ~~Dead component graveyard~~ | ~~18 files in `src/dex_studio/components/`~~ | ~~High~~ Done | All NiceGUI component files deleted. `layout.py` is now the only component file. |
 
 ______________________________________________________________________
 
@@ -273,17 +250,17 @@ ______________________________________________________________________
 
 **Priority 1 — Cleanup (no visual impact):**
 
-1. Delete the 18 dead NiceGUI component files
-1. Remove Bootstrap from `app.py` stylesheets
+1. ~~Delete the 18 dead NiceGUI component files~~ ✓ Done
+1. ~~Remove Bootstrap from `app.py` stylesheets~~ ✓ Done (was already removed)
 1. Delete `inject_design_tokens()` from `design_tokens.py` or replace with `rx.GlobalStyle`
 
 **Priority 2 — Consistency:**
 4\. Create one canonical `dex_kpi_card()` in `layout.py`, replace 3+ inline variants
-5\. Fix domain hub card hover to use per-domain accent color
+5\. ~~Fix domain hub card hover to use per-domain accent color~~ ✓ Done (`_domain_card()` uses `accent` param)
 6\. Add `aria-label` to all `rx.icon_button` calls in `copilot.py` and `layout.py`
 7\. Wire motion tokens via `app.style` dict in `app.py`
 
 **Priority 3 — Gaps:**
 8\. Add dark/light toggle in system settings
-9\. Implement Reflex hub nav strip (underline tabs) to replace dead NiceGUI `hub_nav.py`
+9\. Implement Reflex hub nav strip (underline tabs) — no equivalent exists yet
 10\. Add responsive sidebar (collapse to icon-only below 768px)

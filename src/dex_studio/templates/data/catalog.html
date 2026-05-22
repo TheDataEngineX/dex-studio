@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import section_heading, empty_state %}
+
+{% block title %}Catalog — DEX Studio{% endblock %}
+{% block page_title %}Data Catalog{% endblock %}
+
+{% block content %}
+{% if not entries %}
+{{ empty_state("book-open", "No catalog entries yet", "Run pipelines to populate the warehouse and catalog.") }}
+{% else %}
+<div style="display:grid;gap:12px">
+  {% for entry in entries %}
+  <div class="rt-Card" style="padding:16px 20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;background:var(--{{ entry.layer_color }}-3);color:var(--{{ entry.layer_color }}-11)">{{ entry.layer }}</span>
+      <span style="font-family:'Fira Code',monospace;font-size:13px;font-weight:600;color:var(--gray-12)">{{ entry.name }}</span>
+      <span style="font-size:11px;color:var(--gray-9);margin-left:auto">{{ entry.row_count }} rows · {{ entry.column_count }} cols · {{ entry.size }}</span>
+    </div>
+    {% if entry.columns %}
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      {% for col in entry.columns %}
+      <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--gray-3);color:var(--gray-11)">
+        <span style="color:var(--gray-8)">{{ col.column_type }}</span> {{ col.column_name }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

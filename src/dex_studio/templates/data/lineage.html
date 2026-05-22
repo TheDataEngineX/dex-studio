@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Lineage — DEX Studio{% endblock %}
+{% block page_title %}Data Lineage{% endblock %}
+
+{% block content %}
+<!-- Toolbar -->
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+  <span style="font-size:12px;color:var(--gray-10);font-weight:500">Filter:</span>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">
+    <a href="/data/lineage?view={{ view }}" class="rt-Button" data-variant="{{ 'solid' if not filter_pipeline else 'soft' }}" data-color="indigo" data-size="1">All</a>
+    {% for name in pipeline_names %}
+    <a href="/data/lineage?pipeline={{ name }}&view={{ view }}" class="rt-Button" data-variant="{{ 'solid' if filter_pipeline == name else 'soft' }}" data-color="indigo" data-size="1">{{ name }}</a>
+    {% endfor %}
+  </div>
+  <!-- View toggle -->
+  <div style="display:flex;gap:4px;border:1px solid var(--gray-5);border-radius:6px;overflow:hidden">
+    <a href="/data/lineage?pipeline={{ filter_pipeline }}&view=table"
+       class="rt-Button" data-variant="{{ 'solid' if view == 'table' else 'ghost' }}" data-color="gray" data-size="1"
+       style="border-radius:0;border:none" title="Table view">
+      <i data-lucide="table-2" style="width:12px;height:12px"></i>
+    </a>
+    <a href="/data/lineage?pipeline={{ filter_pipeline }}&view=graph"
+       class="rt-Button" data-variant="{{ 'solid' if view == 'graph' else 'ghost' }}" data-color="gray" data-size="1"
+       style="border-radius:0;border:none" title="Graph view">
+      <i data-lucide="git-branch" style="width:12px;height:12px"></i>
+    </a>
+  </div>
+</div>
+
+{% if events %}
+
+{% if view == "graph" %}
+<!-- Graph View (Mermaid) with live refresh -->
+<div class="rt-Card" style="padding:24px;overflow:auto;min-height:300px">
+  <div id="lineage-graph-container"
+       hx-get="/data/lineage/graph-partial?pipeline={{ filter_pipeline }}"
+       hx-trigger="every 30s"
+       hx-swap="innerHTML">
+    {% if mermaid_diagram %}
+    <pre class="mermaid" style="background:transparent;font-size:13px">{{ mermaid_diagram }}</pre>
+    {% else %}
+    <p style="font-size:13px;color:var(--gray-9)">No graph data available.</p>
+    {% endif %}
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:var(--gray-8);display:flex;align-items:center;gap:4px">
+    <i data-lucide="refresh-cw" style="width:10px;height:10px"></i> Auto-refreshes every 30s
+  </div>
+</div>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
+  mermaid.initialize({ startOnLoad: true, theme, securityLevel: 'loose' });
+  globalThis._mermaid = mermaid;
+</script>
+<script>
+  document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'lineage-graph-container' && globalThis._mermaid) {
+      globalThis._mermaid.run();
+    }
+  });
+</script>
+
+{% else %}
+<!-- Table View -->
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter lineage…" data-table="lineage-table">
+</div>
+<div class="rt-Card" style="overflow:hidden">
+  <table id="lineage-table" class="rt-TableRoot dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th class="rt-TableColumnHeaderCell sortable">Time</th>
+        <th class="rt-TableColumnHeaderCell sortable">Pipeline</th>
+        <th class="rt-TableColumnHeaderCell sortable">Source</th>
+        <th class="rt-TableColumnHeaderCell"></th>
+        <th class="rt-TableColumnHeaderCell sortable">Target</th>
+        <th class="rt-TableColumnHeaderCell sortable">Layer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10);white-space:nowrap">{{ e.timestamp }}</td>
+        <td class="rt-TableCell">
+          <a href="/data/pipelines/{{ e.pipeline_name }}" style="text-decoration:none">
+            <span class="rt-Badge" data-accent-color="indigo" data-variant="soft" data-size="1">{{ e.pipeline_name }}</span>
+          </a>
+        </td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">
+          {% if e.source and "/" not in e.source %}
+          <a href="/data/sources/{{ e.source }}" style="color:var(--indigo-11);text-decoration:none">{{ e.source }}</a>
+          {% else %}
+          <span style="color:var(--gray-10)">{{ e.source | truncate(40, true) }}</span>
+          {% endif %}
+        </td>
+        <td class="rt-TableCell" style="color:var(--gray-7)">
+          <i data-lucide="arrow-right" style="width:13px;height:13px"></i>
+        </td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">
+          {% set _wlayer = "silver" %}
+          {% if "bronze" in e.target %}{% set _wlayer = "bronze" %}{% elif "gold" in e.target %}{% set _wlayer = "gold" %}{% endif %}
+          <a href="/data/warehouse?layer={{ _wlayer }}" style="color:var(--indigo-11);text-decoration:none">{{ e.target | truncate(40, true) }}</a>
+        </td>
+        <td class="rt-TableCell">
+          {% if e.layer %}
+          <span class="rt-Badge" data-accent-color="{{ 'orange' if e.layer == 'bronze' else 'blue' if e.layer == 'silver' else 'yellow' if e.layer == 'gold' else 'gray' }}" data-variant="soft" data-size="1">{{ e.layer }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% else %}
+{{ empty_state("git-branch", "No lineage events recorded", "Run pipelines to generate lineage data.") }}
+{% endif %}
+{% endblock %}
