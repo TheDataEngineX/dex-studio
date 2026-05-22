@@ -8,6 +8,10 @@ on:
       - 'pyproject.toml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -182,6 +186,8 @@ jobs:
     needs: [build, security-scan]
     if: github.ref_name == 'dev'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     environment: stage
     steps:
       - uses: actions/checkout@v6
