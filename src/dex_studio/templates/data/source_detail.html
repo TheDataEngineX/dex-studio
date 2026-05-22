@@ -38,8 +38,8 @@
     <tbody>
       {% for col in schema %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">{{ col.get("name","") }}</td>
-        <td class="rt-TableCell"><span class="rt-Badge" data-accent-color="blue" data-variant="soft" data-size="1">{{ col.get("type","") }}</span></td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
+        <td class="rt-TableCell"><span class="rt-Badge" data-accent-color="blue" data-variant="soft" data-size="1">{{ col.get("column_type","") }}</span></td>
         <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ "yes" if col.get("nullable") else "no" }}</td>
       </tr>
       {% endfor %}

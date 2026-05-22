@@ -120,6 +120,7 @@ class StudioPrefs:
     host: str = "127.0.0.1"
     port: int = 7860
     native_mode: bool = True
+    default_config_path: str = ""  # persisted across restarts
 
 
 def load_prefs() -> StudioPrefs:

@@ -137,6 +137,57 @@ async def onboarding_create(
     return RedirectResponse("/", status_code=303)
 
 
+# ── Project switch ───────────────────────────────────────────────────────────
+
+
+@router.post("/projects/switch")
+async def switch_project(
+    request: Request,
+    config_path: Annotated[str, Form()],
+) -> RedirectResponse:
+    path = config_path.strip()
+    if path:
+        try:
+            init_engine(path)
+            _save_default(path)
+        except Exception as exc:
+            request.session["flash"] = {"msg": str(exc), "kind": "error"}
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/projects/set-default")
+async def set_default_project(
+    request: Request,
+    config_path: Annotated[str, Form()],
+) -> RedirectResponse:
+    path = config_path.strip()
+    if path:
+        try:
+            init_engine(path)
+            _save_default(path)
+            request.session["flash"] = {"msg": "Default project saved", "kind": "success"}
+        except Exception as exc:
+            request.session["flash"] = {"msg": str(exc), "kind": "error"}
+    return RedirectResponse("/", status_code=303)
+
+
+def _save_default(config_path: str) -> None:
+    from dex_studio.config import StudioPrefs, load_prefs, save_prefs
+
+    p = load_prefs()
+    save_prefs(
+        StudioPrefs(
+            theme=p.theme,
+            window_width=p.window_width,
+            window_height=p.window_height,
+            host=p.host,
+            port=p.port,
+            native_mode=p.native_mode,
+            default_config_path=config_path,
+        )
+    )
+
+
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 

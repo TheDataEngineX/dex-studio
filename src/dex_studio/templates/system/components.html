@@ -6,13 +6,16 @@
 
 {% block content %}
 {% if components %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter components…" data-table="components-table">
+</div>
 <div class="rt-Card" style="overflow:hidden">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+  <table id="components-table" class="rt-TableRoot dex-table" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell">Component</th>
-        <th class="rt-TableColumnHeaderCell">Status</th>
-        <th class="rt-TableColumnHeaderCell">Message</th>
+        <th class="rt-TableColumnHeaderCell sortable">Component</th>
+        <th class="rt-TableColumnHeaderCell sortable">Status</th>
+        <th class="rt-TableColumnHeaderCell sortable">Message</th>
       </tr>
     </thead>
     <tbody>

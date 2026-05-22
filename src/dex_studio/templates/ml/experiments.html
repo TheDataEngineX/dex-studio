@@ -29,14 +29,17 @@
     {% if selected_exp %}
     <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 8px">Runs — {{ selected_exp }}</h3>
     {% if runs %}
+    <div style="margin-bottom:8px">
+      <input class="dex-table-filter" placeholder="Filter runs…" data-table="runs-table-{{ selected_exp | replace(' ','_') }}">
+    </div>
     <div class="rt-Card" style="overflow:hidden">
-      <table class="rt-TableRoot dex-table" style="width:100%">
+      <table id="runs-table-{{ selected_exp | replace(' ','_') }}" class="rt-TableRoot dex-table" style="width:100%">
         <thead>
           <tr>
-            <th class="rt-TableColumnHeaderCell">Run ID</th>
-            <th class="rt-TableColumnHeaderCell">Status</th>
-            <th class="rt-TableColumnHeaderCell">Primary Metric</th>
-            <th class="rt-TableColumnHeaderCell">Started</th>
+            <th class="rt-TableColumnHeaderCell sortable">Run ID</th>
+            <th class="rt-TableColumnHeaderCell sortable">Status</th>
+            <th class="rt-TableColumnHeaderCell sortable num">Primary Metric</th>
+            <th class="rt-TableColumnHeaderCell sortable">Started</th>
           </tr>
         </thead>
         <tbody>

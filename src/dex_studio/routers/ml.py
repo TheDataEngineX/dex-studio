@@ -275,28 +275,95 @@ async def drift(request: Request) -> HTMLResponse:
     if redir := _guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
-    data: dict[str, Any] = {}
     features_list: list[dict[str, str]] = []
     drift_score = "—"
-    if eng.tracker and hasattr(eng.tracker, "check_drift"):
-        try:
-            data = eng.tracker.check_drift("default") or {}
-            features_list = [
-                {
-                    "name": str(f.get("name", f.get("feature", ""))),
-                    "psi": str(f.get("psi", "—")),
-                    "status": str(f.get("status", "ok")),
-                }
-                for f in data.get("features", [])
-            ]
-            drift_score = str(data.get("score", "—"))
-        except Exception:
-            pass
+    silver = eng.project_dir / ".dex" / "lakehouse" / "silver"
+    silver_tables = [p.stem for p in sorted(silver.glob("*.parquet"))] if silver.exists() else []
+    drift_result = request.session.pop("drift_result", None)
+    drift_error = request.session.pop("drift_error", None)
+    if drift_result:
+        features_list = [
+            {
+                "name": drift_result["feature"],
+                "psi": str(drift_result["psi"]),
+                "status": "warning" if drift_result["drift_detected"] else "ok",
+            }
+        ]
+        drift_score = str(drift_result["psi"])
     ctx = base_ctx(request) | {
         "drift_score": drift_score,
         "drift_features": features_list,
+        "silver_tables": silver_tables,
+        "drift_result": drift_result,
+        "drift_error": drift_error,
     }
     return render(request, "ml/drift.html", ctx)
+
+
+_DRIFT_URL = "/ml/drift"
+
+
+@router.post("/drift/run")
+async def run_drift(  # noqa: C901
+    request: Request,
+    table: Annotated[str, Form()] = "",
+    feature: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    try:
+        import duckdb
+        from dataenginex.ml.drift import DriftDetector
+
+        dex_dir = eng.project_dir / ".dex"
+        if not table:
+            silver = dex_dir / "lakehouse" / "silver"
+            parquets = sorted(silver.glob("*.parquet")) if silver.exists() else []
+            if parquets:
+                table = parquets[0].stem
+        parquet_path = dex_dir / "lakehouse" / "silver" / f"{table}.parquet"
+        if not parquet_path.exists():
+            request.session["drift_error"] = f"Table '{table}' not found in silver layer."
+            return RedirectResponse(_DRIFT_URL, status_code=303)
+
+        with duckdb.connect(":memory:") as conn:
+            row = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{parquet_path}')").fetchone()
+            total = row[0] if row else 0
+            if total < 10:
+                request.session["drift_error"] = "Not enough rows for drift detection."
+                return RedirectResponse(_DRIFT_URL, status_code=303)
+            mid = total // 2
+            if not feature:
+                cols = conn.execute(
+                    f"DESCRIBE SELECT * FROM read_parquet('{parquet_path}') LIMIT 1"
+                ).fetchall()
+                numeric = [c[0] for c in cols if c[1] in ("DOUBLE", "FLOAT", "BIGINT", "INTEGER")]
+                feature = numeric[0] if numeric else ""
+            if not feature:
+                request.session["drift_error"] = "No numeric feature found."
+                return RedirectResponse(_DRIFT_URL, status_code=303)
+            ref_rows = conn.execute(
+                f"SELECT {feature} FROM read_parquet('{parquet_path}') LIMIT {mid}"
+            ).fetchall()
+            cur_rows = conn.execute(
+                f"SELECT {feature} FROM read_parquet('{parquet_path}')"
+                f" LIMIT {total - mid} OFFSET {mid}"
+            ).fetchall()
+        reference = [float(r[0]) for r in ref_rows if r[0] is not None]
+        current = [float(r[0]) for r in cur_rows if r[0] is not None]
+        detector = DriftDetector(psi_threshold=eng.config.ml.drift.threshold)
+        report = detector.check_feature(feature, reference, current)
+        request.session["drift_result"] = {
+            "table": table,
+            "feature": feature,
+            "psi": round(report.psi, 4),
+            "drift_detected": report.drift_detected,
+            "severity": report.severity,
+        }
+    except Exception as exc:
+        request.session["drift_error"] = str(exc)
+    return RedirectResponse(_DRIFT_URL, status_code=303)
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────────

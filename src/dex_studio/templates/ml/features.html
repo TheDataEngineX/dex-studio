@@ -6,13 +6,16 @@
 
 {% block content %}
 {% if feature_groups %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter feature groups…" data-table="features-table">
+</div>
 <div class="rt-Card" style="overflow:hidden">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+  <table id="features-table" class="rt-TableRoot dex-table" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell">Group</th>
-        <th class="rt-TableColumnHeaderCell">Entity</th>
-        <th class="rt-TableColumnHeaderCell">Features</th>
+        <th class="rt-TableColumnHeaderCell sortable">Group</th>
+        <th class="rt-TableColumnHeaderCell sortable">Entity</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Features</th>
       </tr>
     </thead>
     <tbody>
@@ -20,7 +23,7 @@
       <tr>
         <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--violet-11)">{{ g.name }}</td>
         <td class="rt-TableCell" style="font-size:12px">{{ g.entity }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ g.feature_count }}</td>
+        <td class="rt-TableCell" style="font-size:12px;text-align:right;font-family:'Fira Code',monospace">{{ g.feature_count }}</td>
       </tr>
       {% endfor %}
     </tbody>

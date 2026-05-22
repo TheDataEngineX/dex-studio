@@ -47,39 +47,172 @@ code, pre, .mono {
   font-family: "Fira Code", "JetBrains Mono", monospace;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   DARK MODE — full CSS variable overrides
+   Radix CDN uses .dark .radix-themes for its dark vars; we mirror every var
+   we use so they resolve correctly whether Radix CDN applies or not.
+   Triggered by adding class="dark" on <html>.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  /* Base */
+  --color-background: #111113;
+  color: #edeef0;
+  background-color: #111113;
+
+  /* Gray (slate dark) */
+  --gray-1:  #111113; --gray-2:  #19191b; --gray-3:  #222325;
+  --gray-4:  #292a2e; --gray-5:  #303136; --gray-6:  #393a40;
+  --gray-7:  #46484f; --gray-8:  #5f606a; --gray-9:  #6c6e79;
+  --gray-10: #797b86; --gray-11: #b2b3bd; --gray-12: #edeef0;
+
+  /* Indigo dark */
+  --indigo-1:  #0e1525; --indigo-2:  #131d35; --indigo-3:  #192c57;
+  --indigo-4:  #1d3462; --indigo-5:  #243d74; --indigo-6:  #2d4a8a;
+  --indigo-7:  #3a5cac; --indigo-8:  #4a74cd; --indigo-9:  #3e63dd;
+  --indigo-10: #5472e4; --indigo-11: #9eb1ff; --indigo-12: #d6e1ff;
+
+  /* Violet dark */
+  --violet-1:  #14121f; --violet-2:  #1b1528; --violet-3:  #291f43;
+  --violet-4:  #33255b; --violet-5:  #3c2e69; --violet-6:  #473876;
+  --violet-7:  #56468b; --violet-8:  #6958ad; --violet-9:  #6e56cf;
+  --violet-10: #7d66d9; --violet-11: #bba7ff; --violet-12: #e2ddfe;
+
+  /* Orange dark */
+  --orange-1:  #1f1206; --orange-2:  #2b1400; --orange-3:  #391a03;
+  --orange-4:  #441e00; --orange-5:  #4f2305; --orange-6:  #5f3010;
+  --orange-7:  #763e1a; --orange-8:  #943e0c; --orange-9:  #f76808;
+  --orange-10: #ff802b; --orange-11: #ff8b3e; --orange-12: #ffd4aa;
+
+  /* Red dark */
+  --red-1:  #1f1315; --red-2:  #291415; --red-3:  #3c1719;
+  --red-4:  #481a1d; --red-5:  #531e21; --red-6:  #652426;
+  --red-7:  #832c2e; --red-8:  #a83235; --red-9:  #e5484d;
+  --red-10: #f2555a; --red-11: #ff9592; --red-12: #ffd1cc;
+
+  /* Green dark */
+  --green-1:  #0e1512; --green-2:  #121b17; --green-3:  #132d21;
+  --green-4:  #113b29; --green-5:  #174933; --green-6:  #20573e;
+  --green-7:  #28684a; --green-8:  #2f7c57; --green-9:  #30a46c;
+  --green-10: #33b074; --green-11: #3dd68c; --green-12: #b1f1cb;
+
+  /* Amber / blue / yellow (layer cards) */
+  --amber-3: #2d1b00; --amber-7: #824e00; --amber-8: #9a5e00;
+  --amber-9: #ffb224; --amber-11: #f1a10d;
+  --blue-3:  #0d2847; --blue-7:  #1d4ed8; --blue-8:  #2563eb;
+  --blue-9:  #0090ff; --blue-11: #70b8ff;
+  --yellow-3: #221101; --yellow-7: #a35200; --yellow-8: #bd6b00;
+  --yellow-9: #f5d90a; --yellow-11: #f0c000;
+  --cyan-11: #00d3f0;
+
+  /* Accent = indigo */
+  --accent-1:  var(--indigo-1);  --accent-2:  var(--indigo-2);
+  --accent-3:  var(--indigo-3);  --accent-7:  var(--indigo-7);
+  --accent-8:  var(--indigo-8);  --accent-9:  var(--indigo-9);
+  --accent-10: var(--indigo-10); --accent-11: var(--indigo-11);
+  --accent-12: var(--indigo-12);
+}
+
+/* Dark mode component overrides */
+html.dark .rt-Card {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: #18191b !important;
+}
+
+html.dark .rt-Card:hover {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"] {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--gray-11) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"][data-color="indigo"] {
+  background: var(--indigo-3) !important;
+  color: var(--indigo-11) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"][data-color="violet"] {
+  background: var(--violet-3) !important;
+  color: var(--violet-11) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"][data-color="orange"] {
+  background: var(--orange-3) !important;
+  color: var(--orange-11) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"][data-color="green"] {
+  background: var(--green-3) !important;
+  color: var(--green-11) !important;
+}
+
+html.dark .rt-Button[data-variant="soft"][data-color="red"] {
+  background: var(--red-3) !important;
+  color: var(--red-11) !important;
+}
+
+html.dark .rt-Button[data-variant="solid"] {
+  background: var(--indigo-9) !important;
+  color: white !important;
+}
+
+/* Dark metric card domain accents — same hard-stop technique */
+html.dark .dex-metric-indigo { background: linear-gradient(to bottom, #4a74cd 0px, #4a74cd 3px, rgba(30,58,95,.4) 3px, #18191b 80%) !important; }
+html.dark .dex-metric-violet { background: linear-gradient(to bottom, #6958ad 0px, #6958ad 3px, rgba(41,31,67,.45) 3px, #18191b 80%) !important; }
+html.dark .dex-metric-orange { background: linear-gradient(to bottom, #943e0c 0px, #943e0c 3px, rgba(63,26,3,.5)  3px, #18191b 80%) !important; }
+html.dark .dex-metric-green  { background: linear-gradient(to bottom, #2f7c57 0px, #2f7c57 3px, rgba(17,59,33,.45) 3px, #18191b 80%) !important; }
+html.dark .dex-metric-red    { background: linear-gradient(to bottom, #a83235 0px, #a83235 3px, rgba(72,26,29,.45) 3px, #18191b 80%) !important; }
+html.dark .dex-metric-blue   { background: linear-gradient(to bottom, #2563eb 0px, #2563eb 3px, rgba(13,40,71,.45) 3px, #18191b 80%) !important; }
+html.dark .dex-metric-gray   { background: linear-gradient(to bottom, #46484f 0px, #46484f 3px, rgba(30,31,35,.5)  3px, #18191b 80%) !important; }
+
+/* Dark table header */
+html.dark .rt-TableRoot thead tr { background: #1c1d1f; }
+html.dark .rt-TableColumnHeaderCell { color: var(--gray-11) !important; }
+
+html.dark input,
+html.dark textarea,
+html.dark select,
+html.dark .rt-TextFieldInput {
+  background: #222325 !important;
+  border-color: #393a40 !important;
+  color: #edeef0 !important;
+}
+
+html.dark .dex-sql-editor {
+  background: #18191b !important;
+  border-color: #393a40 !important;
+  color: #edeef0 !important;
+}
+
 /* ── Responsive layout ─────────────────────────────────────────────────────── */
 
 .dex-sidebar {
   display: flex;
   flex-direction: column;
-  /* Distinct from content in BOTH light and dark */
-  background: var(--gray-1) !important;
-  border-right: 1px solid var(--gray-4) !important;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+  background: linear-gradient(180deg, #eef2ff 0%, #f4f6f8 30%, #f1f4f8 100%);
+  border-right: 1px solid #d4d9e8;
+  box-shadow: 2px 0 12px rgba(63, 90, 200, 0.07);
 }
 
-/* Light-mode only: add a very subtle tint so sidebar stands out */
-@media (prefers-color-scheme: light) {
-  .dex-sidebar {
-    background: #f4f6f8 !important;
-    border-right: 1px solid #dde1e7 !important;
-  }
-
-  .dex-content {
-    background: #f9fafb !important;
-  }
-}
-
-/* Dark-mode explicit sidebar */
-.dark .dex-sidebar,
-[data-theme="dark"] .dex-sidebar {
+html.dark .dex-sidebar {
   background: #0f1117 !important;
   border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);
 }
 
 .dex-content {
   margin-left: var(--sidebar-w);
+  background: #f9fafb;
+}
+
+html.dark .dex-content {
+  background: #111113 !important;
 }
 
 .dex-mobile-header {
@@ -126,6 +259,7 @@ code, pre, .mono {
 .dex-metric-card {
   position: relative;
   overflow: hidden;
+  background: white !important;
   transition: transform 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
 }
 
@@ -133,6 +267,18 @@ code, pre, .mono {
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
+
+/*
+ * rt-Card uses inset box-shadow for its border, not CSS border properties.
+ * Use a hard-stop gradient to paint a 3px accent bar at the top.
+ */
+.dex-metric-indigo { background: linear-gradient(to bottom, #4f46e5 0px, #4f46e5 3px, #eef2ff 3px, #fff 80%) !important; }
+.dex-metric-violet { background: linear-gradient(to bottom, #7c3aed 0px, #7c3aed 3px, #f5f3ff 3px, #fff 80%) !important; }
+.dex-metric-orange { background: linear-gradient(to bottom, #ea580c 0px, #ea580c 3px, #fff7ed 3px, #fff 80%) !important; }
+.dex-metric-green  { background: linear-gradient(to bottom, #16a34a 0px, #16a34a 3px, #f0fdf4 3px, #fff 80%) !important; }
+.dex-metric-red    { background: linear-gradient(to bottom, #dc2626 0px, #dc2626 3px, #fef2f2 3px, #fff 80%) !important; }
+.dex-metric-blue   { background: linear-gradient(to bottom, #2563eb 0px, #2563eb 3px, #eff6ff 3px, #fff 80%) !important; }
+.dex-metric-gray   { background: linear-gradient(to bottom, #64748b 0px, #64748b 3px, #f8fafc 3px, #fff 80%) !important; }
 
 /* ── Page header ────────────────────────────────────────────────────────────── */
 
@@ -144,10 +290,59 @@ code, pre, .mono {
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* Domain colour left-border on page header — hardcoded tints, no CSS var dependency */
+.dex-page-header[data-domain="data"]   { border-left: 3px solid #4f46e5; padding-left: 12px; background: linear-gradient(90deg, #eef2ff 0%, transparent 50%); }
+.dex-page-header[data-domain="ml"]     { border-left: 3px solid #7c3aed; padding-left: 12px; background: linear-gradient(90deg, #f5f3ff 0%, transparent 50%); }
+.dex-page-header[data-domain="ai"]     { border-left: 3px solid #ea580c; padding-left: 12px; background: linear-gradient(90deg, #fff7ed 0%, transparent 50%); }
+.dex-page-header[data-domain="system"] { border-left: 3px solid #64748b; padding-left: 12px; background: linear-gradient(90deg, #f8fafc 0%, transparent 50%); }
+
 /* ── Table polish ───────────────────────────────────────────────────────────── */
 
 .dex-table tr:hover td {
   background: var(--gray-2);
+}
+
+/* Numeric cells: right-align, monospace, tabular figures */
+.dex-table td.num,
+.dex-table th.num {
+  text-align: right !important;
+  font-family: "Fira Code", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* Sortable column headers */
+.dex-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.dex-table th.sortable:hover {
+  color: var(--gray-12);
+  background: var(--gray-4);
+}
+.dex-table th.sortable::after {
+  content: " ⇅";
+  font-size: 9px;
+  opacity: 0.4;
+}
+.dex-table th.sort-asc::after  { content: " ↑"; opacity: 0.8; }
+.dex-table th.sort-desc::after { content: " ↓"; opacity: 0.8; }
+
+/* Filter input for tables */
+.dex-table-filter {
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--gray-5);
+  border-radius: 5px;
+  background: var(--color-background);
+  color: var(--gray-12);
+  width: 220px;
+}
+.dex-table-filter:focus {
+  border-color: var(--accent-7);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-9) 18%, transparent);
 }
 
 /* ── Animations ─────────────────────────────────────────────────────────────── */
@@ -344,17 +539,58 @@ textarea:focus,
   border-radius: 8px !important;
 }
 
-/* Badges — slightly more padding for readability */
+/* Badges — self-contained styles (Radix CDN vars unreliable at runtime) */
 .rt-Badge {
+  display: inline-flex !important;
+  align-items: center !important;
   padding: 2px 8px !important;
-  font-weight: 500 !important;
+  border-radius: 4px !important;
+  font-weight: 600 !important;
   font-size: 11px !important;
+  line-height: 1.4 !important;
+  white-space: nowrap !important;
+  background: #e2e8f0;
+  color: #475569;
 }
+.rt-Badge[data-accent-color="green"]  { background: #dcfce7; color: #166534; }
+.rt-Badge[data-accent-color="red"]    { background: #fee2e2; color: #991b1b; }
+.rt-Badge[data-accent-color="orange"] { background: #ffedd5; color: #9a3412; }
+.rt-Badge[data-accent-color="violet"] { background: #ede9fe; color: #5b21b6; }
+.rt-Badge[data-accent-color="blue"]   { background: #dbeafe; color: #1e40af; }
+.rt-Badge[data-accent-color="indigo"] { background: #e0e7ff; color: #3730a3; }
+.rt-Badge[data-accent-color="gray"]   { background: #f1f5f9; color: #475569; }
+.rt-Badge[data-accent-color="amber"]  { background: #fef3c7; color: #92400e; }
+.rt-Badge[data-accent-color="yellow"] { background: #fef9c3; color: #854d0e; }
+.rt-Badge[data-accent-color="cyan"]   { background: #cffafe; color: #155e75; }
+
+html.dark .rt-Badge                              { background: #1e293b; color: #94a3b8; }
+html.dark .rt-Badge[data-accent-color="green"]   { background: #14532d; color: #86efac; }
+html.dark .rt-Badge[data-accent-color="red"]     { background: #450a0a; color: #fca5a5; }
+html.dark .rt-Badge[data-accent-color="orange"]  { background: #431407; color: #fdba74; }
+html.dark .rt-Badge[data-accent-color="violet"]  { background: #2e1065; color: #c4b5fd; }
+html.dark .rt-Badge[data-accent-color="blue"]    { background: #1e3a5f; color: #93c5fd; }
+html.dark .rt-Badge[data-accent-color="indigo"]  { background: #1e1b4b; color: #a5b4fc; }
+html.dark .rt-Badge[data-accent-color="gray"]    { background: #1e293b; color: #cbd5e1; }
+html.dark .rt-Badge[data-accent-color="amber"]   { background: #451a03; color: #fcd34d; }
+html.dark .rt-Badge[data-accent-color="cyan"]    { background: #083344; color: #67e8f9; }
 
 /* Callouts — visible left accent */
 .rt-CalloutRoot {
   border-left: 3px solid currentColor !important;
 }
+
+/* ── Warehouse layer cards ───────────────────────────────────────────────────── */
+
+.dex-layer-card { transition: box-shadow 0.15s var(--ease-out-expo); }
+.dex-layer-card:hover { box-shadow: var(--shadow-md); }
+
+.dex-layer-bronze { border-left: 3px solid var(--amber-7) !important; }
+.dex-layer-silver { border-left: 3px solid var(--blue-7)  !important; }
+.dex-layer-gold   { border-left: 3px solid var(--yellow-7)!important; }
+
+.dex-layer-bronze .dex-layer-icon { color: var(--amber-9); }
+.dex-layer-silver .dex-layer-icon { color: var(--blue-9);  }
+.dex-layer-gold   .dex-layer-icon { color: var(--yellow-9);}
 
 /* ── Component grid cards (system status) ──────────────────────────────────── */
 
@@ -393,11 +629,7 @@ textarea:focus,
   border-left: 4px solid var(--red-8);
 }
 
-/* ── Metric card variants ────────────────────────────────────────────────────── */
-
-.dex-metric-card {
-  background: var(--color-background) !important;
-}
+/* ── Metric card value ───────────────────────────────────────────────────────── */
 
 .dex-metric-card .dex-metric-value {
   font-size: 28px;
@@ -505,6 +737,88 @@ main > *:not(.dex-page-header) {
   align-items: flex-end;
 }
 
+/* ── Project switcher dropdown panel ────────────────────────────────────── */
+
+.dex-switcher-panel {
+  background: #ffffff;
+  min-width: 0;
+}
+
+html.dark .dex-switcher-panel {
+  background: #1a1b1f;
+}
+
+/* ── Dashboard hub vertical link rows ───────────────────────────────────── */
+
+/* ── Dashboard hub: icon + colored background matches header icon box ──── */
+/* List-row item icon (smaller than header icon to show hierarchy) */
+.dex-hub-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dex-hub-icon-indigo { background: var(--indigo-4); }
+.dex-hub-icon-violet { background: var(--violet-4); }
+.dex-hub-icon-orange { background: var(--orange-4); }
+.dex-hub-icon-gray   { background: var(--gray-4);   }
+
+html.dark .dex-hub-icon-indigo { background: rgba(99,102,241,0.22); }
+html.dark .dex-hub-icon-violet { background: rgba(139,92,246,0.22); }
+html.dark .dex-hub-icon-orange { background: rgba(249,115,22,0.22); }
+html.dark .dex-hub-icon-gray   { background: rgba(255,255,255,0.09); }
+
+/* <a> is the hover/border target only — display:block avoids browser quirks with flex on <a> */
+.dex-hub-link {
+  display: block;
+  text-decoration: none;
+  border-bottom: 1px solid var(--gray-3);
+  transition: background 0.1s;
+}
+
+.dex-hub-link:last-child { border-bottom: none; }
+
+/* Inner div owns the flex row — unambiguous cross-browser layout */
+.dex-hub-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px 9px 22px;
+  line-height: 1;
+}
+
+/* Chevron: inline-flex keeps Lucide SVG in the flex row after JS replacement */
+.dex-hub-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.dex-hub-link:hover .dex-hub-chevron {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.dex-hub-link-indigo:hover { background: var(--indigo-2); }
+.dex-hub-link-violet:hover { background: var(--violet-2); }
+.dex-hub-link-orange:hover { background: var(--orange-2); }
+.dex-hub-link-gray:hover   { background: var(--gray-2);   }
+
+html.dark .dex-hub-link { border-bottom-color: rgba(255,255,255,0.05); }
+html.dark .dex-hub-link-indigo:hover { background: rgba(99,102,241,0.1); }
+html.dark .dex-hub-link-violet:hover { background: rgba(139,92,246,0.1); }
+html.dark .dex-hub-link-orange:hover { background: rgba(249,115,22,0.1); }
+html.dark .dex-hub-link-gray:hover   { background: rgba(255,255,255,0.04); }
+
 /* Dialog — Bootstrap-style modal look */
 .rt-DialogContent {
   border: 1px solid var(--gray-5) !important;
@@ -517,3 +831,26 @@ main > *:not(.dex-page-header) {
   box-shadow: var(--shadow-xl) !important;
   border-radius: 8px !important;
 }
+
+/* Log level badges — self-contained, no Radix dependency */
+.dex-log-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Fira Code', monospace;
+  letter-spacing: .03em;
+}
+.dex-log-debug   { background: #f1f3f5; color: #495057; }
+.dex-log-info    { background: #dbeafe; color: #1e40af; }
+.dex-log-warning { background: #fef3c7; color: #92400e; }
+.dex-log-error   { background: #fee2e2; color: #991b1b; }
+.dex-log-critical{ background: #fce7f3; color: #9d174d; }
+
+html.dark .dex-log-debug   { background: #1f2937; color: #9ca3af; }
+html.dark .dex-log-info    { background: #1e3a5f; color: #93c5fd; }
+html.dark .dex-log-warning { background: #451a03; color: #fdba74; }
+html.dark .dex-log-error   { background: #450a0a; color: #fca5a5; }
+html.dark .dex-log-critical{ background: #4a044e; color: #f0abfc; }

@@ -32,13 +32,24 @@ def init_engine(config_path: str | Path) -> DexEngine:
 
 
 def get_engine() -> DexEngine | None:
-    """Return the singleton, auto-initializing from DEX_CONFIG_PATH or first user project."""
+    """Return the singleton, auto-initializing from DEX_CONFIG_PATH or saved default."""
     global _ENGINE
     if _ENGINE is not None:
         return _ENGINE
     path = os.getenv("DEX_CONFIG_PATH")
     if path:
         return init_engine(path)
+    # Saved default project (persisted via StudioPrefs.default_config_path)
+    try:
+        from dex_studio.config import load_prefs  # lazy to avoid circular import
+
+        saved = load_prefs().default_config_path
+        if saved:
+            p = Path(saved)
+            if p.exists():
+                return init_engine(p)
+    except Exception:
+        pass
     user = find_user_projects()
     if user:
         return init_engine(user[0][1])

@@ -19,21 +19,27 @@
 </div>
 
 {% if checks %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter tables…" data-table="quality-table">
+</div>
 <div class="rt-Card" style="overflow:hidden">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+  <table id="quality-table" class="rt-TableRoot dex-table" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell">Table</th>
-        <th class="rt-TableColumnHeaderCell">Score</th>
-        <th class="rt-TableColumnHeaderCell">Completeness</th>
-        <th class="rt-TableColumnHeaderCell">Uniqueness</th>
-        <th class="rt-TableColumnHeaderCell">Status</th>
+        <th class="rt-TableColumnHeaderCell sortable">Table</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Score</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Completeness</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Uniqueness</th>
+        <th class="rt-TableColumnHeaderCell sortable">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for c in checks %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">{{ c.table }}</td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">
+          {% set _layer = c.table.split('.')[0] if '.' in c.table else 'silver' %}
+          <a href="/data/warehouse?layer={{ _layer }}" style="color:var(--indigo-11);text-decoration:none">{{ c.table }}</a>
+        </td>
         <td class="rt-TableCell" style="font-size:13px;font-weight:700;color:{{ 'var(--green-11)' if c.passed else 'var(--red-11)' }}">{{ c.score }}</td>
         <td class="rt-TableCell" style="font-size:12px">{{ c.completeness }}</td>
         <td class="rt-TableCell" style="font-size:12px">{{ c.uniqueness }}</td>

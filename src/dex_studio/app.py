@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import secrets
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+from dex_studio.logstore import structlog_capture_processor
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
+
+structlog.configure(
+    processors=[
+        structlog_capture_processor,
+        structlog.stdlib.add_log_level,
+        structlog.dev.ConsoleRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(0),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+)
 
 logger = structlog.getLogger()
 
@@ -45,6 +59,17 @@ def make_templates() -> Jinja2Templates:
     return t
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+    from dex_studio.scheduler import start_scheduler, stop_scheduler
+
+    start_scheduler()
+    try:
+        yield
+    finally:
+        await stop_scheduler()
+
+
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
     from dex_studio.routers import ai, data, ml, root, system
@@ -55,6 +80,7 @@ def create_app() -> FastAPI:
         version="0.2.0",
         docs_url="/api/docs",
         redoc_url=None,
+        lifespan=_lifespan,
     )
 
     # ── Session middleware ────────────────────────────────────────────────────

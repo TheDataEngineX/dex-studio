@@ -9,8 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
+from dex_studio.logstore import log_store
 from dex_studio.routers._deps import base_ctx, get_eng, render, require_auth, require_engine
-from dex_studio.utils import fmt_ts
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ def _guard(request: Request) -> RedirectResponse | None:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
+@router.get("/status", response_class=HTMLResponse)
 async def system_status(request: Request) -> HTMLResponse:
     if redir := _guard(request):
         return redir  # type: ignore[return-value]
@@ -54,27 +55,9 @@ async def system_status(request: Request) -> HTMLResponse:
 async def system_logs(request: Request, level: str = "INFO") -> HTMLResponse:
     if redir := _guard(request):
         return redir  # type: ignore[return-value]
-    eng = get_eng()
     level_upper = level.upper()
-    log_rows: list[dict[str, str]] = []
-    _level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
-    min_lvl = _level_order.get(level_upper, 1)
-    try:
-        events = eng.audit.get_events(limit=200) or []
-        for e in events:
-            evt_level = str(getattr(e, "status", "INFO")).upper()
-            evt_lvl_n = _level_order.get(evt_level, 1)
-            if evt_lvl_n < min_lvl:
-                continue
-            log_rows.append(
-                {
-                    "ts": fmt_ts(getattr(e, "timestamp", "")),
-                    "level": evt_level,
-                    "msg": f"[{getattr(e, 'action', '')}] {getattr(e, 'resource', '')}",
-                }
-            )
-    except Exception:
-        pass
+    records = log_store.recent(limit=200, min_level=level_upper)
+    log_rows = [{"ts": r.ts, "level": r.level, "msg": r.msg} for r in records]
     ctx = base_ctx(request) | {
         "logs": log_rows,
         "level": level_upper,
@@ -85,48 +68,39 @@ async def system_logs(request: Request, level: str = "INFO") -> HTMLResponse:
 
 @router.get("/logs/stream")
 async def logs_stream(request: Request, level: str = "INFO") -> EventSourceResponse:
-    """SSE endpoint — streams new audit log entries as they arrive."""
-    eng = get_eng()
+    """SSE endpoint — streams new structlog entries as they arrive (2s poll)."""
     level_upper = level.upper()
-    _level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3}
-    min_lvl = _level_order.get(level_upper, 1)
-    seen: set[str] = set()
+    last_seq = log_store.seq
 
     async def event_generator() -> Any:
+        nonlocal last_seq
         while True:
             if await request.is_disconnected():
                 break
-            try:
-                events = eng.audit.get_events(limit=50) or []
-                for e in reversed(events):
-                    eid = str(getattr(e, "event_id", id(e)))
-                    if eid in seen:
-                        continue
-                    seen.add(eid)
-                    evt_level = str(getattr(e, "status", "INFO")).upper()
-                    if _level_order.get(evt_level, 1) < min_lvl:
-                        continue
-                    ts = fmt_ts(getattr(e, "timestamp", ""))
-                    col = _level_color(evt_level)
-                    act = getattr(e, "action", "")
-                    res = getattr(e, "resource", "")
+            current_seq = log_store.seq
+            if current_seq > last_seq:
+                new_count = current_seq - last_seq
+                records = log_store.recent(limit=new_count * 2, min_level=level_upper)
+                for r in reversed(records[:new_count]):
+                    lc = r.level.lower()
+                    mono = "font-family:'Fira Code',monospace"
                     row_html = (
-                        f'<tr><td class="rt-TableCell">{ts}</td>'
-                        f'<td class="rt-TableCell"><span class="rt-Badge"'
-                        f' data-accent-color="{col}" data-variant="soft"'
-                        f' data-size="1">{evt_level}</span></td>'
-                        f'<td class="rt-TableCell">[{act}] {res}</td></tr>'
+                        f"<tr>"
+                        f'<td class="rt-TableCell"'
+                        f' style="font-size:11px;white-space:nowrap;{mono}">'
+                        f"{r.ts}</td>"
+                        f'<td class="rt-TableCell">'
+                        f'<span class="dex-log-badge dex-log-{lc}">'
+                        f"{r.level}</span></td>"
+                        f'<td class="rt-TableCell"'
+                        f' style="font-size:12px;{mono}">'
+                        f"{r.msg}</td></tr>"
                     )
                     yield {"event": "log-entry", "data": row_html}
-            except Exception:
-                pass
+                last_seq = current_seq
             await asyncio.sleep(2)
 
     return EventSourceResponse(event_generator())
-
-
-def _level_color(level: str) -> str:
-    return {"ERROR": "red", "WARNING": "orange", "DEBUG": "gray"}.get(level, "blue")
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────

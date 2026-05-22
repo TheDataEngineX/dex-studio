@@ -19,7 +19,7 @@
 {% block content %}
 <!-- Live stream toggle -->
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px" x-data="{streaming:false}">
-  <button @click="streaming=!streaming" class="rt-Button" :data-variant="streaming ? 'solid' : 'soft'" data-color="orange" data-size="2">
+  <button @click="streaming=!streaming" class="rt-Button" :data-variant="streaming ? 'solid' : 'soft'" data-color="gray" data-size="2">
     <i :data-lucide="streaming ? 'pause' : 'play'" style="width:12px;height:12px"></i>
     <span x-text="streaming ? 'Streaming…' : 'Live Stream'"></span>
   </button>
@@ -31,10 +31,13 @@
   </div>
 </div>
 
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter log messages…" data-table="logs-table">
+</div>
 <div class="rt-Card" style="overflow:hidden" id="log-container"
      hx-ext="sse" sse-connect="/system/logs/stream?level={{ level }}" sse-swap="log-entry"
      hx-swap="afterbegin" hx-target="#log-tbody">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+  <table id="logs-table" class="rt-TableRoot dex-table" style="width:100%">
     <thead>
       <tr>
         <th class="rt-TableColumnHeaderCell" style="width:160px">Time</th>
@@ -47,7 +50,7 @@
       <tr>
         <td class="rt-TableCell" style="font-size:11px;color:var(--gray-9);white-space:nowrap;font-family:'Fira Code',monospace">{{ row.ts }}</td>
         <td class="rt-TableCell">
-          <span class="rt-Badge" data-accent-color="{{ 'red' if row.level == 'ERROR' else 'orange' if row.level == 'WARNING' else 'gray' if row.level == 'DEBUG' else 'blue' }}" data-variant="soft" data-size="1">{{ row.level }}</span>
+          <span class="dex-log-badge dex-log-{{ row.level|lower }}">{{ row.level }}</span>
         </td>
         <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace">{{ row.msg }}</td>
       </tr>

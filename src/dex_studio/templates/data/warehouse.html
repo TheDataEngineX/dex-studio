@@ -5,19 +5,10 @@
 {% block page_title %}Warehouse{% endblock %}
 
 {% block content %}
-<!-- Layer tabs -->
-<div style="display:flex;gap:0;border-bottom:1px solid var(--gray-4);margin-bottom:20px">
-  {% for layer in layers %}
-  <a href="/data/warehouse?layer={{ layer.name }}"
-     hx-get="/data/warehouse/tables?layer={{ layer.name }}"
-     hx-target="#warehouse-tables"
-     hx-push-url="/data/warehouse?layer={{ layer.name }}"
-     style="padding:8px 16px;font-size:13px;text-decoration:none;border-bottom:2px solid {{ 'var(--indigo-9)' if active_layer == layer.name else 'transparent' }};margin-bottom:-1px;color:{{ 'var(--indigo-11)' if active_layer == layer.name else 'var(--gray-10)' }};font-weight:{{ '600' if active_layer == layer.name else '400' }}">
-    {{ layer.name|title }}
-    <span style="font-size:11px;color:var(--gray-8);margin-left:4px">({{ layer.table_count }})</span>
-  </a>
-  {% endfor %}
-</div>
+<p style="font-size:13px;color:var(--gray-10);margin:0 0 20px">
+  Business-ready Gold layer — highly structured, aggregated tables optimized for BI and reporting.
+  <a href="/data/lakehouse" style="color:var(--indigo-9);text-decoration:none;margin-left:6px">View full Lakehouse →</a>
+</p>
 
 <div id="warehouse-tables">
   {% include "data/warehouse_tables.html" %}

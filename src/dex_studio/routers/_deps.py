@@ -25,13 +25,19 @@ def render(request: Request, template: str, ctx: dict[str, Any]) -> HTMLResponse
 
 def base_ctx(request: Request) -> dict[str, Any]:
     """Template context variables available on every page."""
+    from dex_studio.config import load_projects
+
     eng = get_engine()
     project_name = eng.config.project.name if eng else "No project"
+    current_config = str(eng.config_path) if eng else ""
+    projects = load_projects()
     return {
         "request": request,
         "current_path": request.url.path,
         "project_name": project_name,
+        "current_config": current_config,
         "engine_ready": eng is not None,
+        "all_projects": [{"name": p.name, "config_path": str(p.config_path)} for p in projects],
     }
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -57,6 +58,14 @@ async def data_dashboard(request: Request) -> HTMLResponse:
 
 
 # ── Pipelines ────────────────────────────────────────────────────────────────
+
+
+def _lineage_cls(name: str, layer: str = "") -> str:
+    target = layer or name
+    for lyr in ("bronze", "silver", "gold"):
+        if lyr in target:
+            return f":::{lyr}"
+    return ":::source"
 
 
 def _pipeline_status(last: Any) -> str:
@@ -141,6 +150,25 @@ async def delete_pipeline(request: Request, name: str) -> RedirectResponse:
     return RedirectResponse("/data/pipelines", status_code=303)
 
 
+@router.post("/pipelines/{name}/schedule")
+async def update_schedule(
+    request: Request,
+    name: str,
+    schedule: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    try:
+        get_eng().update_pipeline_schedule(name, schedule.strip() or None)
+        request.session["flash"] = {
+            "msg": f"Schedule updated for '{name}'.",
+            "kind": "success",
+        }
+    except Exception as exc:
+        request.session["flash"] = {"msg": str(exc), "kind": "error"}
+    return RedirectResponse(f"/data/pipelines/{name}", status_code=303)
+
+
 @router.get("/pipelines/{name}", response_class=HTMLResponse)
 async def pipeline_detail(request: Request, name: str) -> HTMLResponse:
     if redir := _guard(request):
@@ -149,7 +177,7 @@ async def pipeline_detail(request: Request, name: str) -> HTMLResponse:
     cfg = (eng.config.data.pipelines or {}).get(name)
     if cfg is None:
         return RedirectResponse("/data/pipelines", status_code=303)  # type: ignore[return-value]
-    runs = eng.run_history.get_runs(name)
+    runs = eng.store.get_pipeline_runs(name)
     history = [
         {
             "timestamp": fmt_ts(r.timestamp),
@@ -291,7 +319,22 @@ async def execute_sql(
     exec_ms: float | None = None
     try:
         t0 = time.monotonic()
-        with _project_cwd(get_eng().project_dir), duckdb.connect(":memory:") as conn:
+        eng = get_eng()
+        with _project_cwd(eng.project_dir), duckdb.connect(":memory:") as conn:
+            dex_dir = eng.project_dir / ".dex"
+            for layer in ("bronze", "silver", "gold"):
+                layer_path = dex_dir / "lakehouse" / layer
+                if layer_path.exists():
+                    for pf in sorted(layer_path.glob("*.parquet")):
+                        with contextlib.suppress(Exception):
+                            conn.execute(
+                                f"CREATE VIEW IF NOT EXISTS {pf.stem} AS"
+                                f" SELECT * FROM read_parquet('{pf}')"
+                            )
+                            conn.execute(
+                                f"CREATE VIEW IF NOT EXISTS {layer}_{pf.stem} AS"
+                                f" SELECT * FROM read_parquet('{pf}')"
+                            )
             cursor = conn.execute(query)
             if cursor.description:
                 columns = [d[0] for d in cursor.description]
@@ -312,20 +355,49 @@ async def execute_sql(
     return render(request, "data/sql.html", ctx)
 
 
-# ── Warehouse ─────────────────────────────────────────────────────────────────
+# ── Lakehouse (all layers: Bronze · Silver · Gold) ────────────────────────────
 
 
-@router.get("/warehouse", response_class=HTMLResponse)
-async def warehouse(request: Request, layer: str = "bronze") -> HTMLResponse:
+@router.get("/lakehouse", response_class=HTMLResponse)
+async def lakehouse(request: Request, layer: str = "") -> HTMLResponse:
     if redir := _guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     layers = eng.warehouse_layers()
+    if not layer:
+        nonempty = (lyr["name"] for lyr in layers if lyr.get("table_count", 0) > 0)
+        layer = next(nonempty, "") or "bronze"
     tables = eng.warehouse_tables(layer)
     ctx = base_ctx(request) | {
         "layers": layers,
         "active_layer": layer,
         "tables": tables,
+    }
+    return render(request, "data/lakehouse.html", ctx)
+
+
+@router.get("/lakehouse/tables", response_class=HTMLResponse)
+async def lakehouse_tables_partial(request: Request, layer: str = "bronze") -> HTMLResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    tables = eng.warehouse_tables(layer)
+    ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
+    return render(request, "data/warehouse_tables.html", ctx)
+
+
+# ── Warehouse (Gold layer — BI-ready structured data) ─────────────────────────
+
+
+@router.get("/warehouse", response_class=HTMLResponse)
+async def warehouse(request: Request) -> HTMLResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    tables = eng.warehouse_tables("gold")
+    ctx = base_ctx(request) | {
+        "tables": tables,
+        "active_layer": "gold",
     }
     return render(request, "data/warehouse.html", ctx)
 
@@ -343,28 +415,145 @@ async def warehouse_tables_partial(request: Request, layer: str = "bronze") -> H
 # ── Lineage ───────────────────────────────────────────────────────────────────
 
 
-@router.get("/lineage", response_class=HTMLResponse)
-async def lineage(request: Request, pipeline: str = "") -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
-    all_events = [
+_MERMAID_STYLE = [
+    "  classDef source fill:#e8e8e8,stroke:#aaa,color:#333",
+    "  classDef bronze fill:#fef3c7,stroke:#d97706,color:#92400e",
+    "  classDef silver fill:#dbeafe,stroke:#3b82f6,color:#1e40af",
+    "  classDef gold fill:#fef9c3,stroke:#ca8a04,color:#713f12",
+]
+
+
+def _node_id(name: str) -> str:
+    # For file paths, use "{layer}_{stem}" to keep IDs short and stable
+    if os.sep in name or (name.startswith("/") or name.startswith(".")):
+        stem = os.path.splitext(os.path.basename(name))[0]
+        for lyr in ("bronze", "silver", "gold"):
+            if lyr in name:
+                return re.sub(r"\W", "_", f"{lyr}_{stem}")[:64]
+        return re.sub(r"\W", "_", stem)[:64]
+    return re.sub(r"\W", "_", name)[:64]
+
+
+def _node_label(name: str) -> str:
+    label = os.path.splitext(os.path.basename(name))[0] or name
+    return label[:40]
+
+
+def _node_click_url(node_name: str, is_source: bool) -> str:
+    if is_source:
+        return f"/data/sources/{node_name}" if node_name and "/" not in node_name else ""
+    for layer in ("bronze", "silver", "gold"):
+        if layer in node_name:
+            return f"/data/warehouse?layer={layer}"
+    return ""
+
+
+def _node_tooltip(name: str, is_source: bool, pipe_names: list[str]) -> str:
+    kind = "Source" if is_source else "Table"
+    pipes = ", ".join(pipe_names) if pipe_names else "—"
+    return f"{kind}: {_node_label(name)} | Pipelines: {pipes}"
+
+
+def _register_node(
+    name: str,
+    is_source: bool,
+    node_lines: list[str],
+    click_lines: list[str],
+    seen: set[str],
+    pipe_names: list[str],
+    layer: str = "",
+) -> None:
+    nid = _node_id(name)
+    if nid in seen:
+        return
+    node_lines.append(f'  {nid}["{_node_label(name)}"]{_lineage_cls(name, layer)}')
+    seen.add(nid)
+    url = _node_click_url(name, is_source)
+    if url:
+        tip = _node_tooltip(name, is_source, pipe_names).replace('"', "'")
+        click_lines.append(f'  click {nid} "{url}" "{tip}"')
+
+
+def _build_mermaid(events: list[dict[str, Any]]) -> str:
+    node_lines: list[str] = []
+    click_lines: list[str] = []
+    edge_lines: list[str] = []
+    seen_nodes: set[str] = set()
+    seen_edges: set[tuple[str, str, str]] = set()
+    # Gather per-node pipeline names for tooltips
+    node_pipes: dict[str, list[str]] = {}
+    for e in events:
+        for node in (e["source"], e["target"]):
+            node_pipes.setdefault(node, [])
+            pn = e["pipeline_name"]
+            if pn and pn not in node_pipes[node]:
+                node_pipes[node].append(pn)
+    for e in events:
+        src_name, tgt_name, pipe_name = e["source"], e["target"], e["pipeline_name"]
+        layer = e.get("layer", "")
+        _register_node(
+            src_name, True, node_lines, click_lines, seen_nodes, node_pipes.get(src_name, [])
+        )
+        _register_node(
+            tgt_name,
+            False,
+            node_lines,
+            click_lines,
+            seen_nodes,
+            node_pipes.get(tgt_name, []),
+            layer,
+        )
+        edge_key = (_node_id(src_name), _node_id(tgt_name), _node_id(pipe_name))
+        if edge_key not in seen_edges:
+            edge_lines.append(f"  {edge_key[0]} -->|{_node_label(pipe_name)}| {edge_key[1]}")
+            seen_edges.add(edge_key)
+    return "\n".join(["flowchart LR", *node_lines, *edge_lines, *click_lines, *_MERMAID_STYLE])
+
+
+def _get_lineage_events(eng: Any, pipeline: str = "") -> list[dict[str, Any]]:
+    events = [
         {
             "id": getattr(e, "event_id", ""),
             "source": getattr(e, "source", ""),
             "target": getattr(e, "destination", ""),
+            "layer": getattr(e, "layer", ""),
             "pipeline_name": getattr(e, "pipeline_name", ""),
             "timestamp": fmt_ts(getattr(e, "timestamp", "")),
         }
         for e in (eng.lineage.all_events if eng.lineage else [])
     ]
     if pipeline:
-        all_events = [e for e in all_events if e["pipeline_name"] == pipeline]
+        events = [e for e in events if e["pipeline_name"] == pipeline]
+    return events
+
+
+@router.get("/lineage/graph-partial", response_class=HTMLResponse)
+async def lineage_graph_partial(request: Request, pipeline: str = "") -> HTMLResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    events = _get_lineage_events(eng, pipeline)
+    diagram = _build_mermaid(events) if events else ""
+    if diagram:
+        html = f'<pre class="mermaid" style="background:transparent;font-size:13px">{diagram}</pre>'
+    else:
+        html = '<p style="font-size:13px;color:var(--gray-9)">No graph data available.</p>'
+    return HTMLResponse(html)
+
+
+@router.get("/lineage", response_class=HTMLResponse)
+async def lineage(request: Request, pipeline: str = "", view: str = "table") -> HTMLResponse:
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    all_events = _get_lineage_events(eng, pipeline)
     pipeline_names = sorted({e["pipeline_name"] for e in all_events if e["pipeline_name"]})
     ctx = base_ctx(request) | {
         "events": all_events,
         "pipeline_names": pipeline_names,
         "filter_pipeline": pipeline,
+        "view": view,
+        "mermaid_diagram": _build_mermaid(all_events) if all_events else "",
     }
     return render(request, "data/lineage.html", ctx)
 

@@ -12,14 +12,17 @@
 
 {% block content %}
 {% if models %}
+<div style="margin-bottom:10px">
+  <input class="dex-table-filter" placeholder="Filter models…" data-table="models-table">
+</div>
 <div class="rt-Card" style="overflow:hidden">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+  <table id="models-table" class="rt-TableRoot dex-table" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell">Name</th>
-        <th class="rt-TableColumnHeaderCell">Version</th>
-        <th class="rt-TableColumnHeaderCell">Stage</th>
-        <th class="rt-TableColumnHeaderCell">Framework</th>
+        <th class="rt-TableColumnHeaderCell sortable">Name</th>
+        <th class="rt-TableColumnHeaderCell sortable">Version</th>
+        <th class="rt-TableColumnHeaderCell sortable">Stage</th>
+        <th class="rt-TableColumnHeaderCell sortable">Framework</th>
         <th class="rt-TableColumnHeaderCell">Actions</th>
       </tr>
     </thead>

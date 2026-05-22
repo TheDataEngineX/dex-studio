@@ -5,7 +5,7 @@
 {% block page_title %}Agents{% endblock %}
 {% block page_actions %}
 <button onclick="document.getElementById('add-agent-dialog').setAttribute('data-open','true')"
-        class="rt-Button" data-variant="solid" data-color="cyan" data-size="2">
+        class="rt-Button" data-variant="solid" data-color="orange" data-size="2">
   <i data-lucide="plus" style="width:13px;height:13px"></i> Add Agent
 </button>
 {% endblock %}
@@ -25,12 +25,14 @@
     <tbody>
       {% for a in agents %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--cyan-11)">{{ a.name }}</td>
+        <td class="rt-TableCell">
+          <a href="/ai/playground?agent={{ a.name }}" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--orange-11);text-decoration:none">{{ a.name }}</a>
+        </td>
         <td class="rt-TableCell"><span class="rt-Badge" data-accent-color="gray" data-variant="soft" data-size="1">{{ a.type }}</span></td>
         <td class="rt-TableCell">{{ status_badge(a.status) }}</td>
         <td class="rt-TableCell">
           <div style="display:flex;gap:4px">
-            <a href="/ai/playground?agent={{ a.name }}" class="rt-Button" data-variant="soft" data-color="cyan" data-size="1">
+            <a href="/ai/playground?agent={{ a.name }}" class="rt-Button" data-variant="soft" data-color="orange" data-size="1">
               <i data-lucide="message-square" style="width:12px;height:12px"></i> Chat
             </a>
             <form method="post" action="/ai/agents/delete/{{ a.name }}" style="display:inline"
@@ -47,7 +49,7 @@
   </table>
 </div>
 {% else %}
-{{ empty_state("cpu", "No agents configured", "Add an agent to get started.") }}
+{{ empty_state("sparkles", "No agents configured", "Add an agent to get started.") }}
 {% endif %}
 
 <!-- Add Agent Dialog -->
@@ -78,7 +80,7 @@
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
-        <button type="submit" class="rt-Button" data-variant="solid" data-color="cyan" data-size="2">Create</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-color="orange" data-size="2">Create</button>
       </div>
     </form>
   </div>
