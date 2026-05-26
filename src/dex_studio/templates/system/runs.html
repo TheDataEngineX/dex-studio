@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Runs — DEX Studio{% endblock %}
+
+{% block page_title %}Runs{% endblock %}
+
+{% block page_actions %}
+<a href="/system/runs" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+</a>
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="font-size:var(--text-sm);margin:-8px 0 var(--space-5)">
+  Unified history across pipelines, transforms, workflows, agents and streams
+</p>
+
+{# ── Filter bar ──────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:var(--space-3);display:flex;flex-direction:column;gap:10px;margin-bottom:var(--space-4)">
+
+  {# Type row #}
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="cap" style="width:44px;line-height:26px">Type</span>
+    {% for t in type_options %}
+    <a href="?type={{ t }}&status={{ filter_status }}"
+       class="chip {{ 'active' if filter_type == t else '' }}"
+       style="text-decoration:none">
+      {{ t | title if t != 'all' else 'All' }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="div-y"></div>
+
+  {# Status row #}
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="cap" style="width:44px;line-height:26px">Status</span>
+    {% for s in status_options %}
+    <a href="?type={{ filter_type }}&status={{ s }}"
+       class="chip {{ 'active' if filter_status == s else '' }}"
+       style="text-decoration:none">
+      {{ s | title if s != 'all' else 'All' }}
+    </a>
+    {% endfor %}
+    <div style="flex:1"></div>
+    <div class="input-icon" style="width:240px">
+      <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
+      <input class="input" id="run-search" placeholder="name contains…" style="height:26px;font-size:var(--text-sm)">
+    </div>
+  </div>
+</div>
+
+{# ── Summary stat pills ──────────────────────────────────────────────────── #}
+{% if total_count or running_count or failed_count %}
+<div class="row" style="gap:10px;margin-bottom:var(--space-3)">
+  <span class="pill">{{ total_count }} total</span>
+  {% if running_count %}
+  <span class="pill running">{{ running_count }} running</span>
+  {% endif %}
+  {% if failed_count %}
+  <span class="pill error">{{ failed_count }} failed</span>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── Runs table ──────────────────────────────────────────────────────────── #}
+<div class="card bare">
+  <table class="tbl dex-table" id="runs-table">
+    <thead>
+      <tr>
+        <th style="width:140px" class="sortable">Started</th>
+        <th style="width:110px" class="sortable">Type</th>
+        <th class="sortable">Name</th>
+        <th style="width:110px" class="sortable">Status</th>
+        <th style="width:90px" class="num sortable">Duration</th>
+        <th style="width:100px">Trigger</th>
+        <th style="width:60px">I/O</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if runs %}
+        {% for r in runs %}
+        <tr>
+          <td class="mono dim" style="font-size:var(--text-xs)">{{ r.started }}</td>
+          <td>
+            <span class="run-type-tag run-type-{{ r.type }}">{{ r.type }}</span>
+          </td>
+          <td><span class="mono" style="color:var(--text);font-size:var(--text-sm)">{{ r.name }}</span></td>
+          <td>
+            {% if r.status == 'success' %}<span class="pill success">{{ r.status }}</span>
+            {% elif r.status == 'error' %}<span class="pill error">{{ r.status }}</span>
+            {% elif r.status == 'running' %}<span class="pill running">{{ r.status }}</span>
+            {% elif r.status == 'cancelled' %}<span class="pill warn">{{ r.status }}</span>
+            {% else %}<span class="pill">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td class="num mono dim">{{ r.duration }}</td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ r.trigger }}</td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ r.io }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="dex-empty-state" style="padding:48px 24px">
+              <i data-lucide="list" style="width:32px;height:32px;opacity:.3;margin-bottom:12px"></i>
+              <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No runs recorded yet</div>
+              <div class="muted" style="font-size:var(--text-xs)">
+                Run history will appear here once pipelines, agents or workflows execute.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="spread" style="padding:10px 4px;font-size:var(--text-xs);color:var(--text-3)">
+  <span>Showing {{ runs | length }} run{{ 's' if runs | length != 1 else '' }}</span>
+  {% if runs | length >= 50 %}
+  <div class="row" style="gap:6px">
+    <button class="btn sm ghost" disabled>
+      <i data-lucide="arrow-left" style="width:11px;height:11px"></i> Prev
+    </button>
+    <button class="btn sm ghost">
+      Next 50 <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  // Client-side name filter
+  (function () {
+    const input = document.getElementById('run-search');
+    const table = document.getElementById('runs-table');
+    if (!input || !table) return;
+    input.addEventListener('input', () => {
+      const q = input.value.toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  })();
+</script>
+{% endblock %}

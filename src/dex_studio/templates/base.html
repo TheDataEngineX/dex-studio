@@ -5,107 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}DEX Studio{% endblock %}</title>
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!--
+    Fonts: Fira Sans / Fira Code loaded from Google Fonts in dev if available,
+    falling back to ui-sans-serif / ui-monospace defined in studio.css.
+    For air-gapped deployments, vendor the WOFF2 files under /static/vendor/fonts/.
+  -->
 
-  <!-- Radix Themes CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.4.0/styles.css">
-
-  <!-- DEX Studio custom styles -->
+  <!-- DEX Studio design system -->
   <link rel="stylesheet" href="/static/studio.css">
 
-  <!-- Theme init — runs before body renders to prevent flash -->
+  <!-- Theme init — runs before body to prevent flash -->
   <script>
     (function () {
-      const saved = localStorage.getItem('dex-theme') || 'light';
+      const saved = localStorage.getItem('dex-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', saved);
       if (saved === 'dark') document.documentElement.classList.add('dark');
     })();
   </script>
 
-  <!-- Alpine.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
-  <!-- HTMX -->
-  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
-
-  <!-- HTMX SSE extension -->
-  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
+  <!-- Vendored JS — served from /static/vendor/ (no CDN dependency) -->
+  <!-- Alpine.js 3.15.12 -->
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  <!-- HTMX 2.0.4 -->
+  <script src="/static/vendor/htmx.min.js"></script>
+  <!-- HTMX SSE extension 2.2.2 -->
+  <script src="/static/vendor/htmx-sse.js"></script>
 
   {% block head %}{% endblock %}
 </head>
-<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium" data-scaling="100%"
-      x-data="dexApp()" @keydown.escape="closeSidebar()">
+<body>
 
-  <!-- Mobile header -->
-  <header class="dex-mobile-header">
-    <button @click="sidebarOpen = !sidebarOpen" style="background:none;border:none;cursor:pointer;padding:8px">
-      <i data-lucide="menu" style="width:20px;height:20px;color:var(--gray-11)"></i>
-    </button>
-    <a href="/" style="font-weight:600;font-size:15px;margin-left:8px;text-decoration:none;color:var(--gray-12)">DEX Studio</a>
-  </header>
+<div class="app" id="shell" x-data="dexApp()">
 
-  <!-- Sidebar overlay (mobile) -->
-  <div x-show="sidebarOpen" @click="sidebarOpen=false"
-       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150"
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0"
-       x-transition:enter-end="opacity-100"></div>
+  <!-- ── Sidebar ────────────────────────────────────────────────────────────── -->
+  <aside class="side" aria-label="Main navigation"
+         :class="sidebarOpen ? 'side--open' : ''"
+         style="overflow-y:auto">
 
-  <!-- Sidebar -->
-  <nav class="dex-sidebar" aria-label="Main navigation" :class="sidebarOpen ? 'dex-sidebar-open' : ''"
-       style="position:fixed;top:0;left:0;height:100vh;width:var(--sidebar-w);z-index:200;display:flex;flex-direction:column;">
-
-    <!-- Logo — click navigates home -->
-    <div style="padding:14px 16px 10px;flex-shrink:0">
-      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit"
-         title="Go to home">
-        <div style="background:var(--indigo-9);border-radius:7px;padding:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i data-lucide="zap" style="width:15px;height:15px;color:white"></i>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:14px;line-height:1.2;color:var(--gray-12)">DEX Studio</div>
-          <div style="font-size:10px;color:var(--gray-9)">DataEngineX</div>
-        </div>
-      </a>
-    </div>
+    <!-- Logo -->
+    <a href="/" class="logo-row" style="text-decoration:none;color:inherit" title="Home">
+      <!-- 3-bar DEX logo: bronze → silver → accent layers -->
+      <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true" style="flex-shrink:0;display:block">
+        <rect x="2"  y="18" width="18" height="6" rx="1.6" fill="var(--layer-bronze)" />
+        <rect x="4"  y="11" width="18" height="6" rx="1.6" fill="var(--layer-silver)" />
+        <rect x="6"  y="4"  width="18" height="6" rx="1.6" fill="var(--accent-9)" />
+        <rect x="20" y="11" width="2"  height="6" fill="var(--bg-elev)" opacity="0.18" />
+      </svg>
+      <div class="brandname">
+        DEX <span style="color:var(--text-3);font-weight:400">Studio</span>
+      </div>
+      <span class="ver" style="font-size:9.5px;color:var(--text-4);letter-spacing:.06em;text-transform:uppercase;margin-left:auto;flex-shrink:0">v0.5</span>
+    </a>
 
     <!-- Project switcher -->
-    <div style="padding:0 8px 8px;flex-shrink:0">
+    <div style="padding:0 8px 4px;flex-shrink:0">
       {% if all_projects and all_projects|length > 1 %}
       <div x-data="{open:false, pos:{top:0,left:0,width:0}}">
         <button @click="const r=$el.getBoundingClientRect(); pos={top:r.bottom+4,left:r.left,width:r.width}; open=!open"
-                style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5);cursor:pointer;width:100%;text-align:left"
-                :style="open ? 'background:var(--indigo-3);border-color:var(--indigo-6)' : ''">
-          <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
-          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--gray-8)"></i>
+                class="project" style="width:100%;cursor:pointer;border:none;text-align:left"
+                :style="open ? 'background:var(--accent-3);border-color:var(--accent-6)' : ''">
+          <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--accent-9)"></i>
+          <span class="name">{{ project_name }}</span>
+          <span class="env">{{ current_env | default('dev') }}</span>
+          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--text-4);margin-left:auto"></i>
         </button>
         <div x-show="open" x-cloak @click.outside="open=false"
              :style="`top:${pos.top}px;left:${pos.left}px;width:${pos.width}px`"
-             style="position:fixed;z-index:9000;border-radius:8px;overflow:hidden;
-                    box-shadow:0 8px 32px rgba(0,0,0,0.18),0 2px 8px rgba(0,0,0,0.12);
-                    border:1px solid var(--gray-5)">
+             style="position:fixed;z-index:9000;border-radius:var(--r-3);overflow:hidden;
+                    box-shadow:var(--shadow-xl);border:1px solid var(--border)">
           <div class="dex-switcher-panel">
             {% for p in all_projects %}
-            <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--gray-4)">
+            <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--border)">
               <form method="post" action="/projects/switch" @submit="open=false" style="flex:1;min-width:0">
                 <input type="hidden" name="config_path" value="{{ p.config_path }}">
                 <button type="submit"
-                        style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-size:12px;text-align:left;border:none;cursor:pointer;
-                               background:{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }};
-                               color:{{ 'var(--indigo-11)' if p.config_path == current_config else 'var(--gray-12)' }}"
-                        @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }}'">
+                        style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-size:var(--text-sm);text-align:left;border:none;cursor:pointer;
+                               background:{{ 'var(--accent-3)' if p.config_path == current_config else 'transparent' }};
+                               color:{{ 'var(--accent-11)' if p.config_path == current_config else 'var(--text)' }}"
+                        @mouseenter="$el.style.background='var(--accent-2)'"
+                        @mouseleave="$el.style.background='{{ 'var(--accent-3)' if p.config_path == current_config else 'transparent' }}'">
                   <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
-                     style="width:12px;height:12px;flex-shrink:0;color:{{ 'var(--indigo-9)' if p.config_path == current_config else 'var(--gray-8)' }}"></i>
+                     style="width:12px;height:12px;flex-shrink:0;color:{{ 'var(--accent-9)' if p.config_path == current_config else 'var(--text-4)' }}"></i>
                   <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:{{ '600' if p.config_path == current_config else '400' }}">{{ p.name }}</span>
                 </button>
               </form>
               <form method="post" action="/projects/set-default" @submit="open=false" title="Set as startup default" style="display:flex">
                 <input type="hidden" name="config_path" value="{{ p.config_path }}">
-                <button type="submit" style="padding:0 10px;border:none;background:transparent;cursor:pointer;color:var(--gray-7);border-left:1px solid var(--gray-4)"
-                        @mouseenter="$el.style.color='var(--amber-9)'" @mouseleave="$el.style.color='var(--gray-7)'"
+                <button type="submit"
+                        style="padding:0 10px;border:none;background:transparent;cursor:pointer;color:var(--text-4);border-left:1px solid var(--border)"
+                        @mouseenter="$el.style.color='var(--amber-9)'"
+                        @mouseleave="$el.style.color='var(--text-4)'"
                         title="Set as default">
                   <i data-lucide="star" style="width:11px;height:11px"></i>
                 </button>
@@ -113,263 +102,321 @@
             </div>
             {% endfor %}
             <a href="/onboarding" @click="open=false"
-               style="display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:12px;text-decoration:none;color:var(--indigo-10)"
-               @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='transparent'">
+               style="display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:var(--text-sm);text-decoration:none;color:var(--accent-10)"
+               @mouseenter="$el.style.background='var(--accent-2)'"
+               @mouseleave="$el.style.background='transparent'">
               <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
             </a>
           </div>
         </div>
       </div>
       {% else %}
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5)">
-        <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
-        <a href="/onboarding" style="color:var(--gray-8);text-decoration:none" title="Switch project">
+      <div class="project">
+        <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--accent-9)"></i>
+        <span class="name">{{ project_name }}</span>
+        <span class="env">{{ current_env | default('dev') }}</span>
+        <a href="/onboarding" style="color:var(--text-4);margin-left:auto" title="Switch project">
           <i data-lucide="chevrons-up-down" style="width:11px;height:11px"></i>
         </a>
       </div>
       {% endif %}
     </div>
 
-    <div style="height:1px;background:var(--gray-4);margin:0 16px 6px;flex-shrink:0"></div>
+    <!-- Nav -->
+    <nav class="nav">
 
-    <!-- Scrollable nav area -->
-    <div style="flex:1;overflow-y:auto;padding:0 8px 8px">
-
-      <!-- Nav: Data -->
-      {% set data_active = current_path.startswith('/data') %}
-      <div style="padding-bottom:2px">
-        <a href="/data" class="dex-nav-item {{ 'active' if data_active else '' }}"
-           style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--indigo-11)' if data_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if data_active else '400' }};background:{{ 'var(--indigo-3)' if data_active else 'transparent' }}">
-          <i data-lucide="database" style="width:14px;height:14px;flex-shrink:0"></i>Data
+      <!-- ── Workspace ────────────────────────────────────────────────── -->
+      <div class="nav-group">
+        <div class="cap">Workspace</div>
+        {% set _p = current_path %}
+        <a href="/" class="nav-item {{ 'active' if _p == '/' else '' }}" style="text-decoration:none">
+          <i data-lucide="home" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">Home</span>
         </a>
-        {% if data_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--indigo-6);padding-left:10px">
-          {% for label, href in [('Pipelines','/data/pipelines'),('Sources','/data/sources'),('Lakehouse','/data/lakehouse'),('Warehouse','/data/warehouse'),('SQL Console','/data/sql'),('Lineage','/data/lineage'),('Quality','/data/quality'),('Catalog','/data/catalog')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--indigo-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--indigo-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
       </div>
 
-      <!-- Nav: ML -->
-      {% set ml_active = current_path.startswith('/ml') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/ml" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--violet-11)' if ml_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ml_active else '400' }};background:{{ 'var(--violet-3)' if ml_active else 'transparent' }}">
-          <i data-lucide="flask-conical" style="width:14px;height:14px;flex-shrink:0"></i>ML
+      <!-- ── Data ────────────────────────────────────────────────────── -->
+      <div class="nav-group">
+        <div class="cap">Data</div>
+        {% for label, href, icon in [
+          ('Sources',    '/data/sources',   'link'),
+          ('Pipelines',  '/data/pipelines', 'workflow'),
+          ('Lakehouse',  '/data/lakehouse', 'layers'),
+          ('Warehouse',  '/data/warehouse', 'archive'),
+          ('SQL',        '/data/sql',       'hash'),
+          ('Lineage',    '/data/lineage',   'share-2'),
+          ('Quality',    '/data/quality',   'check-circle'),
+          ('Catalog',    '/data/catalog',   'table'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
         </a>
-        {% if ml_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--violet-6);padding-left:10px">
-          {% for label, href in [('Models','/ml/models'),('Experiments','/ml/experiments'),('Predictions','/ml/predictions'),('Features','/ml/features'),('Drift','/ml/drift')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--violet-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--violet-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% endfor %}
       </div>
 
-      <!-- Nav: AI -->
-      {% set ai_active = current_path.startswith('/ai') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/ai" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--orange-11)' if ai_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ai_active else '400' }};background:{{ 'var(--orange-3)' if ai_active else 'transparent' }}">
-          <i data-lucide="sparkles" style="width:14px;height:14px;flex-shrink:0"></i>AI
+      <!-- ── ML & AI ─────────────────────────────────────────────────── -->
+      <div class="nav-group">
+        <div class="cap">ML &amp; AI</div>
+        {% for label, href, icon in [
+          ('Agents',      '/ai/agents',       'bot'),
+          ('Playground',  '/ai/playground',   'message-square'),
+          ('Traces',      '/ai/traces',       'git-branch'),
+          ('Tools',       '/ai/tools',        'wrench'),
+          ('Memory',      '/ai/memory',       'brain'),
+          ('Models',      '/ml/models',       'box'),
+          ('Experiments', '/ml/experiments',  'flask-conical'),
+          ('Features',    '/ml/features',     'sliders'),
+          ('Drift',       '/ml/drift',        'trending-down'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
         </a>
-        {% if ai_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--orange-6);padding-left:10px">
-          {% for label, href in [('Agents','/ai/agents'),('Playground','/ai/playground'),('Traces','/ai/traces'),('Tools','/ai/tools'),('Memory','/ai/memory')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--orange-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--orange-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% endfor %}
       </div>
 
-      <!-- Nav: SecOps -->
-      {% set secops_active = current_path.startswith('/secops') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/secops" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--teal-11)' if secops_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if secops_active else '400' }};background:{{ 'var(--teal-3)' if secops_active else 'transparent' }}">
-          <i data-lucide="shield-check" style="width:14px;height:14px;flex-shrink:0"></i>SecOps
+      <!-- ── Governance ──────────────────────────────────────────────── -->
+      <div class="nav-group">
+        <div class="cap">Governance</div>
+        {% for label, href, icon in [
+          ('Privacy Guard', '/secops',       'shield-check'),
+          ('Audit Log',     '/secops/audit', 'file-text'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
         </a>
-        {% if secops_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--teal-6);padding-left:10px">
-          {% for label, href in [('Guard','/secops'),('Audit Log','/secops/audit')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--teal-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--teal-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% endfor %}
       </div>
 
-      <!-- Nav: System -->
-      {% set sys_active = current_path.startswith('/system') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/system" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--gray-12)' if sys_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if sys_active else '400' }};background:{{ 'var(--gray-4)' if sys_active else 'transparent' }}">
-          <i data-lucide="settings-2" style="width:14px;height:14px;flex-shrink:0"></i>System
+      <!-- ── System ──────────────────────────────────────────────────── -->
+      <div class="nav-group">
+        <div class="cap">System</div>
+        {% for label, href, icon in [
+          ('Runs',       '/system/runs',       'list'),
+          ('Costs',      '/system/costs',      'bar-chart-2'),
+          ('Status',     '/system/status',     'activity'),
+          ('Logs',       '/system/logs',       'scroll'),
+          ('Metrics',    '/system/metrics',    'trending-up'),
+          ('Components', '/system/components', 'cpu'),
+          ('Settings',   '/system/settings',  'settings'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
         </a>
-        {% if sys_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--gray-6);padding-left:10px">
-          {% for label, href in [('Status','/system/status'),('Logs','/system/logs'),('Metrics','/system/metrics'),('Components','/system/components'),('Settings','/system/settings')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--gray-12)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--gray-3)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% endfor %}
       </div>
 
-    </div><!-- end scrollable nav -->
+    </nav>
 
     <!-- Sidebar footer -->
-    <div style="flex-shrink:0;padding:10px 16px;border-top:1px solid var(--gray-4);display:flex;gap:10px;align-items:center;background:inherit">
+    <div class="side-foot">
+      <span class="dot" title="Engine connected"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        {{ engine_version | default('DEX') }}
+      </span>
       <a href="https://thedataenginex.org/docs" target="_blank"
-         style="font-size:11px;color:var(--gray-9);text-decoration:none;display:flex;align-items:center;gap:4px"
-         title="Documentation">
-        <i data-lucide="book-open" style="width:12px;height:12px"></i>Docs
+         style="color:var(--text-4);display:flex;align-items:center;gap:3px" title="Docs">
+        <i data-lucide="book-open" style="width:12px;height:12px"></i>
       </a>
-      <span style="color:var(--gray-5)">·</span>
-      <button id="dex-theme-toggle" onclick="toggleTheme()"
-              style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--gray-9);display:flex;align-items:center;gap:4px;padding:0"
-              aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
+      <button onclick="toggleTheme()"
+              style="background:none;border:none;cursor:pointer;color:var(--text-4);display:flex;align-items:center;padding:0"
+              aria-label="Toggle dark/light mode" title="Toggle theme">
         <i id="dex-theme-icon" data-lucide="moon" style="width:12px;height:12px"></i>
-        <span id="dex-theme-label">Dark</span>
       </button>
     </div>
 
-  </nav>
+  </aside><!-- .side -->
 
-  <!-- Main content -->
-  <main class="dex-content" style="min-height:100vh;padding:24px 28px 40px">
+  <!-- ── Main ──────────────────────────────────────────────────────────────── -->
+  <div class="main">
+    <div class="content" id="main-content">
+      <div class="content-inner">
 
-    {% block page_header %}
-    {% set _domain = 'ml' if current_path.startswith('/ml') else 'ai' if current_path.startswith('/ai') else 'system' if current_path.startswith('/system') else 'data' %}
-    <div class="dex-page-header" data-domain="{{ _domain }}" style="margin-bottom:20px;padding:14px 0;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
-      <h1 style="font-size:18px;font-weight:700;margin:0">{% block page_title %}{% endblock %}</h1>
-      <div>{% block page_actions %}{% endblock %}</div>
-    </div>
-    {% endblock %}
+        {% block page_header %}
+        {% set _domain = 'ml' if current_path.startswith('/ml') else 'ai' if current_path.startswith('/ai') else 'system' if current_path.startswith('/system') else 'secops' if current_path.startswith('/secops') else 'data' %}
+        <div class="dex-page-header" data-domain="{{ _domain }}"
+             style="margin-bottom:var(--space-5);padding:var(--space-4) 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <h1 style="font-size:var(--text-xl);font-weight:600;margin:0;letter-spacing:-0.015em">{% block page_title %}{% endblock %}</h1>
+          <div style="display:flex;gap:8px;align-items:center">{% block page_actions %}{% endblock %}</div>
+        </div>
+        {% endblock %}
 
-    {% block content %}{% endblock %}
-  </main>
+        {% block content %}{% endblock %}
 
-  <!-- Toast container -->
-  <div id="toast-container" x-data="toastStore()"
-       @show-toast.window="add($event.detail.msg, $event.detail.kind)"
-       style="position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
-    <template x-for="t in toasts" :key="t.id">
-      <div class="rt-CalloutRoot"
-           :data-color="t.kind === 'success' ? 'green' : t.kind === 'error' ? 'red' : 'blue'"
-           data-size="1"
-           style="pointer-events:auto;min-width:260px;max-width:400px;animation:slideInRight .2s ease both;cursor:pointer"
-           @click="remove(t.id)"
-           x-transition:leave="transition-opacity duration-300"
-           x-transition:leave-end="opacity-0">
-        <p class="rt-CalloutText" x-text="t.msg"></p>
       </div>
-    </template>
-  </div>
+    </div>
+  </div><!-- .main -->
 
-  <!-- Flash message → auto-show as toast -->
-  {% if flash %}
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
-    });
-  </script>
-  {% endif %}
+</div><!-- .app -->
 
-  <!-- Lucide icons -->
-  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script>
-    lucide.createIcons();
-    document.addEventListener('htmx:afterSwap', () => lucide.createIcons());
-    document.addEventListener('htmx:afterSettle', () => lucide.createIcons());
-  </script>
+<!-- Mobile sidebar overlay -->
+<div x-data x-show="$store.shell.sidebarOpen" x-cloak
+     @click="$store.shell.sidebarOpen = false"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150"
+     x-transition:enter="transition duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"></div>
 
-  <script>
-    // ── Dark/light mode ───────────────────────────────────────────────────────
-    function applyTheme(mode) {
-      const isDark = mode === 'dark';
-      document.documentElement.setAttribute('data-theme', mode);
-      document.documentElement.classList.toggle('dark', isDark);
-      document.body.setAttribute('data-appearance', isDark ? 'dark' : 'light');
-      localStorage.setItem('dex-theme', mode);
-      const icon = document.getElementById('dex-theme-icon');
-      const label = document.getElementById('dex-theme-label');
-      if (icon) { icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon'); lucide.createIcons(); }
-      if (label) label.textContent = isDark ? 'Light' : 'Dark';
-    }
-    function toggleTheme() {
-      applyTheme(localStorage.getItem('dex-theme') === 'dark' ? 'light' : 'dark');
-    }
-    // Apply on load (theme was set before body by inline script — sync icons)
-    document.addEventListener('DOMContentLoaded', () => {
-      applyTheme(localStorage.getItem('dex-theme') || 'light');
-    });
+<!-- Toast container -->
+<div id="toast-container" x-data="toastStore()"
+     @show-toast.window="add($event.detail.msg, $event.detail.kind)"
+     style="position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="card"
+         style="pointer-events:auto;min-width:260px;max-width:400px;animation:slideInRight .2s ease both;cursor:pointer;
+                display:flex;align-items:flex-start;gap:10px;padding:12px 14px;"
+         :style="t.kind === 'success' ? 'border-color:var(--green-6)' : t.kind === 'error' ? 'border-color:var(--red-6)' : ''"
+         @click="remove(t.id)"
+         x-transition:leave="transition duration-300"
+         x-transition:leave-end="opacity-0">
+      <i :data-lucide="t.kind === 'success' ? 'check-circle-2' : t.kind === 'error' ? 'x-circle' : 'info'"
+         :style="t.kind === 'success' ? 'color:var(--green-9)' : t.kind === 'error' ? 'color:var(--red-9)' : 'color:var(--blue-9)'"
+         style="width:15px;height:15px;flex-shrink:0;margin-top:1px"></i>
+      <span x-text="t.msg" style="font-size:var(--text-sm);line-height:1.5;flex:1"></span>
+    </div>
+  </template>
+</div>
 
-    // ── Alpine app ────────────────────────────────────────────────────────────
-    function dexApp() {
-      return { sidebarOpen: false, closeSidebar() { this.sidebarOpen = false; } };
-    }
-    function toastStore() {
-      return {
-        toasts: [],
-        add(msg, kind = 'info') {
-          const id = Date.now();
-          this.toasts.push({ id, msg, kind });
-          setTimeout(() => this.remove(id), 4500);
-        },
-        remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); }
-      };
-    }
-    document.addEventListener('htmx:afterRequest', (e) => {
-      const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
-      if (!trigger) return;
-      try {
-        const t = JSON.parse(trigger)['show-toast'];
-        if (t) window.dispatchEvent(new CustomEvent('show-toast', { detail: t }));
-      } catch {}
-    });
-  </script>
+<!-- Flash message → toast -->
+{% if flash %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
+  });
+</script>
+{% endif %}
 
-  <!-- Sortable + filterable tables -->
-  <script>
-  (function () {
-    function initSortable(table) {
-      const ths = table.querySelectorAll('th.sortable');
-      ths.forEach((th, ci) => {
-        th.addEventListener('click', () => {
-          const asc = !th.classList.contains('sort-asc');
-          ths.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-          const tbody = table.querySelector('tbody');
-          const rows = Array.from(tbody.querySelectorAll('tr'));
-          rows.sort((a, b) => {
-            const av = a.cells[ci]?.textContent.trim() ?? '';
-            const bv = b.cells[ci]?.textContent.trim() ?? '';
-            const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
-            const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
-            const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
-            return asc ? cmp : -cmp;
-          });
-          rows.forEach(r => tbody.appendChild(r));
+<!-- Lucide icons -->
+<!-- Lucide 0.511.0 — vendored -->
+<script src="/static/vendor/lucide.min.js"></script>
+<script>
+  lucide.createIcons();
+  document.addEventListener('htmx:afterSwap',   () => lucide.createIcons());
+  document.addEventListener('htmx:afterSettle', () => lucide.createIcons());
+</script>
+
+<script>
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  function applyTheme(mode) {
+    const isDark = mode === 'dark';
+    document.documentElement.setAttribute('data-theme', mode);
+    document.documentElement.classList.toggle('dark', isDark);
+    localStorage.setItem('dex-theme', mode);
+    const icon = document.getElementById('dex-theme-icon');
+    if (icon) { icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon'); lucide.createIcons(); }
+  }
+  function toggleTheme() {
+    applyTheme(localStorage.getItem('dex-theme') === 'dark' ? 'light' : 'dark');
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    applyTheme(localStorage.getItem('dex-theme') || 'dark');
+  });
+
+  // ── Alpine store ───────────────────────────────────────────────────────────
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('shell', { sidebarOpen: false });
+  });
+
+  // ── Alpine components ──────────────────────────────────────────────────────
+  function dexApp() {
+    return {
+      get sidebarOpen() { return Alpine.store('shell').sidebarOpen; },
+      closeSidebar() { Alpine.store('shell').sidebarOpen = false; },
+    };
+  }
+
+  function toastStore() {
+    return {
+      toasts: [],
+      add(msg, kind = 'info') {
+        const id = Date.now();
+        this.toasts.push({ id, msg, kind });
+        setTimeout(() => this.remove(id), 4500);
+      },
+      remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); },
+    };
+  }
+
+  // HTMX → toast bridge
+  document.addEventListener('htmx:afterRequest', (e) => {
+    const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
+    if (!trigger) return;
+    try {
+      const t = JSON.parse(trigger)['show-toast'];
+      if (t) window.dispatchEvent(new CustomEvent('show-toast', { detail: t }));
+    } catch {}
+  });
+</script>
+
+<!-- Sortable + filterable tables -->
+<script>
+(function () {
+  function initSortable(table) {
+    const ths = table.querySelectorAll('th.sortable');
+    ths.forEach((th, ci) => {
+      th.addEventListener('click', () => {
+        const asc = !th.classList.contains('sort-asc');
+        ths.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const av = a.cells[ci]?.textContent.trim() ?? '';
+          const bv = b.cells[ci]?.textContent.trim() ?? '';
+          const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
+          const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
+          const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+          return asc ? cmp : -cmp;
         });
+        rows.forEach(r => tbody.appendChild(r));
       });
-    }
-    function initFilter(input) {
-      const tableId = input.dataset.table;
-      const table = tableId ? document.getElementById(tableId) : input.closest('.rt-Card')?.querySelector('table');
-      if (!table) return;
-      input.addEventListener('input', () => {
-        const q = input.value.toLowerCase();
-        table.querySelectorAll('tbody tr').forEach(row => {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
+    });
+  }
+  function initFilter(input) {
+    const tableId = input.dataset.table;
+    const table = tableId ? document.getElementById(tableId) : input.closest('.card')?.querySelector('table');
+    if (!table) return;
+    input.addEventListener('input', () => {
+      const q = input.value.toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
-    }
-    function boot() {
-      document.querySelectorAll('table.dex-table').forEach(initSortable);
-      document.querySelectorAll('.dex-table-filter').forEach(initFilter);
-    }
-    document.addEventListener('DOMContentLoaded', boot);
-    document.addEventListener('htmx:afterSwap', boot);
-  })();
-  </script>
+    });
+  }
+  function boot() {
+    document.querySelectorAll('table.dex-table, table.tbl').forEach(initSortable);
+    document.querySelectorAll('.dex-table-filter').forEach(initFilter);
+  }
+  document.addEventListener('DOMContentLoaded', boot);
+  document.addEventListener('htmx:afterSwap', boot);
+})();
+</script>
 
-  {% block scripts %}{% endblock %}
+<!-- Mobile: sidebar toggle button (fixed, visible on small screens) -->
+<button onclick="Alpine.store('shell').sidebarOpen = !Alpine.store('shell').sidebarOpen"
+        style="display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--bg-elev);
+               border:1px solid var(--border);border-radius:var(--r-2);padding:6px;cursor:pointer;
+               box-shadow:var(--shadow-md)"
+        id="mobile-menu-btn" aria-label="Open navigation">
+  <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-2)"></i>
+</button>
+
+<style>
+  @media (max-width: 767px) {
+    .app { grid-template-columns: 0 1fr; }
+    .side { position: fixed; top:0; left:0; height:100vh; z-index:200; width:var(--sidebar-w);
+            transform: translateX(-100%); transition: transform var(--d-normal) var(--ease-out-expo); }
+    .side--open { transform: translateX(0); }
+    #mobile-menu-btn { display: flex !important; }
+  }
+</style>
+
+{% block scripts %}{% endblock %}
 </body>
 </html>

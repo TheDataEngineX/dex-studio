@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Costs — DEX Studio{% endblock %}
+
+{% block page_title %}Costs{% endblock %}
+
+{% block page_actions %}
+<a href="/system/costs" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+</a>
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="font-size:var(--text-sm);margin:-8px 0 var(--space-5)">
+  External API spend — tracked via outbound audit log
+</p>
+
+{# ── Budget + by-provider ────────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1.4fr 1fr;gap:var(--space-3)">
+
+  {# Budget card #}
+  <div class="card" style="padding:20px">
+    <div class="muted cap">Spent (all time)</div>
+    <div class="row" style="align-items:baseline;gap:12px;margin-top:6px">
+      <div style="font-size:var(--text-3xl);font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">
+        ${{ "%.2f"|format(spend_total) }}
+      </div>
+      {% if budget %}
+      <div class="muted">of ${{ "%.2f"|format(budget) }} budget</div>
+      {% endif %}
+      {% if spend_total == 0 %}
+      <span class="pill info">no spend yet</span>
+      {% elif budget_pct < 50 %}
+      <span class="pill success">on track</span>
+      {% elif budget_pct < 85 %}
+      <span class="pill warn">watch budget</span>
+      {% else %}
+      <span class="pill error">near limit</span>
+      {% endif %}
+    </div>
+    {% if budget %}
+    <div class="progress" style="margin-top:14px">
+      <i style="width:{{ budget_pct }}%"></i>
+    </div>
+    <div class="spread" style="margin-top:6px;font-size:11px;color:var(--text-3)">
+      <span>{{ "%.1f"|format(budget_pct) }}% of budget used</span>
+      <span>${{ "%.2f"|format(budget - spend_total) }} remaining</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# By-provider card #}
+  <div class="card" style="padding:20px">
+    <div class="muted cap" style="margin-bottom:12px">By provider</div>
+    {% if providers %}
+      {% set provider_colors = {
+        'anthropic': 'var(--accent-9)',
+        'openai':    'var(--green-9)',
+        'local':     'var(--gray-7)',
+        'cohere':    'var(--violet-9)',
+        'google':    'var(--amber-9)',
+      } %}
+      {% for p in providers %}
+      {% set col = provider_colors.get(p.name | lower, 'var(--blue-9)') %}
+      <div class="col" style="gap:4px;margin-bottom:10px">
+        <div class="row">
+          <span style="width:8px;height:8px;border-radius:2px;background:{{ col }};margin-right:8px;flex-shrink:0"></span>
+          <span style="flex:1;font-size:var(--text-sm)">{{ p.name }}</span>
+          <span class="mono tnum">${{ "%.4f"|format(p.spend) }}</span>
+        </div>
+        <div class="progress thin">
+          <i style="width:{{ (p.share * 100) | round(1) }}%;background:{{ col }}"></i>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="dex-empty-state" style="padding:24px 0">
+      <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+      <div class="muted" style="font-size:var(--text-xs)">No spend data recorded yet</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Cost tracking notice (no data state) ────────────────────────────────── #}
+{% if not providers %}
+<div class="dex-health-banner" style="margin-top:var(--space-4);background:color-mix(in oklch,var(--blue-3) 50%,transparent);border:1px solid var(--blue-6);border-left:4px solid var(--blue-8)">
+  <i data-lucide="info" style="width:16px;height:16px;color:var(--blue-9);flex-shrink:0"></i>
+  <div>
+    <div style="font-weight:600;font-size:var(--text-sm)">Cost tracking not yet active</div>
+    <div class="muted" style="font-size:var(--text-xs);margin-top:2px">
+      Enable <code style="font-family:var(--font-mono)">secops.audit.enabled: true</code> in
+      <code style="font-family:var(--font-mono)">dex.yaml</code> and set a provider in
+      <code style="font-family:var(--font-mono)">secops.guard</code> to start tracking spend.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Breakdown by model ──────────────────────────────────────────────────── #}
+<div class="section-h">
+  <h2>Breakdown by model</h2>
+  <span class="muted" style="font-size:var(--text-xs)">populated from outbound audit log</span>
+</div>
+
+<div class="card bare">
+  <table class="tbl dex-table">
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Model</th>
+        <th class="num sortable">Calls</th>
+        <th class="num">Tokens in</th>
+        <th class="num">Tokens out</th>
+        <th class="num sortable">Cost</th>
+        <th class="num" style="width:110px">Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if breakdown %}
+        {% for r in breakdown %}
+        <tr>
+          <td>
+            <span class="pill" style="background:transparent;border-color:var(--border);color:var(--text-2)">
+              {{ r.provider }}
+            </span>
+          </td>
+          <td class="mono" style="font-size:var(--text-sm)">{{ r.model }}</td>
+          <td class="num mono dim">{{ r.calls }}</td>
+          <td class="num mono dim">{{ r.tokens_in }}</td>
+          <td class="num mono dim">{{ r.tokens_out }}</td>
+          <td class="num mono" style="font-weight:500">${{ "%.4f"|format(r.cost) }}</td>
+          <td class="num">
+            <div class="row" style="justify-content:flex-end;gap:8px">
+              <div style="width:60px;height:4px;background:var(--bg-elev-2);border-radius:999px;overflow:hidden">
+                <div style="width:{{ (r.share * 100) | round(1) }}%;height:100%;background:var(--accent-9)"></div>
+              </div>
+              <span class="mono dim" style="width:36px">{{ "%.1f"|format(r.share * 100) }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="dex-empty-state" style="padding:32px 24px">
+              <i data-lucide="database" style="width:28px;height:28px;opacity:.3;margin-bottom:10px"></i>
+              <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No model-level data</div>
+              <div class="muted" style="font-size:var(--text-xs)">
+                Per-model cost breakdown will populate once the cost tracking
+                subsystem is wired to outbound LLM calls.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

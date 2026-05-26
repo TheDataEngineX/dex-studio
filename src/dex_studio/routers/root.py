@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,7 +22,17 @@ from dex_studio.routers._deps import base_ctx, render, require_auth, require_eng
 router = APIRouter()
 
 
-# ── Project Hub (/") ─────────────────────────────────────────────────────────
+# ── Privacy alias — canonical home is /secops ─────────────────────────────────
+
+
+@router.get("/privacy")
+@router.get("/privacy/")
+async def privacy_redirect() -> RedirectResponse:
+    """Redirect /privacy* → /secops (Governance nav maps here)."""
+    return RedirectResponse(url="/secops", status_code=301)
+
+
+# ── Project Hub ("/") ────────────────────────────────────────────────────────
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -41,13 +51,53 @@ async def hub(request: Request) -> HTMLResponse:
     source_count = len(eng.config.data.sources or {})
     pipeline_count = stats.get("total", 0)
 
+    # ── Layer stats (best-effort — lakehouse may be None) ─────────────────────
+    lakehouse = getattr(eng, "lakehouse", None)
+    layer_stats: list[dict[str, Any]] = []
+    table_count = source_count
+    if lakehouse is not None:
+        try:
+            for layer in ("bronze", "silver", "gold"):
+                tables = getattr(lakehouse, f"{layer}_tables", None) or []
+                layer_stats.append(
+                    {
+                        "layer": layer,
+                        "count": len(tables),
+                        "rows": "—",
+                        "size": "—",
+                        "desc": {
+                            "bronze": "raw ingest — sources, files, streams",
+                            "silver": "cleaned, joined, masked",
+                            "gold": "modeled features, dashboards",
+                        }[layer],
+                    }
+                )
+                table_count += len(tables)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ── Engine components ─────────────────────────────────────────────────────
+    components: list[dict[str, Any]] = []
+    for name, val in health.get("components", {}).items():
+        available = bool(val) if not isinstance(val, bool) else val
+        components.append(
+            {
+                "name": name.replace("_", " ").title(),
+                "ok": available,
+            }
+        )
+
     ctx = base_ctx(request) | {
         "stats": stats,
         "pipeline_count": pipeline_count,
         "source_count": source_count,
         "model_count": len(models),
         "agent_count": agents_count,
+        "table_count": table_count,
         "health_status": health.get("status", "unknown"),
+        "layer_stats": layer_stats,
+        "components": components,
+        "recent_runs": [],  # populated when RunStore lands
         "user_projects": [{"name": n, "path": str(p)} for n, p in find_user_projects()],
     }
     return render(request, "root/hub.html", ctx)

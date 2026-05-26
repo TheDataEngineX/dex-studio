@@ -149,6 +149,102 @@ async def system_components(request: Request) -> HTMLResponse:
     return render(request, "system/components.html", ctx)
 
 
+# ── Runs ──────────────────────────────────────────────────────────────────────
+
+
+@router.get("/runs", response_class=HTMLResponse)
+async def system_runs(
+    request: Request,
+    type: str = "all",
+    status: str = "all",
+) -> HTMLResponse:
+    """Unified run history — pipelines, transforms, workflows, agents, streams."""
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    stats = eng.pipeline_stats()
+    # Synthesise a run list from available engine data.
+    # When a dedicated RunStore lands (dex ≥ 0.5), replace with eng.run_store.recent().
+    runs: list[dict[str, Any]] = []
+    pipelines = getattr(eng, "pipelines", {})
+    for name, pl in pipelines.items() if isinstance(pipelines, dict) else []:
+        last_run = getattr(pl, "last_run", None)
+        if last_run:
+            runs.append(
+                {
+                    "type": "pipeline",
+                    "name": name,
+                    "status": getattr(last_run, "status", "unknown"),
+                    "started": str(getattr(last_run, "started_at", ""))[:19].replace("T", " "),
+                    "duration": getattr(last_run, "duration_str", "—"),
+                    "trigger": getattr(last_run, "trigger", "manual"),
+                    "io": "—",
+                }
+            )
+    # Apply client-side filters (server-side for graceful degradation / deep-link).
+    type_options = ["all", "pipeline", "transform", "workflow", "agent", "stream"]
+    status_options = ["all", "running", "success", "error", "cancelled"]
+    if type != "all":
+        runs = [r for r in runs if r["type"] == type]
+    if status != "all":
+        runs = [r for r in runs if r["status"] == status]
+    ctx = base_ctx(request) | {
+        "runs": runs,
+        "total_count": stats.get("total", 0),
+        "running_count": stats.get("running", 0),
+        "failed_count": stats.get("failed", 0),
+        "filter_type": type,
+        "filter_status": status,
+        "type_options": type_options,
+        "status_options": status_options,
+    }
+    return render(request, "system/runs.html", ctx)
+
+
+# ── Costs ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/costs", response_class=HTMLResponse)
+async def system_costs(request: Request) -> HTMLResponse:
+    """External API spend — per-provider breakdown.
+
+    Populated by the AuditLogger / cost-tracking subsystem once available
+    (dex ≥ 0.5). Until then, renders a zero-state scaffold.
+    """
+    if redir := _guard(request):
+        return redir  # type: ignore[return-value]
+    eng = get_eng()
+    # Pull spend data from audit events when available.
+    audit = getattr(eng, "secops_audit", None)
+    events = audit.events if audit is not None else []
+    # Aggregate cost by provider from outbound events (schema: event.metadata["provider"]).
+    provider_map: dict[str, float] = {}
+    for ev in events:
+        md = getattr(ev, "metadata", {}) or {}
+        prov = md.get("provider", "")
+        cost = float(md.get("cost_usd", 0.0))
+        if prov and cost:
+            provider_map[prov] = provider_map.get(prov, 0.0) + cost
+    spend_total = sum(provider_map.values())
+    budget = 25.0  # TODO: pull from config when available
+    providers = [
+        {
+            "name": k,
+            "spend": round(v, 4),
+            "share": round(v / spend_total, 4) if spend_total else 0.0,
+        }
+        for k, v in sorted(provider_map.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+    ctx = base_ctx(request) | {
+        "spend_total": round(spend_total, 4),
+        "budget": budget,
+        "budget_pct": round(min(spend_total / budget * 100, 100), 1) if budget else 0.0,
+        "providers": providers,
+        "breakdown": [],  # model-level breakdown — requires cost tracking in RunStore
+    }
+    return render(request, "system/costs.html", ctx)
+
+
 # ── Stubs ─────────────────────────────────────────────────────────────────────
 
 

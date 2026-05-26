@@ -1,88 +1,138 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state, status_badge %}
 
-{% block title %}SecOps — DEX Studio{% endblock %}
-{% block page_title %}Privacy Guard{% endblock %}
+{% block title %}Privacy Guard — DEX Studio{% endblock %}
+
+{% block page_title %}Privacy &amp; Security{% endblock %}
+
 {% block page_actions %}
-<a href="/secops/audit" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+{% if guard_enabled %}
+<span class="pill success" style="height:22px">guard active · {{ strategies | length }} strateg{{ 'ies' if strategies | length != 1 else 'y' }}</span>
+{% else %}
+<span class="pill warn" style="height:22px">guard disabled</span>
+{% endif %}
+<a href="/secops/audit" class="btn sm" style="text-decoration:none;margin-left:8px">
   <i data-lucide="scroll-text" style="width:13px;height:13px"></i> Audit Log
 </a>
 {% endblock %}
 
 {% block content %}
+<p class="muted" style="font-size:var(--text-sm);margin:-8px 0 var(--space-5)">
+  all outbound calls routed through the local privacy guard · PII never leaves disk unmasked
+</p>
 
-<!-- Guard status banner -->
-<div class="dex-health-banner {{ 'healthy' if guard_enabled else 'degraded' }}" style="margin-bottom:20px">
-  <div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:{{ 'var(--green-4)' if guard_enabled else 'var(--amber-4)' }}">
-    <i data-lucide="{{ 'shield-check' if guard_enabled else 'shield-off' }}"
-       style="width:20px;height:20px;color:{{ 'var(--green-9)' if guard_enabled else 'var(--amber-9)' }}"></i>
-  </div>
-  <div>
-    <div style="font-size:15px;font-weight:700;color:var(--gray-12)">
-      {{ "PrivacyGuard Active" if guard_enabled else "PrivacyGuard Disabled" }}
-    </div>
-    <div style="font-size:12px;color:var(--gray-9);margin-top:2px">
+{# ── Stat cards ──────────────────────────────────────────────────────────── #}
+<div class="grid grid-4" style="margin-bottom:var(--space-5)">
+
+  <div class="stat">
+    <div class="lbl"><i data-lucide="send" style="width:11px;height:11px"></i> Guard status</div>
+    <div class="val" style="font-size:var(--text-lg)">
       {% if guard_enabled %}
-        {{ "Blocking on PII detect" if block_on_detect else "Masking PII before outbound calls" }}
+        <span style="color:var(--green-9)">Active</span>
       {% else %}
-        All prompts pass unmodified — enable in dex.yaml <code style="font-size:11px;background:var(--gray-3);padding:1px 5px;border-radius:3px">secops.guard.enabled: true</code>
+        <span style="color:var(--amber-9)">Disabled</span>
       {% endif %}
     </div>
+    <div class="delta">{{ 'blocking on detect' if block_on_detect else 'mask-and-pass' }}</div>
   </div>
+
+  <div class="stat">
+    <div class="lbl"><i data-lucide="shield-check" style="width:11px;height:11px"></i> Strategies</div>
+    <div class="val">{{ strategies | length }}</div>
+    <div class="delta">PII type overrides</div>
+  </div>
+
+  <div class="stat">
+    <div class="lbl"><i data-lucide="scroll-text" style="width:11px;height:11px"></i> Audit events</div>
+    <div class="val">{{ audit_count }}</div>
+    <div class="delta">{{ 'audit active' if audit_enabled else 'audit disabled' }}</div>
+  </div>
+
+  <div class="stat">
+    <div class="lbl"><i data-lucide="server" style="width:11px;height:11px"></i> Local targets</div>
+    <div class="val">{{ local_targets | length }}</div>
+    <div class="delta">bypass-allowed hosts</div>
+  </div>
+
 </div>
 
-<!-- Config grid -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+{# ── Two-column: guard settings + audit ─────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1.5fr 1fr;gap:var(--space-3);margin-bottom:var(--space-5)">
 
-  <!-- Guard settings card -->
-  <div class="dex-card" style="padding:16px">
-    <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">Guard Settings</h3>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      {% for label, val in [
-          ('Enabled', guard_enabled),
-          ('Block on detect', block_on_detect),
-          ('Allow local bypass', allow_local),
-          ('Log all outbound', log_all_outbound),
-      ] %}
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
-        <span style="color:var(--gray-11)">{{ label }}</span>
-        <span style="font-weight:600;color:{{ 'var(--green-10)' if val else 'var(--red-10)' }}">
-          {{ "yes" if val else "no" }}
-        </span>
-      </div>
-      {% endfor %}
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;font-size:12px;margin-top:4px;padding-top:8px;border-top:1px solid var(--gray-4)">
-        <span style="color:var(--gray-11)">Local targets</span>
-        <span style="font-size:11px;color:var(--gray-10);text-align:right">
-          {% for t in local_targets %}<code style="background:var(--gray-3);padding:1px 5px;border-radius:3px;margin-left:3px">{{ t }}</code>{% endfor %}
-        </span>
+  {# Guard settings card #}
+  <div class="card" style="padding:18px">
+    <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:12px">Guard configuration</div>
+
+    {% for label, val in [
+        ('Enabled',           guard_enabled),
+        ('Block on detect',   block_on_detect),
+        ('Allow local bypass', allow_local),
+        ('Log all outbound',  log_all_outbound),
+    ] %}
+    {% if not loop.first %}<div class="div-y"></div>{% endif %}
+    <div class="spread" style="padding:7px 0;font-size:var(--text-sm)">
+      <span class="muted">{{ label }}</span>
+      {% if val %}
+      <span class="pill success" style="height:18px;font-size:10px">yes</span>
+      {% else %}
+      <span class="pill error" style="height:18px;font-size:10px">no</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if local_targets %}
+    <div class="div-y" style="margin-top:4px"></div>
+    <div class="spread" style="padding:8px 0;font-size:var(--text-sm);align-items:flex-start">
+      <span class="muted">Local targets</span>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
+        {% for t in local_targets %}
+        <code style="font-family:var(--font-mono);font-size:var(--text-xs);
+                     background:var(--bg-elev-2);padding:1px 6px;border-radius:var(--r-1);
+                     border:1px solid var(--border)">{{ t }}</code>
+        {% endfor %}
       </div>
     </div>
+    {% endif %}
+
+    {% if not guard_enabled %}
+    <div class="div-y" style="margin-top:8px"></div>
+    <div style="margin-top:10px;font-size:var(--text-xs);color:var(--text-3)">
+      Enable in <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">dex.yaml</code>:
+      <pre style="margin-top:6px;font-family:var(--font-mono);font-size:11px;background:var(--bg-elev-2);
+                  padding:10px;border-radius:var(--r-2);border:1px solid var(--border);
+                  line-height:1.6;overflow-x:auto">secops:
+  guard:
+    enabled: true</pre>
+    </div>
+    {% endif %}
   </div>
 
-  <!-- Audit card -->
-  <div class="dex-card" style="padding:16px">
-    <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">Audit Logger</h3>
+  {# Audit card #}
+  <div class="card" style="padding:18px">
+    <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:12px">Audit logger</div>
     {% if audit_enabled %}
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;justify-content:space-between;font-size:12px">
-        <span style="color:var(--gray-11)">Status</span>
-        <span style="font-weight:600;color:var(--green-10)">active</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:12px">
-        <span style="color:var(--gray-11)">Events retained</span>
-        <span style="font-weight:600;color:var(--gray-12)">{{ audit_count }}</span>
-      </div>
-      <div style="margin-top:8px">
-        <a href="/secops/audit" class="rt-Button" data-variant="soft" data-color="indigo" data-size="1">
-          <i data-lucide="scroll-text" style="width:11px;height:11px"></i> View full log
-        </a>
-      </div>
+    <div class="spread" style="padding:7px 0;font-size:var(--text-sm)">
+      <span class="muted">Status</span>
+      <span class="pill success" style="height:18px;font-size:10px">active</span>
+    </div>
+    <div class="div-y"></div>
+    <div class="spread" style="padding:7px 0;font-size:var(--text-sm)">
+      <span class="muted">Events retained</span>
+      <span class="mono tnum">{{ audit_count }}</span>
+    </div>
+    <div class="div-y"></div>
+    <div style="margin-top:10px">
+      <a href="/secops/audit" class="btn sm" style="text-decoration:none;width:100%;justify-content:center">
+        <i data-lucide="scroll-text" style="width:12px;height:12px"></i> View full audit log
+      </a>
     </div>
     {% else %}
-    <div style="font-size:12px;color:var(--gray-9)">
-      Disabled — enable in <code style="font-size:11px;background:var(--gray-3);padding:1px 5px;border-radius:3px">dex.yaml</code>:<br>
-      <pre style="margin-top:8px;font-size:11px;background:var(--gray-3);padding:8px;border-radius:5px;line-height:1.5">secops:
+    <div style="font-size:var(--text-xs);color:var(--text-3)">
+      Audit logger is disabled. Enable it in
+      <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);
+                   padding:1px 5px;border-radius:var(--r-1)">dex.yaml</code>:
+      <pre style="margin-top:8px;font-family:var(--font-mono);font-size:11px;
+                  background:var(--bg-elev-2);padding:10px;border-radius:var(--r-2);
+                  border:1px solid var(--border);line-height:1.6;overflow-x:auto">secops:
   audit:
     enabled: true</pre>
     </div>
@@ -91,55 +141,91 @@
 
 </div>
 
-<!-- PII strategies -->
-<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">PII Strategies</h3>
+{# ── PII strategies ──────────────────────────────────────────────────────── #}
+<div class="section-h">
+  <h2>PII strategies</h2>
+  <span class="muted" style="font-size:var(--text-xs)">per-type masking overrides</span>
+</div>
+
 {% if strategies %}
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:24px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-bottom:var(--space-5)">
   {% for s in strategies %}
-  <div class="dex-component-card" style="border-left:3px solid var(--indigo-6)">
-    <div style="font-size:12px;font-weight:600;color:var(--gray-12)">{{ s.pii_type }}</div>
-    <div style="font-size:11px;color:var(--indigo-10);font-weight:500;margin-top:2px">{{ s.strategy }}</div>
+  <div class="dex-component-card" style="border-left:3px solid var(--accent-6)">
+    <div style="font-size:var(--text-sm);font-weight:600;color:var(--text)">{{ s.pii_type }}</div>
+    <div class="mono" style="font-size:var(--text-xs);color:var(--accent-11);margin-top:3px">{{ s.strategy }}</div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<div style="font-size:12px;color:var(--gray-9);margin-bottom:24px;padding:12px;background:var(--gray-2);border-radius:6px">
-  No per-type overrides — all PII types use the default strategy (<strong>REDACT</strong>).
-  Configure in <code style="font-size:11px;background:var(--gray-3);padding:1px 5px;border-radius:3px">secops.guard.strategies</code>.
+<div class="card" style="padding:14px;margin-bottom:var(--space-5)">
+  <span class="muted" style="font-size:var(--text-sm)">
+    No per-type overrides — all detected PII uses the default strategy
+    (<strong>REDACT</strong>). Configure in
+    <code style="font-family:var(--font-mono);font-size:var(--text-xs);background:var(--bg-elev-2);
+                 padding:1px 6px;border-radius:var(--r-1)">secops.guard.strategies</code>.
+  </span>
 </div>
 {% endif %}
 
-<!-- Recent audit events -->
+{# ── Recent events ───────────────────────────────────────────────────────── #}
 {% if audit_enabled and recent_events %}
-<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">
-  Recent Events
-  <a href="/secops/audit" style="margin-left:8px;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--indigo-10);text-decoration:none">view all →</a>
-</h3>
-<table class="dex-table" style="margin-bottom:24px">
-  <thead>
-    <tr>
-      <th>Time</th><th>Operation</th><th>Dataset</th><th>PII Fields</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for e in recent_events %}
-    <tr>
-      <td style="font-size:11px;color:var(--gray-9)">{{ e.occurred_at }}</td>
-      <td>
-        <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;
-          background:{{ 'var(--red-3)' if e.operation == 'pii_access' else 'var(--indigo-3)' }};
-          color:{{ 'var(--red-10)' if e.operation == 'pii_access' else 'var(--indigo-10)' }}">
-          {{ e.operation }}
-        </span>
-      </td>
-      <td style="font-size:12px">{{ e.dataset }}</td>
-      <td style="font-size:11px;color:var(--gray-10)">
-        {% for f in e.pii_fields %}<code style="background:var(--gray-3);padding:1px 5px;border-radius:3px;margin-right:3px">{{ f }}</code>{% endfor %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="section-h">
+  <h2>Recent events</h2>
+  <a href="/secops/audit" class="btn sm ghost" style="text-decoration:none">
+    View all <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
+  </a>
+</div>
+
+<div class="card bare">
+  <table class="tbl dex-table">
+    <thead>
+      <tr>
+        <th style="width:150px">Time</th>
+        <th style="width:140px">Operation</th>
+        <th>Dataset</th>
+        <th>PII fields</th>
+        <th class="num" style="width:90px">Records</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in recent_events %}
+      <tr>
+        <td class="mono dim" style="font-size:var(--text-xs)">{{ e.occurred_at }}</td>
+        <td>
+          {% if e.operation == 'pii_access' %}
+          <span class="pill error" style="height:18px;font-size:10px">{{ e.operation }}</span>
+          {% elif e.operation == 'llm_call' %}
+          <span class="pill info" style="height:18px;font-size:10px">{{ e.operation }}</span>
+          {% else %}
+          <span class="pill" style="height:18px;font-size:10px">{{ e.operation }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:var(--text-sm)">{{ e.dataset }}</td>
+        <td>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            {% for f in e.pii_fields %}
+            <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);
+                         padding:1px 6px;border-radius:var(--r-1);border:1px solid var(--border)">{{ f }}</code>
+            {% endfor %}
+          </div>
+        </td>
+        <td class="num mono dim">{{ e.record_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif audit_enabled %}
+<div class="section-h"><h2>Recent events</h2></div>
+<div class="card">
+  <div class="dex-empty-state" style="padding:32px">
+    <i data-lucide="shield-check" style="width:28px;height:28px;opacity:.3;margin-bottom:10px"></i>
+    <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No events recorded yet</div>
+    <div class="muted" style="font-size:var(--text-xs)">
+      Audit events appear here once the guard intercepts outbound LLM calls.
+    </div>
+  </div>
+</div>
 {% endif %}
 
 {% endblock %}
