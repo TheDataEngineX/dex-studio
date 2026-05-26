@@ -72,7 +72,7 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import ai, data, ml, root, system
+    from dex_studio.routers import ai, data, ml, root, secops, system
 
     app = FastAPI(
         title="DEX Studio",
@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(data.router, prefix="/data")
     app.include_router(ml.router, prefix="/ml")
     app.include_router(ai.router, prefix="/ai")
+    app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
 
     @app.get("/health", tags=["health"])

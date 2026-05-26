@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
+
+{% block title %}Audit Log — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+{% block page_actions %}
+<a href="/secops" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">
+  <i data-lucide="shield-check" style="width:13px;height:13px"></i> Guard Overview
+</a>
+{% endblock %}
+
+{% block content %}
+
+{% if not audit_enabled %}
+<div style="padding:32px;text-align:center">
+  {{ empty_state("scroll-text", "Audit logger is disabled") }}
+  <div style="font-size:12px;color:var(--gray-9);margin-top:12px">
+    Enable it in <code style="background:var(--gray-3);padding:1px 6px;border-radius:3px">dex.yaml</code>:
+    <pre style="display:inline-block;margin-top:8px;font-size:11px;background:var(--gray-3);padding:10px 16px;border-radius:6px;text-align:left;line-height:1.6">secops:
+  audit:
+    enabled: true
+    db_path: "secops_audit.db"  # omit for in-memory only</pre>
+  </div>
+</div>
+
+{% elif events %}
+<div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+  <span style="font-size:12px;color:var(--gray-9)">{{ events | length }} event(s) — newest first</span>
+</div>
+<table class="dex-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Operation</th>
+      <th>Dataset</th>
+      <th>PII Fields</th>
+      <th>Records</th>
+      <th>Actor</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr>
+      <td style="font-size:11px;color:var(--gray-9);white-space:nowrap">{{ e.occurred_at }}</td>
+      <td>
+        <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;
+          {% if e.operation == 'pii_access' %}background:var(--red-3);color:var(--red-10)
+          {% elif e.operation == 'pii_mask' %}background:var(--indigo-3);color:var(--indigo-10)
+          {% else %}background:var(--gray-3);color:var(--gray-10){% endif %}">
+          {{ e.operation }}
+        </span>
+      </td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ e.dataset }}">
+        {{ e.dataset }}
+      </td>
+      <td style="font-size:11px">
+        {% if e.pii_fields and e.pii_fields != '—' %}
+          {% for f in e.pii_fields.split(', ') %}
+          <code style="background:var(--gray-3);padding:1px 5px;border-radius:3px;margin-right:2px">{{ f }}</code>
+          {% endfor %}
+        {% else %}
+          <span style="color:var(--gray-8)">—</span>
+        {% endif %}
+      </td>
+      <td style="font-size:12px;text-align:right">{{ e.record_count }}</td>
+      <td style="font-size:11px;color:var(--gray-9)">{{ e.actor }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% else %}
+{{ empty_state("scroll-text", "No audit events yet") }}
+<div style="text-align:center;font-size:12px;color:var(--gray-9);margin-top:8px">
+  Events appear here after the PrivacyGuard processes an outbound LLM call with PII.
+</div>
+{% endif %}
+
+{% endblock %}
