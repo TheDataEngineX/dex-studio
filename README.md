@@ -4,93 +4,120 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**DEX Studio** — self-hosted web UI for the [DataEngineX](https://github.com/TheDataEngineX/dex) platform.
-Single control plane for Data · ML · AI · System.
+**Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
 
-Built on FastAPI + Jinja2 + HTMX. Imports `dataenginex` directly — no separate API server needed.
+> _Demo GIF lands in v0.5 (see [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md))._ Today the studio is functional but the polished CSV → train classifier → ask-questions-with-LLM walkthrough is the next milestone.
 
----
+______________________________________________________________________
 
-## Architecture
-
-DEX Studio is Layer 2 in the three-layer DEX architecture:
-
-```text
-Layer 1: dataenginex (library)  — PyPI package, DexEngine, DexStore, CLI
-     ↓ direct Python import (same process)
-Layer 2: DEX Studio (shell)     — this repo, FastAPI + Jinja2 + HTMX
-     ↓ page router registration
-Layer 3: Domain Apps            — register custom pages into Studio
-```
-
-Studio imports `dataenginex` as a library via `DexEngine`. No HTTP hop to a separate engine process.
-
----
-
-## Quick Start
+## Run it in 60 seconds
 
 ```bash
 git clone https://github.com/TheDataEngineX/dex-studio && cd dex-studio
+docker compose up
+# open http://localhost:7860
+```
+
+Or run locally without Docker:
+
+```bash
 uv sync
+uv run poe dev                          # http://localhost:7860 with hot-reload
+```
 
-# Launch Studio (opens with an empty project list)
-uv run poe dev   # http://localhost:7860
+Point it at a specific config:
 
-# Or point to a specific dex.yaml
+```bash
 dex-studio --config /path/to/dex.yaml
 ```
 
----
+______________________________________________________________________
 
-## Pages
+## What you get
 
-| Domain | Pages |
-|--------|-------|
-| Data | Dashboard, Pipelines, Sources, SQL Console, Warehouse, Lineage, Quality, Catalog |
-| ML | Dashboard, Models, Experiments, Predictions, Drift |
-| AI | Dashboard, Agents, Playground |
-| System | Status, Logs, Metrics, Components |
+Single page-of-glass UI for everything the [`dataenginex`](https://github.com/TheDataEngineX/dex) library does — no separate API server, no microservices.
 
----
+| Domain | Today | Phase 2/3 of [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) |
+| --- | --- | --- |
+| **Data** | Sources, Pipelines, SQL console, Warehouse, Lineage, Quality | Catalog browser, SQL transform editor, lineage DAG viz, streaming sources, ER diagrams |
+| **ML** | Models, Experiments, Drift | Per-experiment artifact view, prediction history |
+| **AI** | Agents, Playground (chat), Memory | Streaming tokens, tool-call cards, conversation persistence, YAML workflows |
+| **Privacy & Security** | Backend: PII detection + masking + audit | UI: outbound-call guardrail, audit log viewer, policy editor, quarantine |
+| **System** | Status, Logs, Metrics | Unified runs feed, cost dashboard, "what touched my data" timeline |
+| **Dashboards** | — | Vega-Lite chart grids built from SQL queries |
+| **Alerts** | — | Slack / Discord / email channels for run failures, quality breaches, budget thresholds |
+
+______________________________________________________________________
+
+## Local-first by default
+
+- DuckDB is embedded — no Postgres / Redis required for the base install
+- LLM defaults to [Ollama](https://ollama.com) running locally; OpenAI / Anthropic are opt-in
+- Optional integrations gated behind `dataenginex` extras (`[postgres]`, `[qdrant]`, `[cloud]`, …)
+- Every outbound network call is logged; PII guardrails mask sensitive fields before any external request
+- All data lives in `.dex/` next to your project — copy the folder, move machines, you're done
+
+______________________________________________________________________
 
 ## Configuration
 
 ```bash
-export DEX_STUDIO_API_KEY=your-key   # optional — disables auth if unset
-export DEX_STUDIO_HOST=0.0.0.0       # default
-export DEX_STUDIO_PORT=7860          # default
+export DEX_STUDIO_API_KEY=your-key       # optional — disables auth if unset
+export DEX_STUDIO_HOST=0.0.0.0           # default
+export DEX_STUDIO_PORT=7860              # default
 ```
 
-Projects registry: `~/.dex-studio/projects.yaml`
+Projects registry: `~/.dex-studio/projects.yaml` — switch between projects via the sidebar dropdown.
 
----
+______________________________________________________________________
 
-## Tech Stack
+## Tech stack
 
 | Component | Technology |
-|-----------|------------|
+| --- | --- |
 | Server | FastAPI + Uvicorn |
-| Templates | Jinja2 |
-| Interactivity | HTMX |
-| Engine | dataenginex (direct import) |
+| Templates | Jinja2 (server-rendered HTML) |
+| Interactivity | HTMX + Alpine.js |
+| Styling | Custom CSS + Radix UI design tokens |
+| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dex) — direct import, no HTTP hop |
 | Config | PyYAML + Pydantic |
 | Build | Hatchling + uv |
 | Testing | pytest + httpx TestClient |
-| Linting | Ruff |
-| Type Checking | mypy strict |
+| Linting / Types | Ruff + mypy strict |
 
----
+The frontend stack is frozen for 12 months (no React/Vue/Svelte) — see [ADR-0007](https://github.com/TheDataEngineX/docs/blob/main/adr/0007-local-first-scope-reset.md).
+
+______________________________________________________________________
 
 ## Development
 
 ```bash
-uv run poe lint          # ruff lint
-uv run poe typecheck     # mypy strict
-uv run poe test          # pytest
-uv run poe check-all     # lint + typecheck + test
-uv run poe dev           # uvicorn dev server (port 7860, reload)
+uv run poe lint              # ruff lint
+uv run poe lint-fix          # ruff lint + auto-fix
+uv run poe typecheck         # mypy strict
+uv run poe test              # pytest
+uv run poe check-all         # lint + typecheck + test
+uv run poe dev               # uvicorn dev server (port 7860, hot-reload)
 ```
 
----
+Design system reference for contributors: [DESIGN-BRIEF-2026.md](DESIGN-BRIEF-2026.md) (the brief used to commission the v0.5 visual design) — see also `src/dex_studio/static/studio.css` for current tokens.
 
-**Version**: [![Release](https://img.shields.io/github/v/release/TheDataEngineX/dex-studio)](https://github.com/TheDataEngineX/dex-studio/releases) | **License**: MIT
+______________________________________________________________________
+
+## Ecosystem
+
+| Repo | Purpose |
+| --- | --- |
+| [dataenginex](https://github.com/TheDataEngineX/dex) | The Python library (PyPI) — engine, config, all backends |
+| [dex-studio](https://github.com/TheDataEngineX/dex-studio) | This repo — web UI |
+| [docs](https://github.com/TheDataEngineX/docs) | Documentation site — ADRs + 10-week roadmap |
+
+______________________________________________________________________
+
+## Status
+
+Pre-1.0, rebuilding scope through v0.5. See the [DEX scope-reset CHANGELOG](https://github.com/TheDataEngineX/dex/blob/main/CHANGELOG.md) for the rationale and the [2026 roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) for what ships next.
+
+______________________________________________________________________
+
+**License:** MIT • **Python:** 3.13+ • **Port:** 7860
