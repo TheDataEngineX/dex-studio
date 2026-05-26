@@ -1,0 +1,23 @@
+[tool.poe]
+executor.type = "uv"
+
+[tool.poe.tasks.lint]
+cmd = "ruff check src/ tests/"
+
+[tool.poe.tasks.lint-fix]
+cmd = "ruff check --fix src/ tests/ && ruff format src/"
+
+[tool.poe.tasks.typecheck]
+cmd = "mypy src/careerdex/"
+
+[tool.poe.tasks.test]
+cmd = "pytest"
+
+[tool.poe.tasks.check-all]
+shell = "poe lint && poe typecheck && poe test"
+
+[tool.poe.tasks.dev]
+cmd = "reflex run"
+
+[tool.poe.tasks.install-hooks]
+cmd = "pre-commit install"

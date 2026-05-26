@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: {{ resume.font_size_pt }}pt;
+    color: #1a1a1a;
+    line-height: 1.4;
+    padding: 18mm 18mm 14mm 18mm;
+  }
+
+  /* Header */
+  .header { margin-bottom: 10px; }
+  .header h1 { font-size: 22pt; font-weight: 700; color: #111; }
+  .header .title { font-size: 11pt; color: {{ resume.accent_color }}; font-weight: 500; margin-top: 2px; }
+  .header .contact {
+    display: flex; flex-wrap: wrap; gap: 6px 16px;
+    font-size: 8.5pt; color: #444; margin-top: 6px;
+  }
+  .header .contact a { color: #444; text-decoration: none; }
+
+  /* Section */
+  .section { margin-top: 10px; }
+  .section-title {
+    font-size: 9pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: {{ resume.accent_color }};
+    border-bottom: 1px solid {{ resume.accent_color }}44;
+    padding-bottom: 2px; margin-bottom: 7px;
+  }
+
+  /* Summary */
+  .summary { font-size: 9.5pt; color: #333; }
+
+  /* Skills grid */
+  .skills-grid { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+  .skill-group { min-width: 180px; margin-bottom: 4px; }
+  .skill-group .cat { font-weight: 600; font-size: 8.5pt; color: #222; }
+  .skill-group .vals { font-size: 8.5pt; color: #444; }
+
+  /* Experience */
+  .exp-item { margin-bottom: 8px; }
+  .exp-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .exp-title { font-weight: 700; font-size: 9.5pt; }
+  .exp-company { font-size: 9pt; color: #333; margin-top: 1px; }
+  .exp-dates { font-size: 8pt; color: #666; white-space: nowrap; }
+  .exp-bullets { margin: 4px 0 0 14px; }
+  .exp-bullets li { font-size: 8.8pt; color: #333; margin-bottom: 2px; }
+  .tech-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .tech-tag {
+    background: {{ resume.accent_color }}18; color: {{ resume.accent_color }};
+    font-size: 7.5pt; padding: 1px 6px; border-radius: 3px;
+  }
+
+  /* Education */
+  .edu-item { margin-bottom: 7px; }
+  .edu-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .edu-degree { font-weight: 700; font-size: 9.5pt; }
+  .edu-institution { font-size: 9pt; color: #333; }
+  .edu-dates { font-size: 8pt; color: #666; white-space: nowrap; }
+  .edu-detail { font-size: 8.5pt; color: #555; margin-top: 2px; }
+
+  /* Certs */
+  .cert-list { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+  .cert-item { font-size: 8.8pt; color: #333; }
+  .cert-issuer { font-size: 8pt; color: #666; }
+
+  /* Projects */
+  .project-item { margin-bottom: 7px; }
+  .project-name { font-weight: 700; font-size: 9.5pt; }
+  .project-desc { font-size: 8.8pt; color: #333; margin-top: 2px; }
+  .project-bullets { margin: 3px 0 0 14px; }
+  .project-bullets li { font-size: 8.5pt; color: #444; margin-bottom: 2px; }
+
+  @page { size: A4; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <h1>{{ resume.contact.name }}</h1>
+  {% if resume.contact.title %}<div class="title">{{ resume.contact.title }}</div>{% endif %}
+  <div class="contact">
+    {% if resume.contact.email %}<span>{{ resume.contact.email }}</span>{% endif %}
+    {% if resume.contact.phone %}<span>{{ resume.contact.phone }}</span>{% endif %}
+    {% if resume.contact.location %}<span>{{ resume.contact.location }}</span>{% endif %}
+    {% if resume.contact.linkedin %}<a href="{{ resume.contact.linkedin }}">{{ resume.contact.linkedin | replace('https://','') }}</a>{% endif %}
+    {% if resume.contact.github %}<a href="{{ resume.contact.github }}">{{ resume.contact.github | replace('https://','') }}</a>{% endif %}
+    {% if resume.contact.website %}<a href="{{ resume.contact.website }}">{{ resume.contact.website | replace('https://','') }}</a>{% endif %}
+  </div>
+</div>
+
+<!-- SUMMARY -->
+{% if resume.summary %}
+<div class="section">
+  <div class="section-title">Summary</div>
+  <p class="summary">{{ resume.summary }}</p>
+</div>
+{% endif %}
+
+<!-- SKILLS -->
+{% if resume.skills %}
+<div class="section">
+  <div class="section-title">Skills</div>
+  <div class="skills-grid">
+    {% for group in resume.skills %}
+    <div class="skill-group">
+      <span class="cat">{{ group.category }}:</span>
+      <span class="vals">{{ group.skills | join(', ') }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- EXPERIENCE -->
+{% if resume.experience %}
+<div class="section">
+  <div class="section-title">Experience</div>
+  {% for exp in resume.experience %}
+  <div class="exp-item">
+    <div class="exp-header">
+      <span class="exp-title">{{ exp.title }}</span>
+      <span class="exp-dates">
+        {{ exp.start_date }}{% if exp.start_date %} – {% endif %}{{ exp.end_date if exp.end_date else 'Present' }}
+        {% if exp.location %} · {{ exp.location }}{% endif %}
+      </span>
+    </div>
+    <div class="exp-company">{{ exp.company }}</div>
+    {% if exp.bullets %}
+    <ul class="exp-bullets">
+      {% for bullet in exp.bullets %}<li>{{ bullet }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if exp.technologies %}
+    <div class="tech-tags">
+      {% for t in exp.technologies %}<span class="tech-tag">{{ t }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- EDUCATION -->
+{% if resume.education %}
+<div class="section">
+  <div class="section-title">Education</div>
+  {% for edu in resume.education %}
+  <div class="edu-item">
+    <div class="edu-header">
+      <span class="edu-degree">{{ edu.degree }}{% if edu.field %} in {{ edu.field }}{% endif %}</span>
+      <span class="edu-dates">
+        {{ edu.start_date }}{% if edu.start_date %} – {% endif %}{{ edu.end_date }}
+      </span>
+    </div>
+    <div class="edu-institution">{{ edu.institution }}{% if edu.location %} · {{ edu.location }}{% endif %}</div>
+    {% if edu.gpa %}<div class="edu-detail">GPA: {{ edu.gpa }}</div>{% endif %}
+    {% if edu.honors %}<div class="edu-detail">{{ edu.honors | join(' · ') }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- CERTIFICATIONS -->
+{% if resume.certifications %}
+<div class="section">
+  <div class="section-title">Certifications</div>
+  <div class="cert-list">
+    {% for cert in resume.certifications %}
+    <div class="cert-item">
+      <strong>{{ cert.name }}</strong>
+      <span class="cert-issuer"> · {{ cert.issuer }}{% if cert.date_earned %} ({{ cert.date_earned }}){% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- PROJECTS -->
+{% if resume.projects %}
+<div class="section">
+  <div class="section-title">Projects</div>
+  {% for proj in resume.projects %}
+  <div class="project-item">
+    <div class="exp-header">
+      <span class="project-name">{{ proj.name }}</span>
+      {% if proj.start_date %}<span class="exp-dates">{{ proj.start_date }}{% if proj.end_date %} – {{ proj.end_date }}{% endif %}</span>{% endif %}
+    </div>
+    {% if proj.description %}<p class="project-desc">{{ proj.description }}</p>{% endif %}
+    {% if proj.highlights %}
+    <ul class="project-bullets">
+      {% for h in proj.highlights %}<li>{{ h }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if proj.technologies %}
+    <div class="tech-tags" style="margin-top:3px;">
+      {% for t in proj.technologies %}<span class="tech-tag">{{ t }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- PUBLICATIONS -->
+{% if resume.publications %}
+<div class="section">
+  <div class="section-title">Publications</div>
+  {% for pub in resume.publications %}
+  <p style="font-size:8.8pt; color:#333; margin-bottom:4px;">
+    <strong>{{ pub.title }}</strong>{% if pub.venue %} · {{ pub.venue }}{% endif %}{% if pub.date %} ({{ pub.date }}){% endif %}
+    {% if pub.url %} — <a href="{{ pub.url }}" style="color:{{ resume.accent_color }};">link</a>{% endif %}
+  </p>
+  {% endfor %}
+</div>
+{% endif %}
+
+</body>
+</html>
