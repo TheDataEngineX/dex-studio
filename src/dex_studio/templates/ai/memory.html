@@ -1,30 +1,127 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Memory — DEX Studio{% endblock %}
-{% block page_title %}AI Memory{% endblock %}
+{% block title %}Memory — AI — DEX Studio{% endblock %}
+{% block page_title %}Memory{% endblock %}
+{% block page_subtitle %}long-term store for agents · vector + key/value + episodic{% endblock %}
+{% block page_actions %}
+<button class="btn"><i data-lucide="trash-2" style="width:13px;height:13px"></i> GC stale</button>
+<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New collection</button>
+{% endblock %}
 
 {% block content %}
-{% if collections %}
-<div style="display:flex;gap:12px;flex-wrap:wrap">
-  {% for c in collections %}
-  {% set color = {"short":"cyan","long":"violet","episodic":"indigo"}.get(c.type,"gray") %}
-  <div class="rt-Card" style="padding:20px;flex:1;min-width:200px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <div style="background:var(--{{ color }}-3);border-radius:6px;padding:6px;display:flex">
-        <i data-lucide="database" style="width:13px;height:13px;color:var(--{{ color }}-9)"></i>
-      </div>
-      <div>
-        <div style="font-size:13px;font-weight:700;color:var(--gray-12)">{{ c.name }}</div>
-        <div style="font-size:11px;color:var(--gray-9)">{{ c.type }}-term memory</div>
-      </div>
+
+{# ── metric strip — real counts from engine ── #}
+<div class="grid grid-4">
+  <div class="stat card" data-spark-color="var(--accent-9)">
+    <div class="stat-label">Collections</div>
+    <div class="stat-value">{{ collections | length }}</div>
+    <div class="stat-delta">{{ 'active' if collections else 'none configured' }}</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--violet-9)">
+    <div class="stat-label">Total entries</div>
+    <div class="stat-value">
+      {% set total = namespace(n=0) %}
+      {% for c in collections %}{% set total.n = total.n + (c.entries | int) %}{% endfor %}
+      {{ total.n }}
     </div>
-    <div style="font-size:28px;font-weight:700;color:var(--{{ color }}-11)">{{ c.entries }}</div>
-    <div style="font-size:11px;color:var(--gray-9);margin-top:2px">entries</div>
+    <div class="stat-delta">across all stores</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--blue-9)">
+    <div class="stat-label">Short-term</div>
+    <div class="stat-value">
+      {% set st = collections | selectattr('type', 'equalto', 'short') | list %}
+      {{ st[0].entries if st else '—' }}
+    </div>
+    <div class="stat-delta">messages buffered</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--green-9)">
+    <div class="stat-label">Long-term</div>
+    <div class="stat-value">
+      {% set lt = collections | selectattr('type', 'equalto', 'long') | list %}
+      {{ lt[0].entries if lt else '—' }}
+    </div>
+    <div class="stat-delta">persistent entries</div>
+  </div>
+</div>
+
+{% if collections %}
+
+{# ── collections grid ── #}
+<div class="section-h">
+  <h2>Collections</h2>
+</div>
+<div class="grid grid-3">
+  {% set type_meta = {
+    'short':    ('message-square', 'var(--blue-9)',   'In-context conversation buffer'),
+    'long':     ('brain',          'var(--violet-9)', 'Persistent cross-session memory'),
+    'episodic': ('clock',          'var(--accent-9)', 'Timestamped event memory'),
+  } %}
+  {% for c in collections %}
+  {% set icon, color, desc = type_meta.get(c.type, ('database', 'var(--text-3)', 'Memory store')) %}
+  <div class="card" style="padding:16px">
+    <div class="row" style="gap:10px;margin-bottom:10px">
+      <span class="glyph" style="width:28px;height:28px;background:color-mix(in oklch,{{ color }} 14%,transparent);
+                                  color:{{ color }};border-color:color-mix(in oklch,{{ color }} 28%,transparent)">
+        <i data-lucide="{{ icon }}" style="width:13px;height:13px"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">{{ c.name }}</div>
+        <div class="muted" style="font-size:11px">{{ c.type }}</div>
+      </div>
+      <span class="pill" style="height:18px;font-size:10px">active</span>
+    </div>
+    <div class="muted" style="font-size:11.5px;line-height:1.5;margin-bottom:12px">{{ desc }}</div>
+    <div class="row" style="justify-content:space-between;font-size:12px">
+      <span class="muted">Entries</span>
+      <span class="mono" style="font-weight:500">{{ c.entries }}</span>
+    </div>
   </div>
   {% endfor %}
 </div>
+
+{# ── search ── #}
+<div class="section-h" style="margin-top:16px">
+  <h2>Semantic search</h2>
+  <span class="muted" style="font-size:12px">query across all stores</span>
+</div>
+<div class="card" style="padding:12px;display:flex;gap:10px;align-items:center">
+  <div class="input-icon" style="flex:1">
+    <i data-lucide="search" style="width:12px;height:12px" class="icon"></i>
+    <input class="input" id="mem-search" placeholder="semantic search · embed query…" style="height:28px;font-size:12px">
+  </div>
+  <select class="input sm" style="width:180px;height:28px;font-size:12px">
+    <option>all collections</option>
+    {% for c in collections %}
+    <option>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn sm">Search</button>
+</div>
+<div class="card" style="padding:24px;text-align:center;margin-top:1px;border-top:none;border-radius:0 0 var(--r-3) var(--r-3)">
+  <div class="muted" style="font-size:13px">Enter a query above to search memory</div>
+  <div class="muted" style="font-size:11.5px;margin-top:4px">Semantic similarity search across episodic, long-term, and vector stores.</div>
+</div>
+
 {% else %}
-{{ empty_state("database", "No memory stores configured", "Configure ai.memory in your dex.yaml to enable memory tracking.") }}
+
+{# ── empty state ── #}
+<div class="card" style="padding:48px 24px;text-align:center;margin-top:16px">
+  <i data-lucide="brain" style="width:28px;height:28px;color:var(--text-4);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto"></i>
+  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No memory stores configured</div>
+  <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6;max-width:380px;margin-left:auto;margin-right:auto">
+    Enable memory in your dex.yaml by configuring <code>ai.memory</code>.<br>
+    Supports short-term (buffer), long-term (vector), and episodic (timestamped) stores.
+  </div>
+  <div class="card" style="margin-top:20px;padding:12px 16px;text-align:left;max-width:340px;margin-left:auto;margin-right:auto">
+    <div class="cap" style="margin-bottom:6px">dex.yaml</div>
+    <pre class="mono muted" style="font-size:11.5px;line-height:1.6;margin:0">ai:
+  memory:
+    short_term: buffer
+    long_term: qdrant
+    episodic: sqlite</pre>
+  </div>
+</div>
+
 {% endif %}
+
 {% endblock %}

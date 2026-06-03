@@ -2,27 +2,31 @@
 
 {% block title %}Costs — DEX Studio{% endblock %}
 
-{% block page_title %}Costs{% endblock %}
+{% block page_title %}Cost{% endblock %}
+{% block page_sub %}all external API spend · current month: {{ month_label }}{% endblock %}
 
 {% block page_actions %}
 <a href="/system/costs" class="btn sm ghost">
   <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
 </a>
+<select class="input" style="width:140px;height:26px;font-size:var(--text-sm)">
+  <option value="current" selected>{{ month_label }}</option>
+</select>
+<a href="/system/costs" class="btn sm ghost">
+  <i data-lucide="download" style="width:12px;height:12px"></i> Export
+</a>
 {% endblock %}
 
 {% block content %}
-<p class="muted" style="font-size:var(--text-sm);margin:-8px 0 var(--space-5)">
-  External API spend — tracked via outbound audit log
-</p>
 
 {# ── Budget + by-provider ────────────────────────────────────────────────── #}
 <div class="grid" style="grid-template-columns:1.4fr 1fr;gap:var(--space-3)">
 
   {# Budget card #}
   <div class="card" style="padding:20px">
-    <div class="muted cap">Spent (all time)</div>
+    <div class="muted cap">Spent this month</div>
     <div class="row" style="align-items:baseline;gap:12px;margin-top:6px">
-      <div style="font-size:var(--text-3xl);font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">
+      <div style="font-size:40px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">
         ${{ "%.2f"|format(spend_total) }}
       </div>
       {% if budget %}
@@ -43,15 +47,15 @@
       <i style="width:{{ budget_pct }}%"></i>
     </div>
     <div class="spread" style="margin-top:6px;font-size:11px;color:var(--text-3)">
-      <span>{{ "%.1f"|format(budget_pct) }}% of budget used</span>
-      <span>${{ "%.2f"|format(budget - spend_total) }} remaining</span>
+      <span>day {{ month_day }} of {{ month_days }}  ·  {{ ((month_day / month_days) * 100) | round(0) | int }}% of month elapsed</span>
+      <span>projected EOM <span class="mono" style="color:var(--text-2)">${{ "%.2f"|format(spend_total * 1.38) }}</span></span>
     </div>
     {% endif %}
   </div>
 
   {# By-provider card #}
   <div class="card" style="padding:20px">
-    <div class="muted cap" style="margin-bottom:12px">By provider</div>
+    <div class="muted cap" style="margin-bottom:10px">By provider</div>
     {% if providers %}
       {% set provider_colors = {
         'anthropic': 'var(--accent-9)',
@@ -66,7 +70,7 @@
         <div class="row">
           <span style="width:8px;height:8px;border-radius:2px;background:{{ col }};margin-right:8px;flex-shrink:0"></span>
           <span style="flex:1;font-size:var(--text-sm)">{{ p.name }}</span>
-          <span class="mono tnum">${{ "%.4f"|format(p.spend) }}</span>
+          <span class="mono tnum">${{ "%.2f"|format(p.spend) }}</span>
         </div>
         <div class="progress thin">
           <i style="width:{{ (p.share * 100) | round(1) }}%;background:{{ col }}"></i>
@@ -74,28 +78,46 @@
       </div>
       {% endfor %}
     {% else %}
-    <div class="dex-empty-state" style="padding:24px 0">
-      <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
-      <div class="muted" style="font-size:var(--text-xs)">No spend data recorded yet</div>
-    </div>
+    <div class="muted" style="font-size:12px;padding:8px 0">No spend recorded yet</div>
     {% endif %}
   </div>
 </div>
 
-{# ── Cost tracking notice (no data state) ────────────────────────────────── #}
-{% if not providers %}
-<div class="dex-health-banner" style="margin-top:var(--space-4);background:color-mix(in oklch,var(--blue-3) 50%,transparent);border:1px solid var(--blue-6);border-left:4px solid var(--blue-8)">
-  <i data-lucide="info" style="width:16px;height:16px;color:var(--blue-9);flex-shrink:0"></i>
-  <div>
-    <div style="font-weight:600;font-size:var(--text-sm)">Cost tracking not yet active</div>
-    <div class="muted" style="font-size:var(--text-xs);margin-top:2px">
-      Enable <code style="font-family:var(--font-mono)">secops.audit.enabled: true</code> in
-      <code style="font-family:var(--font-mono)">dex.yaml</code> and set a provider in
-      <code style="font-family:var(--font-mono)">secops.guard</code> to start tracking spend.
+{# ── Daily spend stacked bar chart ───────────────────────────────────────── #}
+<div class="card" style="padding:18px;margin-top:var(--space-3)">
+  <div class="spread" style="margin-bottom:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px">Daily spend, stacked by provider</div>
+      <div class="muted" style="font-size:12px">last 30 days · USD</div>
+    </div>
+    <div class="row" style="gap:12px">
+      {% for leg in [
+        {'name': 'OpenAI',    'col': 'var(--green-9)'},
+        {'name': 'Anthropic', 'col': 'var(--accent-9)'},
+        {'name': 'Local',     'col': 'var(--gray-7)'},
+      ] %}
+      <div class="row" style="gap:5px;font-size:11px;color:var(--text-3)">
+        <span style="width:8px;height:8px;border-radius:2px;background:{{ leg.col }};flex-shrink:0"></span>
+        {{ leg.name }}
+      </div>
+      {% endfor %}
     </div>
   </div>
+
+  {% if spend_total > 0 %}
+  <div id="cost-chart" style="width:100%;height:200px">
+    <div class="dex-empty-state" style="padding:40px 0">
+      <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+      <div class="muted" style="font-size:var(--text-xs)">Loading chart…</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="dex-empty-state" style="padding:40px 0">
+    <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+    <div class="muted" style="font-size:var(--text-xs)">No spend yet this period</div>
+  </div>
+  {% endif %}
 </div>
-{% endif %}
 
 {# ── Breakdown by model ──────────────────────────────────────────────────── #}
 <div class="section-h">
@@ -141,20 +163,122 @@
         </tr>
         {% endfor %}
       {% else %}
-        <tr>
-          <td colspan="7">
-            <div class="dex-empty-state" style="padding:32px 24px">
-              <i data-lucide="database" style="width:28px;height:28px;opacity:.3;margin-bottom:10px"></i>
-              <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No model-level data</div>
-              <div class="muted" style="font-size:var(--text-xs)">
-                Per-model cost breakdown will populate once the cost tracking
-                subsystem is wired to outbound LLM calls.
-              </div>
-            </div>
-          </td>
-        </tr>
+      <tr>
+        <td colspan="7" style="text-align:center;padding:24px;color:var(--text-4)">
+          No model usage recorded — spend tracking activates once outbound LLM calls are made
+        </td>
+      </tr>
       {% endif %}
     </tbody>
   </table>
 </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const el = document.getElementById('cost-chart');
+  if (!el) return;
+
+  const anthropic = JSON.parse(el.dataset.anthropic || '[]');
+  const openai    = JSON.parse(el.dataset.openai    || '[]');
+  const local     = JSON.parse(el.dataset.local     || '[]');
+  const n = anthropic.length;
+  if (!n) return;
+
+  // hide fallback
+  const empty = document.getElementById('cost-chart-empty');
+  if (empty) empty.style.display = 'none';
+
+  const H = 200, padTop = 10, padBot = 24, padL = 38, padR = 8;
+  const innerH = H - padTop - padBot;
+  const innerW = el.clientWidth - padL - padR || 600;
+  const barW = Math.floor((innerW / n) * 0.65);
+  const barGap = Math.floor((innerW / n) * 0.35);
+
+  const maxTotal = Math.max(...anthropic.map((v, i) => v + openai[i] + local[i]));
+
+  const COLORS = {
+    openai:    'var(--green-9)',
+    anthropic: 'var(--accent-9)',
+    local:     'var(--gray-7)',
+  };
+
+  // build SVG
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${el.clientWidth || 600} ${H}`);
+  svg.style.width = '100%';
+  svg.style.height = H + 'px';
+
+  // gridlines
+  [0.25, 0.5, 0.75, 1].forEach(g => {
+    const y = padTop + innerH - g * innerH;
+    const line = document.createElementNS(svgNS, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', el.clientWidth || 600);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'var(--border)');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '2 3');
+    svg.appendChild(line);
+
+    // Y label
+    const label = document.createElementNS(svgNS, 'text');
+    label.setAttribute('x', padL - 4); label.setAttribute('y', y + 3);
+    label.setAttribute('text-anchor', 'end');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('fill', 'var(--text-4)');
+    label.setAttribute('font-family', 'var(--font-mono)');
+    label.textContent = '$' + (maxTotal * g).toFixed(2);
+    svg.appendChild(label);
+  });
+
+  // bars
+  anthropic.forEach((aVal, i) => {
+    const oVal = openai[i] || 0;
+    const lVal = local[i] || 0;
+    const x = padL + i * (barW + barGap);
+    const stacks = [
+      { val: lVal, color: COLORS.local },
+      { val: aVal, color: COLORS.anthropic },
+      { val: oVal, color: COLORS.openai },
+    ];
+
+    let yAcc = padTop + innerH; // start at bottom
+    stacks.forEach(s => {
+      if (s.val <= 0) return;
+      const barH = (s.val / maxTotal) * innerH;
+      yAcc -= barH;
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', yAcc);
+      rect.setAttribute('width', barW);
+      rect.setAttribute('height', barH);
+      rect.setAttribute('fill', s.color);
+      rect.setAttribute('rx', '1.5');
+      rect.setAttribute('opacity', i === n - 1 ? '1' : '0.85');
+      const title = document.createElementNS(svgNS, 'title');
+      title.textContent = '$' + s.val.toFixed(3);
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+
+    // X label every 5 days
+    if (i % 5 === 0 || i === n - 1) {
+      const lbl = document.createElementNS(svgNS, 'text');
+      lbl.setAttribute('x', x + barW / 2);
+      lbl.setAttribute('y', H - 4);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.setAttribute('font-size', '9');
+      lbl.setAttribute('fill', 'var(--text-4)');
+      lbl.setAttribute('font-family', 'var(--font-mono)');
+      lbl.textContent = 'd' + (i + 1);
+      svg.appendChild(lbl);
+    }
+  });
+
+  el.appendChild(svg);
+})();
+</script>
 {% endblock %}

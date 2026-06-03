@@ -39,13 +39,12 @@ Single page-of-glass UI for everything the [`dataenginex`](https://github.com/Th
 
 | Domain | Today | Phase 2/3 of [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) |
 | --- | --- | --- |
-| **Data** | Sources, Pipelines, SQL console, Warehouse, Lineage, Quality | Catalog browser, SQL transform editor, lineage DAG viz, streaming sources, ER diagrams |
-| **ML** | Models, Experiments, Drift | Per-experiment artifact view, prediction history |
-| **AI** | Agents, Playground (chat), Memory | Streaming tokens, tool-call cards, conversation persistence, YAML workflows |
-| **Privacy & Security** | Backend: PII detection + masking + audit | UI: outbound-call guardrail, audit log viewer, policy editor, quarantine |
-| **System** | Status, Logs, Metrics | Unified runs feed, cost dashboard, "what touched my data" timeline |
+| **Data** | Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog | SQL transform editor, streaming source monitor, ER diagram view |
+| **ML** | Model registry, Experiments tracker, Drift detection, Feature store, Predictions | Per-experiment artifact view, prediction history, A/B test runner |
+| **AI** | Agents, Playground (SSE streaming chat), Memory browser, Tool registry, Trace viewer, Workflow list | Tool-call cards, conversation persistence, YAML workflow editor |
+| **Privacy** | PrivacyGuard overview, PII strategy config, Audit log, Alert rules (pipeline failure + drift) | Outbound-call quarantine, policy editor, budget threshold alerts |
+| **System** | Status, Live log tail (SSE), Metrics, Runs feed (filter by type/status), Cost dashboard | Unified timeline, Slack/email alert channels |
 | **Dashboards** | — | Vega-Lite chart grids built from SQL queries |
-| **Alerts** | — | Slack / Discord / email channels for run failures, quality breaches, budget thresholds |
 
 ______________________________________________________________________
 

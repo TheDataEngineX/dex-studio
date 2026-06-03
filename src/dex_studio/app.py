@@ -11,6 +11,7 @@ from typing import Any
 
 import structlog
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -85,7 +86,13 @@ def create_app() -> FastAPI:
 
     # ── Session middleware ────────────────────────────────────────────────────
     secret = os.environ.get("DEX_STUDIO_SESSION_SECRET") or _session_secret()
-    app.add_middleware(SessionMiddleware, secret_key=secret, session_cookie="dex_session")
+    https_only = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=secret,
+        session_cookie="dex_session",
+        https_only=https_only,
+    )
 
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,6 +109,10 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix="/ai")
     app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(str(STATIC_DIR / "favicon.svg"), media_type="image/svg+xml")
 
     @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:

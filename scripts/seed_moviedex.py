@@ -14,7 +14,20 @@ from dataenginex.ml.registry import ModelArtifact, ModelStage
 
 CONFIG = Path(__file__).parents[1] / "examples" / "movie-dex" / "dex.yaml"
 
-_PIPELINES = ["load_movies", "process_ratings", "load_credits", "genre_analysis"]
+_PIPELINES = [
+    "bronze_titles",
+    "bronze_ratings",
+    "bronze_crew",
+    "bronze_names",
+    "silver_movies",
+    "silver_tv",
+    "silver_directors",
+    "silver_genres",
+    "gold_top_movies",
+    "gold_genre_trends",
+    "gold_director_stats",
+    "gold_movie_features",
+]
 
 _EXPERIMENT_RUNS = [
     (

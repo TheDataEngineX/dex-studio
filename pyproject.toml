@@ -1,6 +1,6 @@
 [project]
 name = "dex-studio"
-version = "0.3.0"
+version = "0.4.0"
 description = "DEX Studio – local control plane for DataEngineX/DEX"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dataenginex>=1.1.1",
+    "dataenginex>=0.4.0",
     "fastapi[standard]>=0.115.0",
     "jinja2>=3.1.4",
     "itsdangerous>=2.2.0",
@@ -86,7 +86,6 @@ ignore_missing_imports = true
 disable_error_code = ["misc"]
 # Prevent false positives when stubs are absent (pre-commit isolated env)
 warn_unused_ignores = false
-
 
 
 [tool.pytest.ini_options]

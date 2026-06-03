@@ -1,191 +1,662 @@
 project:
-  name: MovieDEX
-  version: 0.1.0
-  description: Movie recommendation engine powered by DataEngineX
+  name: moviedex
+  version: "1.0.0"
+  description: >
+    MovieDEX — end-to-end movie intelligence platform powered by the IMDB
+    Non-Commercial Dataset (~10 M titles). Covers the full data engineering
+    flow: ingest from IMDB TSV files → medallion lakehouse (bronze / silver /
+    gold) → ML rating prediction + content-based recommendation → AI agents
+    for movie discovery, trend analysis, and casting research.
+
+# ── DATA ───────────────────────────────────────────────────────────────────────
 data:
   engine: duckdb
+
   sources:
-    movies:
-      type: csv
-      path: data/movies.csv
-      query: null
-      url: null
-      connection: {}
-      options: {}
-    ratings:
-      type: csv
-      path: data/ratings.csv
-      query: null
-      url: null
-      connection: {}
-      options: {}
-    credits:
-      type: csv
-      path: data/credits.csv
-      query: null
-      url: null
-      connection: {}
-      options: {}
+    # Run `python setup.py` first to download and convert IMDB files to Parquet.
+    # Docs: https://developer.imdb.com/non-commercial-datasets/
+    # Licence: IMDB Non-Commercial (personal + research use only)
+
+    imdb_titles:
+      type: parquet
+      path: data/raw/title_basics.parquet
+      # columns: tconst, titleType, primaryTitle, originalTitle,
+      #          isAdult, startYear, endYear, runtimeMinutes, genres
+
+    imdb_ratings:
+      type: parquet
+      path: data/raw/title_ratings.parquet
+      # columns: tconst, averageRating, numVotes
+
+    imdb_crew:
+      type: parquet
+      path: data/raw/title_crew.parquet
+      # columns: tconst, directors (comma-sep nconst), writers
+
+    imdb_names:
+      type: parquet
+      path: data/raw/name_basics.parquet
+      # columns: nconst, primaryName, birthYear, deathYear,
+      #          primaryProfession, knownForTitles
+
+    imdb_principals:
+      type: parquet
+      path: data/raw/title_principals.parquet
+      # columns: tconst, ordering, nconst, category, job, characters
+
   pipelines:
-    load_movies:
-      source: movies
+
+    # ── BRONZE: raw ingest ───────────────────────────────────────────────────
+
+    bronze_titles:
+      source: imdb_titles
       transforms:
-      - type: filter
-        condition: title IS NOT NULL
-        expression: null
-        name: null
-        columns: null
-        key: null
-        sql: null
-        options: {}
+        - type: filter
+          condition: "tconst IS NOT NULL AND primaryTitle IS NOT NULL"
       quality:
-        completeness: 0.95
-        uniqueness:
-        - title
-        freshness_hours: 1.0
-      destination: silver.load_movies
-      target: null
-      depends_on: []
-      schedule: '*/15 * * * *'
-    process_ratings:
-      source: ratings
+        completeness: 0.65  # IMDB: endYear/runtimeMinutes/genres are sparse
+      destination: bronze_titles
+      target:
+        layer: bronze
+      schedule: "0 3 * * *"
+
+    bronze_ratings:
+      source: imdb_ratings
       transforms:
-      - type: filter
-        condition: rating > 0
-        expression: null
-        name: null
-        columns: null
-        key: null
-        sql: null
-        options: {}
+        - type: filter
+          condition: "tconst IS NOT NULL AND averageRating IS NOT NULL AND numVotes > 0"
       quality:
-        completeness: 0.98
-        uniqueness:
-        - ratingId
-        freshness_hours: 0.5
-      destination: silver.process_ratings
-      target: null
-      depends_on: []
-      schedule: '*/15 * * * *'
-    load_credits:
-      source: credits
+        completeness: 0.95  # ratings has 3 well-populated cols
+        uniqueness: [tconst]
+      destination: bronze_ratings
+      target:
+        layer: bronze
+      schedule: "0 3 * * *"
+
+    bronze_crew:
+      source: imdb_crew
       transforms:
-      - type: filter
-        condition: person IS NOT NULL
-        expression: null
-        name: null
-        columns: null
-        key: null
-        sql: null
-        options: {}
+        - type: filter
+          condition: "tconst IS NOT NULL"
       quality:
-        completeness: 0.90
-        uniqueness:
-        - creditId
-      destination: silver.load_credits
-      target: null
-      depends_on: []
-      schedule: '*/15 * * * *'
-    genre_analysis:
-      source: movies
+        completeness: 0.60  # IMDB: writers column is often \N
+      destination: bronze_crew
+      target:
+        layer: bronze
+      schedule: "0 3 * * *"
+
+    bronze_names:
+      source: imdb_names
       transforms:
-      - type: sql
-        condition: null
-        expression: null
-        name: null
-        columns: null
-        key: null
-        sql: 'SELECT genres, COUNT(*) as movie_count, AVG(rating) as avg_rating, AVG(votes)
-          as avg_votes FROM _data GROUP BY genres ORDER BY movie_count DESC'
-        options: {}
+        - type: filter
+          condition: "nconst IS NOT NULL AND primaryName IS NOT NULL"
+        - type: deduplicate
+          key: [nconst]
       quality:
-        completeness: 0.99
-        custom_sql: 'SELECT COUNT(*) > 0 FROM _data'
-      destination: genre_analysis
-      target: {layer: gold}
-      depends_on: []
-      schedule: 0 * * * *
+        completeness: 0.60  # IMDB: birthYear/deathYear/knownForTitles sparse
+        uniqueness: [nconst]
+      destination: bronze_names
+      target:
+        layer: bronze
+      schedule: "0 3 * * *"
+
+    bronze_principals:
+      source: imdb_principals
+      transforms:
+        - type: filter
+          condition: "tconst IS NOT NULL AND nconst IS NOT NULL"
+      quality:
+        completeness: 0.55  # IMDB: job/characters columns often NULL
+      destination: bronze_principals
+      target:
+        layer: bronze
+      schedule: "0 3 * * *"
+
+    # ── SILVER: clean, join, normalise ──────────────────────────────────────
+
+    silver_movies:
+      source: bronze_titles
+      depends_on: [bronze_titles, bronze_ratings]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              t.tconst                                         AS movie_id,
+              t.primaryTitle                                   AS title,
+              t.originalTitle                                  AS original_title,
+              TRY_CAST(t.startYear      AS INTEGER)           AS release_year,
+              TRY_CAST(t.runtimeMinutes AS INTEGER)           AS runtime_min,
+              t.genres,
+              TRY_CAST(r.averageRating  AS DOUBLE)            AS imdb_rating,
+              TRY_CAST(r.numVotes       AS BIGINT)            AS vote_count,
+              (TRY_CAST(t.startYear AS INTEGER) / 10) * 10   AS decade
+            FROM _data t
+            LEFT JOIN bronze_ratings r ON t.tconst = r.tconst
+            WHERE
+              t.titleType = 'movie'
+              AND t.isAdult  = '0'
+              AND t.startYear IS NOT NULL
+              AND TRY_CAST(t.startYear AS INTEGER) BETWEEN 1902 AND 2025
+      quality:
+        completeness: 0.75  # LEFT JOIN ratings — imdb_rating/vote_count NULL for unrated titles
+        uniqueness: [movie_id]
+      destination: silver_movies
+      target:
+        layer: silver
+      schedule: "0 4 * * *"
+
+    silver_tv:
+      source: bronze_titles
+      depends_on: [bronze_titles, bronze_ratings]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              t.tconst                                AS series_id,
+              t.primaryTitle                          AS title,
+              t.titleType                             AS series_type,
+              TRY_CAST(t.startYear AS INTEGER)        AS start_year,
+              TRY_CAST(t.endYear   AS INTEGER)        AS end_year,
+              t.genres,
+              TRY_CAST(r.averageRating AS DOUBLE)     AS imdb_rating,
+              TRY_CAST(r.numVotes      AS BIGINT)     AS vote_count
+            FROM _data t
+            LEFT JOIN bronze_ratings r ON t.tconst = r.tconst
+            WHERE
+              t.titleType IN ('tvSeries', 'tvMiniSeries')
+              AND t.isAdult = '0'
+      quality:
+        completeness: 0.70  # LEFT JOIN ratings + end_year NULL for ongoing series
+      destination: silver_tv
+      target:
+        layer: silver
+      schedule: "0 4 * * *"
+
+    silver_directors:
+      source: bronze_crew
+      depends_on: [bronze_crew, bronze_names, silver_movies]
+      transforms:
+        - type: sql
+          sql: |
+            WITH expanded AS (
+              SELECT
+                c.tconst,
+                TRIM(d_id) AS director_id
+              FROM bronze_crew c
+              CROSS JOIN UNNEST(STRING_SPLIT(c.directors, ',')) AS t(d_id)
+              WHERE c.directors IS NOT NULL AND c.directors != '\N'
+            )
+            SELECT
+              e.tconst                            AS movie_id,
+              e.director_id,
+              n.primaryName                       AS director_name,
+              TRY_CAST(n.birthYear AS INTEGER)    AS birth_year,
+              n.primaryProfession
+            FROM expanded e
+            INNER JOIN silver_movies m ON e.tconst = m.movie_id
+            LEFT JOIN  bronze_names  n ON e.director_id = n.nconst
+            WHERE n.primaryName IS NOT NULL
+      quality:
+        completeness: 0.75  # birth_year/primaryProfession sparse in name.basics
+      destination: silver_directors
+      target:
+        layer: silver
+      schedule: "0 4 * * *"
+
+    silver_cast:
+      source: bronze_principals
+      depends_on: [bronze_principals, bronze_names, silver_movies]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              p.tconst                            AS movie_id,
+              p.nconst                            AS person_id,
+              n.primaryName                       AS person_name,
+              p.category                          AS role,
+              TRY_CAST(p.ordering AS INTEGER)     AS billing_order
+            FROM _data p
+            INNER JOIN silver_movies sm ON p.tconst = sm.movie_id
+            LEFT JOIN  bronze_names  n  ON p.nconst = n.nconst
+            WHERE p.category IN ('actor', 'actress')
+              AND TRY_CAST(p.ordering AS INTEGER) <= 5
+              AND n.primaryName IS NOT NULL
+      quality:
+        completeness: 0.85  # all 5 cols well-populated after filter
+      destination: silver_cast
+      target:
+        layer: silver
+      schedule: "0 4 * * *"
+
+    silver_genres:
+      source: silver_movies
+      depends_on: [silver_movies]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              movie_id,
+              title,
+              TRIM(genre_val)  AS genre,
+              release_year,
+              decade,
+              imdb_rating,
+              vote_count
+            FROM silver_movies
+            CROSS JOIN UNNEST(STRING_SPLIT(genres, ',')) AS t(genre_val)
+            WHERE genres IS NOT NULL
+              AND genres != '\N'
+              AND TRIM(genre_val) != ''
+      quality:
+        completeness: 0.80  # imdb_rating/vote_count NULL for unrated movies
+      destination: silver_genres
+      target:
+        layer: silver
+      schedule: "0 4 * * *"
+
+    # ── GOLD: BI-ready + ML feature tables ─────────────────────────────────
+
+    gold_top_movies:
+      source: silver_movies
+      depends_on: [silver_movies, silver_directors]
+      transforms:
+        - type: sql
+          sql: |
+            -- Bayesian weighted rating (IMDB Top-250 formula)
+            -- WR = (v/(v+m))*R + (m/(v+m))*C   (m=25000, C≈6.9)
+            WITH scored AS (
+              SELECT
+                m.movie_id,
+                m.title,
+                m.original_title,
+                m.release_year,
+                m.runtime_min,
+                m.genres,
+                m.imdb_rating,
+                m.vote_count,
+                m.decade,
+                ROUND(
+                  (m.vote_count / (m.vote_count + 25000.0)) * m.imdb_rating
+                  + (25000.0   / (m.vote_count + 25000.0)) * 6.9, 4
+                )                        AS weighted_rating,
+                d.director_name,
+                d.director_id
+              FROM silver_movies m
+              LEFT JOIN (
+                SELECT movie_id, director_name, director_id
+                FROM silver_directors
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY movie_id ORDER BY director_id) = 1
+              ) d ON m.movie_id = d.movie_id
+              WHERE m.imdb_rating IS NOT NULL AND m.vote_count >= 1000
+            )
+            SELECT
+              *,
+              RANK() OVER (ORDER BY weighted_rating DESC)                            AS global_rank,
+              RANK() OVER (PARTITION BY decade ORDER BY weighted_rating DESC)        AS decade_rank
+            FROM scored
+            ORDER BY global_rank
+      quality:
+        completeness: 0.90  # weighted_rating computed col, decade_rank always set
+        custom_sql: "SELECT COUNT(*) > 500 FROM _data"
+      destination: gold_top_movies
+      target:
+        layer: gold
+      schedule: "0 5 * * *"
+
+    gold_genre_trends:
+      source: silver_genres
+      depends_on: [silver_genres]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              genre,
+              decade,
+              COUNT(*)                            AS movie_count,
+              ROUND(AVG(imdb_rating), 3)          AS avg_rating,
+              SUM(vote_count)                     AS total_votes,
+              MAX(imdb_rating)                    AS peak_rating,
+              MIN(imdb_rating)                    AS floor_rating,
+              ROUND(
+                LN(SUM(vote_count) + 1.0) * AVG(imdb_rating) / 10.0, 4
+              )                                   AS popularity_index
+            FROM silver_genres
+            WHERE genre IS NOT NULL
+              AND genre != ''
+              AND imdb_rating IS NOT NULL
+              AND decade IS NOT NULL
+            GROUP BY genre, decade
+            ORDER BY decade DESC, popularity_index DESC
+      quality:
+        completeness: 0.95  # all genre/decade/stats cols populated after filter
+      destination: gold_genre_trends
+      target:
+        layer: gold
+      schedule: "0 5 * * *"
+
+    gold_director_stats:
+      source: silver_directors
+      depends_on: [silver_directors, silver_movies]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              d.director_id,
+              d.director_name,
+              COUNT(DISTINCT d.movie_id)                    AS movies_directed,
+              ROUND(AVG(m.imdb_rating), 3)                  AS avg_rating,
+              ROUND(MAX(m.imdb_rating), 1)                  AS best_rating,
+              SUM(m.vote_count)                             AS total_votes,
+              MIN(m.release_year)                           AS career_start,
+              MAX(m.release_year)                           AS latest_film,
+              MAX(m.release_year) - MIN(m.release_year)    AS career_span_years
+            FROM silver_directors d
+            JOIN silver_movies m
+              ON d.movie_id = m.movie_id
+             AND m.imdb_rating IS NOT NULL
+             AND m.vote_count  >= 500
+            GROUP BY d.director_id, d.director_name
+            HAVING COUNT(DISTINCT d.movie_id) >= 2
+            ORDER BY avg_rating DESC, total_votes DESC
+      quality:
+        completeness: 0.90  # career_span_years may be 0 for single-year directors
+      destination: gold_director_stats
+      target:
+        layer: gold
+      schedule: "0 5 * * *"
+
+    gold_actor_network:
+      source: silver_cast
+      depends_on: [silver_cast, silver_movies]
+      transforms:
+        - type: sql
+          sql: |
+            SELECT
+              c.person_id,
+              c.person_name,
+              COUNT(DISTINCT c.movie_id)                AS movies_appeared,
+              ROUND(AVG(m.imdb_rating), 3)              AS avg_movie_rating,
+              SUM(m.vote_count)                         AS total_audience_votes,
+              MIN(m.release_year)                       AS debut_year,
+              MAX(m.release_year)                       AS last_film_year
+            FROM silver_cast c
+            JOIN silver_movies m
+              ON c.movie_id = m.movie_id
+             AND m.imdb_rating IS NOT NULL
+             AND m.vote_count  >= 1000
+            GROUP BY c.person_id, c.person_name
+            HAVING COUNT(DISTINCT c.movie_id) >= 3
+            ORDER BY avg_movie_rating DESC, total_audience_votes DESC
+      quality:
+        completeness: 0.90  # all output cols are from non-NULL joins
+      destination: gold_actor_network
+      target:
+        layer: gold
+      schedule: "0 5 * * *"
+
+    gold_movie_features:
+      source: silver_movies
+      depends_on: [silver_movies, silver_directors, gold_director_stats]
+      transforms:
+        - type: sql
+          sql: |
+            -- Feature table for ML: rating prediction + content-based recommendation
+            SELECT
+              m.movie_id,
+              m.title,
+              m.imdb_rating                                          AS target_rating,
+              m.vote_count,
+              m.release_year,
+              m.runtime_min,
+              m.decade,
+              ROUND((m.release_year - 1900.0) / 125.0, 4)           AS year_norm,
+              ROUND(COALESCE(m.runtime_min, 100) / 180.0, 4)        AS runtime_norm,
+              ROUND(LN(m.vote_count + 1) / 16.0, 4)                 AS log_votes_norm,
+              ROUND(COALESCE(ds.avg_rating, 6.9), 3)                AS director_avg_rating,
+              COALESCE(ds.movies_directed, 1)                        AS director_filmcount,
+              (m.genres LIKE '%Action%')::INTEGER                    AS g_action,
+              (m.genres LIKE '%Drama%')::INTEGER                     AS g_drama,
+              (m.genres LIKE '%Comedy%')::INTEGER                    AS g_comedy,
+              (m.genres LIKE '%Thriller%')::INTEGER                  AS g_thriller,
+              (m.genres LIKE '%Crime%')::INTEGER                     AS g_crime,
+              (m.genres LIKE '%Romance%')::INTEGER                   AS g_romance,
+              (m.genres LIKE '%Sci-Fi%')::INTEGER                    AS g_scifi,
+              (m.genres LIKE '%Horror%')::INTEGER                    AS g_horror,
+              (m.genres LIKE '%Adventure%')::INTEGER                 AS g_adventure,
+              (m.genres LIKE '%Animation%')::INTEGER                 AS g_animation,
+              (m.genres LIKE '%Biography%')::INTEGER                 AS g_biography,
+              (m.genres LIKE '%Documentary%')::INTEGER               AS g_documentary,
+              (m.genres LIKE '%Fantasy%')::INTEGER                   AS g_fantasy,
+              (m.genres LIKE '%Mystery%')::INTEGER                   AS g_mystery
+            FROM silver_movies m
+            LEFT JOIN (
+              SELECT movie_id, director_id
+              FROM silver_directors
+              QUALIFY ROW_NUMBER() OVER (PARTITION BY movie_id ORDER BY director_id) = 1
+            ) sd ON m.movie_id = sd.movie_id
+            LEFT JOIN gold_director_stats ds ON sd.director_id = ds.director_id
+            WHERE
+              m.imdb_rating IS NOT NULL
+              AND m.vote_count   >= 100
+              AND m.release_year IS NOT NULL
+      quality:
+        completeness: 0.90  # genre may be NULL for unclassified titles
+        custom_sql: "SELECT COUNT(*) > 5000 FROM _data"
+      destination: gold_movie_features
+      target:
+        layer: gold
+      schedule: "0 5 * * *"
+
+# ── ML ─────────────────────────────────────────────────────────────────────────
 ml:
   tracker: builtin
-  tracking:
-    backend: builtin
-    uri: null
+
+  experiments:
+
+    rating_predictor:
+      # Predict IMDB rating from structural features.
+      # Useful to surface likely-good films before they accumulate many votes.
+      model_type: sklearn
+      target: target_rating
+      features:
+        - year_norm
+        - runtime_norm
+        - log_votes_norm
+        - director_avg_rating
+        - director_filmcount
+        - g_action
+        - g_drama
+        - g_comedy
+        - g_thriller
+        - g_crime
+        - g_romance
+        - g_scifi
+        - g_horror
+        - g_adventure
+        - g_animation
+        - g_biography
+        - g_documentary
+        - g_fantasy
+        - g_mystery
+      params:
+        n_estimators: 300
+        max_depth: 7
+        min_samples_leaf: 20
+        min_samples_split: 50
+        random_state: 42
+
+    content_recommender:
+      # k-NN cosine similarity in genre + director space.
+      # Given a movie the user liked, return k nearest neighbours.
+      model_type: sklearn
+      target: target_rating
+      features:
+        - g_action
+        - g_drama
+        - g_comedy
+        - g_thriller
+        - g_crime
+        - g_romance
+        - g_scifi
+        - g_horror
+        - g_adventure
+        - g_animation
+        - g_fantasy
+        - g_mystery
+        - year_norm
+        - director_avg_rating
+      params:
+        n_neighbors: 20
+        metric: cosine
+        algorithm: brute
+
+    decade_classifier:
+      # Classify which decade a movie is from using only genre + rating signals.
+      # Reveals how genre taste has shifted over 12 decades.
+      model_type: sklearn
+      target: decade
+      features:
+        - target_rating
+        - log_votes_norm
+        - g_action
+        - g_drama
+        - g_comedy
+        - g_thriller
+        - g_scifi
+        - g_horror
+        - g_romance
+        - g_animation
+      params:
+        n_estimators: 200
+        max_depth: 8
+        random_state: 42
+
   features:
     backend: builtin
-    options: {}
-  experiments:
-    recommendation_model:
-      model_type: sklearn
-      target: rating
-      features:
-      - genre_encoded
-      - year
-      - votes
-      params:
-        n_estimators: 100
-        max_depth: 5
+
   serving:
     engine: builtin
-    endpoints: []
+
   drift:
-    monitor: []
+    monitor:
+      - target_rating      # has the average quality of new releases shifted?
+      - log_votes_norm     # engagement trends
+      - year_norm          # are we seeing more old or new films?
     method: psi
-    threshold: 0.2
+    threshold: 0.15
+
+# ── AI ─────────────────────────────────────────────────────────────────────────
 ai:
   llm:
     provider: ollama
-    model: llama3.2
-    fallback: null
-    options: {}
+    model: ${LLM_MODEL:-llama3.2:latest}
+    temperature: 0.1
+    max_tokens: 1024
+
   retrieval:
     strategy: hybrid
     top_k: 10
     reranker: true
-    options: {}
+
   vectorstore:
     backend: builtin
     embedding_model: all-MiniLM-L6-v2
-    options: {}
+
   collections:
-    movie_summaries:
-      source: null
-      embedding_model: null
+    movie_catalog:
+      # Embeds title + genres + year for semantic search
+      chunk_size: 256
+      chunk_overlap: 32
+    director_profiles:
+      # Embeds director name + career + signature film
       chunk_size: 512
-      chunk_overlap: 50
+      chunk_overlap: 64
+
   agents:
-    movie_expert:
+
+    movie_recommender:
       runtime: builtin
-      system_prompt: You are a helpful movie recommendation assistant. Help users
-        find movies they might enjoy based on their preferences.
-      tools:
-      - query
-      - echo
-      model: null
+      model: ${LLM_MODEL:-llama3.2:latest}
+      system_prompt: |
+        You are MovieDEX Recommender — an expert movie AI backed by the full
+        IMDB dataset (10 M+ titles, updated daily).
+
+        You can:
+        - Recommend movies by genre, mood, era, director, actor, or similarity
+        - Explain why a film is great or divisive (cite IMDB rating + vote count)
+        - Surface hidden gems: weighted_rating > 7.5 and vote_count < 50 000
+        - Compare director filmographies and career arcs
+        - Trace an actor's top roles chronologically
+
+        Always cite: title, year, IMDB rating, vote count.
+        Keep recommendations to 3–5 films with a one-sentence justification each.
+        Use the query tool to fetch live data from gold_top_movies and silver_movies.
+      tools: [query, pipeline_status]
+      max_iterations: 12
+      memory: short_term
+
+    data_analyst:
+      runtime: builtin
+      model: ${LLM_MODEL:-llama3.2:latest}
+      system_prompt: |
+        You are MovieDEX Data Analyst — you answer questions about the movie
+        industry by running SQL over the IMDB-powered gold layer.
+
+        Available tables:
+          gold_top_movies     — ranked movies, weighted_rating, global_rank, decade_rank
+          gold_genre_trends   — genre × decade: count, avg_rating, popularity_index
+          gold_director_stats — director career: avg_rating, movies_directed, career_span
+          gold_actor_network  — actor career: movies, avg_movie_rating, debut/last year
+          gold_movie_features — ML features with one-hot genre flags
+
+        Rules:
+        - Show exact numbers (ratings to 2 d.p., counts with commas)
+        - Format multi-row results as a markdown table
+        - Group by decade for time-series questions
+        - Show the SQL you ran so the user can extend it
+      tools: [query, list_tools]
+      max_iterations: 15
+      memory: short_term
+
+    casting_expert:
+      runtime: builtin
+      model: ${LLM_MODEL:-llama3.2:latest}
+      system_prompt: |
+        You are MovieDEX Casting Expert — you find people and connections
+        across the full IMDB principal and crew data.
+
+        You can:
+        - Find every movie two actors appeared in together
+        - List a director's complete filmography with ratings
+        - Identify actors who most frequently work with a given director
+        - Rank actors by average film quality (gold_actor_network)
+        - Spot genre pivots (actor who crossed from comedy to drama)
+
+        Cross-reference silver_cast → silver_movies for rated context.
+        Always use movie title + year to disambiguate people with the same name.
+      tools: [query]
       max_iterations: 10
       memory: short_term
-    data_assistant:
-      runtime: builtin
-      system_prompt: You are a data engineering assistant. Help users understand their
-        data pipelines and quality.
-      tools:
-      - query
-      - list_tools
-      model: null
-      max_iterations: 10
-      memory: short_term
+
+# ── SECOPS ─────────────────────────────────────────────────────────────────────
 secops:
   pii:
-    scan: false
-    patterns:
-    - email
-    - ssn
-    - phone
-    - credit_card
-    action: warn
+    scan: true
+    patterns: [email, ssn, phone, credit_card]
+    action: warn   # IMDB data has no PII; guard outbound LLM calls
   audit:
-    enabled: false
+    enabled: true
     destination: file
+
+# ── OBSERVABILITY ───────────────────────────────────────────────────────────────
 observability:
   metrics: true
-  tracing: false
+  tracing: true
   log_level: INFO
+
+# ── SERVER ─────────────────────────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 17000
+  auth:
+    enabled: false

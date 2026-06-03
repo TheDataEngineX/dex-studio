@@ -1,28 +1,354 @@
 {% extends "base.html" %}
 
 {% block title %}SQL Console — DEX Studio{% endblock %}
-{% block page_title %}SQL Console{% endblock %}
+{% block content_class %}full-bleed{% endblock %}
 
-{% block content %}
-<div style="display:flex;flex-direction:column;gap:16px">
-  <form hx-post="/data/sql/execute" hx-target="#sql-results" hx-swap="innerHTML" hx-indicator="#sql-spinner">
-    <div class="rt-Card" style="padding:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <label style="font-size:12px;font-weight:600;color:var(--gray-10)">SQL Query</label>
-        <span id="sql-spinner" class="htmx-indicator" style="font-size:11px;color:var(--gray-9)">Running…</span>
-      </div>
-      <textarea name="query" rows="8" style="width:100%;font-family:'Fira Code',monospace;font-size:13px;padding:10px;border:1px solid var(--gray-6);border-radius:5px;background:var(--gray-1);color:var(--gray-12);resize:vertical;line-height:1.6">{{ query }}</textarea>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button type="submit" class="rt-Button" data-variant="solid" data-size="2">
-          <i data-lucide="play" style="width:13px;height:13px"></i> Run Query
-        </button>
-        <span style="font-size:11px;color:var(--gray-8);align-self:center">DuckDB in-memory — no data is persisted</span>
-      </div>
+{% block full_bleed %}
+<div style="display:flex;flex-direction:column;height:100%;min-height:0">
+
+  {# ── Tab strip ────────────────────────────────────────────────────────── #}
+  <div style="border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;flex-shrink:0;height:38px;background:var(--bg-elev)">
+    <div class="row" style="gap:0">
+      {% set sql_tabs = [
+        {'name': 'untitled-1.sql', 'dirty': true},
+      ] %}
+      {% for t in sql_tabs %}
+      <button class="sql-tab {{ 'active' if loop.first }}"
+              onclick="switchSqlTab(this, {{ loop.index0 }})"
+              style="padding:8px 12px;gap:8px;border-right:1px solid var(--border);{{ 'border-left:1px solid var(--border);' if loop.first }}background:{{ 'var(--bg)' if loop.first else 'transparent' }};border-bottom:{{ '1px solid var(--bg)' if loop.first else 'none' }};margin-bottom:-1px;font-size:12px;border-top:none;display:flex;align-items:center;cursor:default;white-space:nowrap">
+        <i data-lucide="code" style="width:11px;height:11px;opacity:.4"></i>
+        <span class="mono">{{ t.name }}</span>
+        {% if t.get('dirty') %}<span style="width:5px;height:5px;border-radius:999px;background:var(--amber-9);flex-shrink:0"></span>{% endif %}
+        <i data-lucide="x" style="width:11px;height:11px;opacity:.35;margin-left:2px"></i>
+      </button>
+      {% endfor %}
     </div>
-  </form>
-
-  <div id="sql-results">
-    {% include "data/sql_results.html" %}
+    <button class="btn icon ghost sm" style="margin-left:6px">
+      <i data-lucide="plus" style="width:12px;height:12px"></i>
+    </button>
+    <div style="flex:1"></div>
+    <div class="row" style="gap:6px">
+      <select class="input" style="width:130px;height:26px;font-size:11.5px;font-family:var(--font-mono)">
+        <option value="duckdb" selected>DuckDB · local</option>
+        <option value="iceberg">Iceberg REST</option>
+        <option value="postgres">Postgres · prod</option>
+      </select>
+      <button class="btn sm ghost">
+        <i data-lucide="history" style="width:11px;height:11px"></i> History
+      </button>
+      <button class="btn sm ghost">
+        <i data-lucide="download" style="width:11px;height:11px"></i> Save
+      </button>
+      <form id="sql-run-form" method="post" action="/data/sql/execute" style="display:inline">
+        <button type="submit" class="btn sm primary" id="sql-run-btn">
+          <i data-lucide="play" style="width:11px;height:11px"></i> Run
+          <span class="kbd kbd-inv">⌘↵</span>
+        </button>
+      </form>
+    </div>
   </div>
-</div>
+
+  {# ── Main split: schema rail + editor+results ─────────────────────────── #}
+  <div style="flex:1;display:grid;grid-template-columns:220px 1fr;min-height:0;overflow:hidden">
+
+    {# ── Schema explorer ────────────────────────────────────────────────── #}
+    <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg)">
+      <div style="padding:10px;border-bottom:1px solid var(--border)">
+        <div class="input-icon">
+          <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+          <input class="input" placeholder="Filter tables…" style="font-size:11.5px;height:26px">
+        </div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:6px 0">
+        {% for layer in ['bronze', 'silver', 'gold'] %}
+        <div style="margin-bottom:6px">
+          <div class="row" style="padding:6px 10px;gap:6px">
+            <i data-lucide="chevron-down" style="width:11px;height:11px;opacity:.4"></i>
+            <span class="layer-chip {{ layer }}" style="height:16px;font-size:9.5px">{{ layer }}</span>
+          </div>
+          {% for t in catalog_entries | default([]) | selectattr('layer', 'equalto', layer) %}
+          <div class="schema-row row">
+            <i data-lucide="table" style="width:10px;height:10px;opacity:.4"></i>
+            <span class="mono" style="flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
+            <span class="mono dim" style="font-size:9.5px">{{ t.column_count }}c</span>
+          </div>
+          {% else %}
+          <div class="schema-row row muted" style="font-size:11px;padding-left:16px">no tables yet</div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </aside>
+
+    {# ── Editor + results split ─────────────────────────────────────────── #}
+    <div style="display:grid;grid-template-rows:1fr 1fr;min-height:0">
+
+      {# ── Code editor ──────────────────────────────────────────────────── #}
+      <div class="editor" style="border-radius:0;border:none;border-bottom:1px solid var(--border);min-height:0;display:flex;flex-direction:column">
+        <div class="ed-body" style="flex:1;min-height:0">
+          <div class="gutter" id="sql-gutter"></div>
+          <textarea
+            id="sql-editor"
+            name="query"
+            form="sql-run-form"
+            spellcheck="false"
+            autocorrect="off"
+            autocapitalize="off"
+            style="flex:1;resize:none;border:none;outline:none;background:transparent;color:var(--text);font-family:var(--font-mono);font-size:12.5px;line-height:1.65;padding:0 12px;tab-size:2;width:100%;box-sizing:border-box;overflow:auto"
+          >{{ default_sql | e }}</textarea>
+        </div>
+        <div class="ed-status">
+          <span id="ed-pos">Ln 1, Col 1</span>
+          <span>·&nbsp; DuckDB</span>
+          <span class="row" style="margin-left:auto;gap:6px">
+            <i data-lucide="check" style="width:11px;height:11px;color:var(--green-9)"></i>
+            ready
+          </span>
+        </div>
+      </div>
+
+      {# ── Results pane ─────────────────────────────────────────────────── #}
+      <div style="display:flex;flex-direction:column;min-height:0;background:var(--bg)">
+        <div class="row" style="padding:0 14px;height:34px;border-bottom:1px solid var(--border);gap:0;flex-shrink:0">
+          {% set _rc = sql_results | length if sql_results else 0 %}
+          {% for tab in [
+            {'id': 'results', 'label': 'Results',  'count': _rc if _rc else ''},
+            {'id': 'chart',   'label': 'Chart',    'count': ''},
+            {'id': 'history', 'label': 'History',  'count': ''},
+            {'id': 'explain', 'label': 'EXPLAIN',  'count': ''},
+          ] %}
+          <button class="tab {{ 'active' if loop.first }}" data-result-tab="{{ tab.id }}"
+                  onclick="switchResultTab('{{ tab.id }}', this)"
+                  style="padding:8px 12px;font-size:12px;background:none;border:none;cursor:pointer">
+            {{ tab.label }}
+            {% if tab.count %}<span class="count">{{ tab.count }}</span>{% endif %}
+          </button>
+          {% endfor %}
+          <div style="flex:1"></div>
+          <span class="dim mono" style="font-size:11px" id="sql-stat">
+            {%- if exec_ms is not none -%}{{ "%.0f"|format(exec_ms) }} ms · {{ sql_results | length }} rows{%- else -%}ready{%- endif -%}
+          </span>
+          <button class="btn sm ghost" style="margin-left:10px">
+            <i data-lucide="download" style="width:10px;height:10px"></i> CSV
+          </button>
+          <button class="btn icon ghost sm">
+            <i data-lucide="copy" style="width:10px;height:10px"></i>
+          </button>
+        </div>
+
+        <div style="flex:1;overflow:auto;min-height:0">
+
+          {# Results tab #}
+          <div id="result-pane-results">
+            {% if sql_results %}
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th style="width:28px"></th>
+                  {% for col in sql_columns | default([]) %}
+                  <th>{{ col }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in sql_results %}
+                <tr>
+                  <td class="dim mono" style="font-size:10px">{{ loop.index }}</td>
+                  {% for col in sql_columns %}
+                  <td class="mono">{{ row.get(col, "") if row.get(col) is not none else "" }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:40px;color:var(--gray-9)">
+              <i data-lucide="play-circle" style="width:28px;height:28px;margin-bottom:10px;opacity:.4"></i>
+              <div style="font-size:13px;font-weight:500;margin-bottom:4px">Run a query to see results</div>
+              <div style="font-size:12px">Press <kbd style="font-family:var(--font-mono);background:var(--gray-3);padding:1px 6px;border-radius:4px">⌘↵</kbd> or click Run</div>
+            </div>
+            {% endif %}
+          </div>
+
+          {# Chart tab — dynamic bar chart from query results #}
+          <div id="result-pane-chart" style="display:none;padding:16px">
+            <div class="row" style="margin-bottom:12px;gap:10px">
+              <span class="cap">x-axis</span>
+              <select class="input" id="chart-x" style="width:150px;font-size:11.5px;height:24px" onchange="renderChart()">
+                {% for col in sql_columns %}<option>{{ col }}</option>{% endfor %}
+              </select>
+              <span class="cap" style="margin-left:12px">y-axis</span>
+              <select class="input" id="chart-y" style="width:150px;font-size:11.5px;height:24px" onchange="renderChart()">
+                {% for col in sql_columns %}<option {{ 'selected' if col in ['weighted_rating','imdb_rating'] }}>{{ col }}</option>{% endfor %}
+              </select>
+              <span class="cap" style="margin-left:12px">kind</span>
+              <div class="row" style="gap:0;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+                <button class="btn sm primary" id="chart-bar" style="border-radius:0;height:24px;padding:0 8px" onclick="setChartKind('bar',this)">bar</button>
+                <button class="btn sm ghost"   id="chart-line" style="border-radius:0;height:24px;padding:0 8px;border-left:1px solid var(--border)" onclick="setChartKind('line',this)">line</button>
+              </div>
+              <div style="flex:1"></div>
+            </div>
+            <div class="col" id="chart-body" style="gap:4px">
+              {% if sql_results and sql_columns | length >= 2 %}
+                {% set x_col = sql_columns[0] %}
+                {% set y_col = sql_columns[-1] %}
+                {% set max_y = namespace(v=0.01) %}
+                {% for row in sql_results[:10] %}{% set yv = row.get(y_col, 0) | float %}{% if yv > max_y.v %}{% set max_y.v = yv %}{% endif %}{% endfor %}
+                {% for row in sql_results[:10] %}
+                {% set yv = row.get(y_col, 0) | float %}
+                {% set pct = (yv / max_y.v * 100) | round(1) %}
+                <div class="row" style="gap:10px;font-size:11.5px">
+                  <span class="mono" style="width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0" title="{{ row.get(x_col, '') }}">{{ row.get(x_col, '') }}</span>
+                  <div style="flex:1;position:relative;height:18px;background:var(--bg-elev-2);border-radius:3px">
+                    <div style="position:absolute;inset:2px auto 2px 2px;width:calc({{ pct }}% - 4px);background:linear-gradient(90deg,var(--accent-9),var(--accent-7));border-radius:2px"></div>
+                  </div>
+                  <span class="mono tnum dim" style="width:40px;text-align:right">{{ yv | round(2) }}</span>
+                </div>
+                {% endfor %}
+              {% else %}
+              <div class="muted" style="font-size:12px;padding:20px 0">Run a query to see a chart.</div>
+              {% endif %}
+            </div>
+          </div>
+
+          {# History tab — example moviedex queries #}
+          <div id="result-pane-history" style="display:none">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th style="width:110px">When</th>
+                  <th style="width:60px"></th>
+                  <th>Query</th>
+                  <th class="num">Rows</th>
+                  <th class="num">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for h in [
+                  {'t':'just now',  'ok':true,  'rows':'20',    'dur':'9 ms',   'q':'SELECT title, release_year, genres, imdb_rating, vote_count, weighted_rating FROM gold_top_movies ORDER BY global_rank LIMIT 20'},
+                  {'t':'15m ago',   'ok':true,  'rows':'2,518', 'dur':'12 ms',  'q':'SELECT genre, decade, avg_rating, count FROM gold_genre_trends ORDER BY popularity_index DESC LIMIT 50'},
+                  {'t':'42m ago',   'ok':true,  'rows':'12,675','dur':'34 ms',  'q':'SELECT director_name, avg_rating, movies_directed, career_span FROM gold_director_stats ORDER BY avg_rating DESC LIMIT 20'},
+                  {'t':'1h ago',    'ok':true,  'rows':'100',   'dur':'21 ms',  'q':'SELECT * FROM silver_movies WHERE imdb_rating > 8.0 ORDER BY vote_count DESC LIMIT 100'},
+                  {'t':'2h ago',    'ok':false, 'rows':'0',     'dur':'—',      'q':'SELECT * FROM gold_top_moviess LIMIT 10'},
+                  {'t':'3h ago',    'ok':true,  'rows':'—',     'dur':'2 ms',   'q':'DESCRIBE silver_movies'},
+                  {'t':'yesterday', 'ok':true,  'rows':'8',     'dur':'5 ms',   'q':'SELECT genres, COUNT(*) cnt FROM silver_movies WHERE imdb_rating > 7 GROUP BY genres ORDER BY cnt DESC LIMIT 8'},
+                ] %}
+                <tr>
+                  <td class="dim mono" style="font-size:11px">{{ h.t }}</td>
+                  <td>
+                    {% if h.ok %}
+                    <i data-lucide="check" style="width:12px;height:12px;color:var(--green-9)"></i>
+                    {% else %}
+                    <i data-lucide="x" style="width:12px;height:12px;color:var(--red-9)"></i>
+                    {% endif %}
+                  </td>
+                  <td class="mono" style="font-size:11.5px;color:var(--text-2);max-width:480px;overflow:hidden;text-overflow:ellipsis">{{ h.q }}</td>
+                  <td class="num mono dim">{{ h.rows }}</td>
+                  <td class="num mono dim">{{ h.dur }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {# EXPLAIN tab — moviedex query plan #}
+          <div id="result-pane-explain" style="display:none;padding:16px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-2);line-height:1.7">
+            <div class="muted" style="margin-bottom:12px;font-size:11px">query plan · DuckDB</div>
+            {% for step in [
+              {'depth':0, 'name':'TOP_N',         'info':'n=20, ORDER BY global_rank',                                                  'time':'0.1 ms'},
+              {'depth':1, 'name':'PROJECTION',    'info':'title, release_year, genres, imdb_rating, vote_count, weighted_rating',       'time':'0.2 ms'},
+              {'depth':2, 'name':'PARQUET_SCAN',  'info':'gold_top_movies · 616,915 rows · 27.2 MB · row-group pruning: 0 skipped',    'time':'7.8 ms'},
+            ] %}
+            <div class="row" style="gap:10px;padding-left:{{ step.depth * 16 }}px">
+              <span style="color:var(--text-4)">└─</span>
+              <span style="color:var(--accent-11);font-weight:500">{{ step.name }}</span>
+              <span class="dim">{{ step.info }}</span>
+              <span style="margin-left:auto;color:var(--green-9)">{{ step.time }}</span>
+            </div>
+            {% endfor %}
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);color:var(--text-3)">
+              Total: {{ "%.0f"|format(exec_ms) if exec_ms else '—' }} ms · DuckDB in-process · 0 spilled
+            </div>
+          </div>
+
+        </div>{# scroll container #}
+      </div>{# results pane #}
+    </div>{# editor+results grid #}
+  </div>{# main split #}
+</div>{# full-bleed wrapper #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const ta     = document.getElementById('sql-editor');
+  const gutter = document.getElementById('sql-gutter');
+
+  function updateGutter() {
+    if (!ta || !gutter) return;
+    const lines = ta.value.split('\n').length;
+    gutter.innerHTML = Array.from({ length: lines }, (_, i) => `<div>${i + 1}</div>`).join('');
+  }
+
+  function updatePos() {
+    const pos = document.getElementById('ed-pos');
+    if (!pos || !ta) return;
+    const before = ta.value.slice(0, ta.selectionStart);
+    const lines  = before.split('\n');
+    pos.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+  }
+
+  if (ta) {
+    ta.addEventListener('input', updateGutter);
+    ta.addEventListener('keyup', updatePos);
+    ta.addEventListener('click', updatePos);
+
+    // Tab key inserts two spaces instead of moving focus
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = ta.selectionStart;
+        const v = ta.value;
+        ta.value = v.slice(0, s) + '  ' + v.slice(ta.selectionEnd);
+        ta.selectionStart = ta.selectionEnd = s + 2;
+        updateGutter();
+        updatePos();
+      }
+    });
+  }
+
+  // ⌘↵ / Ctrl↵ to run
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('sql-run-btn')?.click();
+    }
+  });
+
+  // Switch result tabs
+  globalThis.switchResultTab = function (id, btn) {
+    document.querySelectorAll('[data-result-tab]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['results', 'chart', 'history', 'explain'].forEach(t => {
+      const el = document.getElementById('result-pane-' + t);
+      if (el) el.style.display = t === id ? '' : 'none';
+    });
+  };
+
+  // Switch SQL editor tabs
+  globalThis.switchSqlTab = function (btn, idx) {
+    document.querySelectorAll('.sql-tab').forEach(b => {
+      b.classList.remove('active');
+      b.style.background = 'transparent';
+      b.style.borderBottom = 'none';
+    });
+    btn.classList.add('active');
+    btn.style.background = 'var(--bg)';
+    btn.style.borderBottom = '1px solid var(--bg)';
+  };
+
+  updateGutter();
+  updatePos();
+})();
+</script>
 {% endblock %}

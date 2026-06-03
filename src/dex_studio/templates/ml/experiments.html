@@ -1,65 +1,150 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
 
-{% block title %}Experiments — DEX Studio{% endblock %}
+{% block title %}Experiments — ML — DEX Studio{% endblock %}
 {% block page_title %}Experiments{% endblock %}
+{% block page_subtitle %}
+  {% if experiments %}
+    {{ experiments | length }} experiment{{ 's' if experiments | length != 1 else '' }}
+    · {{ experiments | sum(attribute='run_count') }} total run{{ 's' if experiments | sum(attribute='run_count') != 1 else '' }}
+  {% else %}
+    No experiments yet
+  {% endif %}
+{% endblock %}
+{% block page_actions %}
+<button class="btn"><i data-lucide="book" style="width:13px;height:13px"></i> Templates</button>
+<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New experiment</button>
+{% endblock %}
 
 {% block content %}
-<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-  <!-- Experiment list -->
-  <div style="flex:0 0 260px">
-    <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 8px">Experiments</h3>
-    {% if experiments %}
-    <div style="display:flex;flex-direction:column;gap:4px">
-      {% for exp in experiments %}
-      <a href="/ml/experiments?exp={{ exp.name }}"
-         class="rt-Card" style="padding:10px 14px;text-decoration:none;display:block;background:{{ 'var(--violet-2)' if selected_exp == exp.name else 'var(--color-background)' }};border-color:{{ 'var(--violet-6)' if selected_exp == exp.name else 'var(--gray-5)' }}">
-        <div style="font-size:13px;font-weight:{{ '600' if selected_exp == exp.name else '400' }};color:{{ 'var(--violet-11)' if selected_exp == exp.name else 'var(--gray-12)' }};margin-bottom:2px">{{ exp.name }}</div>
-        <div style="font-size:11px;color:var(--gray-9)">{{ exp.run_count }} run{{ "s" if exp.run_count != 1 else "" }} · {{ exp.created_at }}</div>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    {{ empty_state("flask-conical", "No experiments", "Start tracking experiments with the DEX tracker.") }}
-    {% endif %}
-  </div>
 
-  <!-- Run list -->
-  <div style="flex:1;min-width:320px">
-    {% if selected_exp %}
-    <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 8px">Runs — {{ selected_exp }}</h3>
-    {% if runs %}
-    <div style="margin-bottom:8px">
-      <input class="dex-table-filter" placeholder="Filter runs…" data-table="runs-table-{{ selected_exp | replace(' ','_') }}">
+{# ── metric strip ── #}
+{% set total_runs = experiments | sum(attribute='run_count') if experiments else 0 %}
+<div class="grid grid-4">
+  <div class="stat card" data-spark-color="var(--accent-9)">
+    <div class="stat-label">Experiments</div>
+    <div class="stat-value">{{ experiments | length }}</div>
+    <div class="stat-delta">{{ 'tracked' if experiments else 'none yet' }}</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Total runs</div>
+    <div class="stat-value">{{ total_runs }}</div>
+    <div class="stat-delta {{ 'up' if total_runs > 0 else '' }}">{{ 'logged' if total_runs > 0 else '0 runs' }}</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--blue-9)">
+    <div class="stat-label">Selected</div>
+    <div class="stat-value" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+      {{ selected_exp or '—' }}
     </div>
-    <div class="rt-Card" style="overflow:hidden">
-      <table id="runs-table-{{ selected_exp | replace(' ','_') }}" class="rt-TableRoot dex-table" style="width:100%">
-        <thead>
-          <tr>
-            <th class="rt-TableColumnHeaderCell sortable">Run ID</th>
-            <th class="rt-TableColumnHeaderCell sortable">Status</th>
-            <th class="rt-TableColumnHeaderCell sortable num">Primary Metric</th>
-            <th class="rt-TableColumnHeaderCell sortable">Started</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in runs %}
-          <tr>
-            <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:11px;color:var(--gray-9)">{{ r.run_id[:12] }}…</td>
-            <td class="rt-TableCell">{{ status_badge(r.status) }}</td>
-            <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">{{ r.primary_metric }}</td>
-            <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ r.started_at }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    {{ empty_state("history", "No runs for this experiment") }}
-    {% endif %}
-    {% else %}
-    {{ empty_state("mouse-pointer", "Select an experiment", "Click an experiment on the left to view its runs.") }}
-    {% endif %}
+    <div class="stat-delta">{{ runs | length }} run{{ 's' if runs | length != 1 else '' }}</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--violet-9)">
+    <div class="stat-label">Tracker</div>
+    <div class="stat-value" style="font-size:14px">builtin</div>
+    <div class="stat-delta">local · file-backed</div>
   </div>
 </div>
+
+{# ── experiment list ── #}
+<div class="section-h">
+  <h2>All experiments</h2>
+</div>
+
+{% if experiments %}
+<div class="card bare">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Experiment</th>
+        <th class="num">Runs</th>
+        <th>Created</th>
+        <th style="width:40px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for exp in experiments %}
+      <tr class="{{ 'bg-accent-subtle' if exp.name == selected_exp else '' }}"
+          style="{{ 'background:color-mix(in oklch,var(--accent-9) 6%,transparent)' if exp.name == selected_exp else '' }}">
+        <td>
+          <a href="/ml/experiments?exp={{ exp.name }}"
+             class="mono" style="font-weight:500;text-decoration:none;color:{{ 'var(--accent-11)' if exp.name == selected_exp else 'inherit' }}">
+            {{ exp.name }}
+          </a>
+        </td>
+        <td class="num mono dim">{{ exp.run_count }}</td>
+        <td class="muted" style="font-size:12px">{{ exp.created_at }}</td>
+        <td>
+          <a href="/ml/experiments?exp={{ exp.name }}"
+             class="btn icon ghost sm" title="View runs">
+            <i data-lucide="chevron-right" style="width:12px;height:12px"></i>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="card" style="padding:48px 24px;text-align:center">
+  <i data-lucide="flask-conical" style="width:28px;height:28px;color:var(--text-4);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto"></i>
+  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No experiments yet</div>
+  <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6">
+    Experiments are tracked automatically when you run a pipeline with ML tracking enabled.<br>
+    Configure <code>ml.tracker: builtin</code> in your dex.yaml to start.
+  </div>
+  <a href="/data/pipelines" class="btn primary" style="display:inline-flex;margin-top:16px;text-decoration:none">
+    <i data-lucide="workflow" style="width:13px;height:13px"></i> Go to Pipelines
+  </a>
+</div>
+{% endif %}
+
+{# ── run history for selected experiment ── #}
+{% if selected_exp %}
+<div class="section-h" style="margin-top:16px">
+  <h2>Runs · {{ selected_exp }}</h2>
+  <a href="/ml/experiments" class="btn sm ghost" style="text-decoration:none">
+    <i data-lucide="x" style="width:11px;height:11px"></i> Clear
+  </a>
+</div>
+
+{% if runs %}
+<div class="card bare">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Run ID</th>
+        <th>Status</th>
+        <th>Primary metric</th>
+        <th>Started</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td class="mono dim" style="font-size:11px">{{ r.run_id[:12] }}…</td>
+        <td>
+          {% if r.status == 'finished' or r.status == 'success' %}
+            <span class="pill success" style="height:18px;font-size:10px">succeeded</span>
+          {% elif r.status == 'failed' %}
+            <span class="pill error" style="height:18px;font-size:10px">failed</span>
+          {% elif r.status == 'running' %}
+            <span class="pill" style="height:18px;font-size:10px;border-color:var(--blue-6);color:var(--blue-9)">running</span>
+          {% else %}
+            <span class="pill" style="height:18px;font-size:10px">{{ r.status }}</span>
+          {% endif %}
+        </td>
+        <td class="mono" style="font-size:12px;color:var(--text-2)">{{ r.primary_metric }}</td>
+        <td class="muted" style="font-size:12px">{{ r.started_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="padding:32px 24px;text-align:center">
+  <div class="muted" style="font-size:13px">No runs recorded for <span class="mono">{{ selected_exp }}</span> yet.</div>
+</div>
+{% endif %}
+{% endif %}
+
 {% endblock %}

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Transforms — Data — DEX Studio{% endblock %}
+{% block page_title %}Transforms{% endblock %}
+{% block page_subtitle %}
+  {% if pipelines %}
+    {{ pipelines | length }} pipeline{{ 's' if pipelines | length != 1 else '' }}
+    {%- if selected_pipeline %} · <span class="mono">{{ selected_pipeline }}</span>{% endif %}
+  {% else %}
+    no pipelines configured
+  {% endif %}
+{% endblock %}
+{% block page_actions %}
+<button class="btn ghost"><i data-lucide="history" style="width:13px;height:13px"></i> History</button>
+{% if steps %}
+<button class="btn" onclick="copySQL()"><i data-lucide="copy" style="width:12px;height:12px"></i> Copy SQL</button>
+{% endif %}
+{% if selected_pipeline %}
+<form method="post" action="/data/pipelines/run/{{ selected_pipeline }}" style="display:inline">
+  <button type="submit" class="btn primary">
+    <i data-lucide="play" style="width:12px;height:12px"></i> Run
+  </button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if not pipelines %}
+
+{# ── empty state ── #}
+<div class="card" style="padding:56px 24px;text-align:center">
+  <i data-lucide="code" style="width:28px;height:28px;color:var(--text-4);display:block;margin:0 auto 12px"></i>
+  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No pipelines configured</div>
+  <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6">
+    Add pipelines to your <code>dex.yaml</code> under <code>data.pipelines</code>.<br>
+    SQL transforms are authored in the <code>transforms</code> block.
+  </div>
+</div>
+
+{% else %}
+
+<div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start">
+
+  {# ── pipeline list sidebar ── #}
+  <div class="card bare" style="overflow:hidden">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Pipelines</span>
+      <span class="muted" style="font-size:11px;margin-left:auto">{{ pipelines | length }}</span>
+    </div>
+    {% for p in pipelines %}
+    {% set layer = 'gold' if 'gold' in p.name else 'silver' if 'silver' in p.name else 'bronze' %}
+    {% set is_active = p.name == selected_pipeline %}
+    <a href="/data/transforms?pipeline={{ p.name }}"
+       style="display:flex;align-items:center;gap:10px;padding:11px 14px 11px 11px;text-decoration:none;
+              border-bottom:{% if not loop.last %}1px solid var(--border){% else %}none{% endif %};
+              background:{% if is_active %}color-mix(in oklch,var(--accent-9) 10%,transparent){% else %}transparent{% endif %};
+              border-left:3px solid {% if is_active %}var(--accent-9){% else %}transparent{% endif %}">
+      <span class="layer-chip {{ layer }}" style="flex-shrink:0;font-size:9.5px;padding:2px 6px">{{ layer[:2].upper() }}</span>
+      <div style="flex:1;min-width:0">
+        <div class="mono" style="font-size:12px;font-weight:{% if is_active %}600{% else %}400{% endif %};color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</div>
+        <div class="muted" style="font-size:10px;margin-top:1px">{{ p.schedule }}</div>
+      </div>
+      <span class="pill {{ p.status }}" style="height:16px;font-size:9px;flex-shrink:0">{{ p.status[:4] }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ── SQL editor / detail panel ── #}
+  {% if steps %}
+  {% set first_step = steps[0] %}
+  {% set sql_text = first_step.sql %}
+  {% set sql_lines = sql_text.split('\n') %}
+
+  <div class="editor" style="min-height:500px">
+    {# toolbar #}
+    <div class="ed-toolbar">
+      <span class="dot"></span>
+      <span class="filename">{{ selected_pipeline }}.sql</span>
+      {% if source %}<span class="dim" style="font-size:10px">· {{ source }}{% if destination %} → {{ destination }}{% endif %}</span>{% endif %}
+      <div class="row" style="margin-left:auto;gap:4px">
+        <button class="btn icon sm ghost" title="Copy SQL" onclick="copySQL()">
+          <i data-lucide="copy" style="width:12px;height:12px"></i>
+        </button>
+      </div>
+      <span class="lang">SQL · DuckDB</span>
+    </div>
+
+    {# code body: gutter + SQL #}
+    <div class="ed-body" style="overflow:auto;max-height:540px;display:flex">
+      <div class="gutter">
+        {% for line in sql_lines %}
+        <div>{{ loop.index }}</div>
+        {% endfor %}
+      </div>
+      <div class="code" style="flex:1;min-width:0;overflow:auto">
+        <pre id="sql-content" style="margin:0;padding:0 12px 0 0;white-space:pre;font-family:var(--font-mono);font-size:12.5px;line-height:1.7;color:var(--text-2)">{{ sql_text | e }}</pre>
+      </div>
+    </div>
+
+    {# status bar #}
+    <div class="ed-status">
+      <span>{{ sql_lines | length }} lines</span>
+      <span>· UTF-8</span>
+      <span>· {{ schedule }}</span>
+      {% if steps | length > 1 %}<span>· {{ steps | length }} steps</span>{% endif %}
+      <span style="margin-left:auto" class="row">
+        <i data-lucide="check" style="width:11px;height:11px"></i>&nbsp;DuckDB SQL
+      </span>
+    </div>
+  </div>
+
+  {# multi-step strip below editor #}
+  {% if steps | length > 1 %}
+  <div style="grid-column:2"></div>
+  <div style="display:none">{# sidebar spacer #}</div>
+  <div class="card bare" style="grid-column:2;margin-top:-8px">
+    <div class="row" style="padding:8px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:500;font-size:12px">All {{ steps | length }} steps</span>
+    </div>
+    {% for step in steps %}
+    <div class="row" style="padding:8px 14px;gap:10px;{% if not loop.last %}border-bottom:1px solid var(--border){% endif %}">
+      <span class="pill" style="height:18px;font-size:10px">{{ loop.index }}</span>
+      <span class="mono dim" style="font-size:11px">{{ step.type }}</span>
+      <span class="mono" style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-3)">{{ step.sql[:80] }}{% if step.sql | length > 80 %}…{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% else %}
+
+  {# ── declarative transform (no SQL) ── #}
+  <div class="card" style="min-height:380px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:32px">
+    <span class="glyph lg" style="width:52px;height:52px;border-radius:14px">
+      <i data-lucide="filter" style="width:22px;height:22px"></i>
+    </span>
+    <div>
+      <div style="font-weight:600;font-size:15px">Declarative transform</div>
+      <div class="muted" style="font-size:12.5px;margin-top:8px;max-width:360px;line-height:1.65">
+        <code class="mono">{{ selected_pipeline }}</code> uses built-in transforms
+        (filter, deduplicate) — no custom SQL.
+        Select a <span class="layer-chip silver" style="font-size:10px">silver</span>
+        or <span class="layer-chip gold" style="font-size:10px">gold</span>
+        pipeline in the sidebar to edit SQL.
+      </div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:4px">
+      {% if source %}
+      <div class="row card compact" style="padding:8px 12px;gap:8px">
+        <i data-lucide="table-2" style="width:12px;height:12px" class="muted"></i>
+        <span class="mono" style="font-size:12px">{{ source }}</span>
+        {% if destination %}<i data-lucide="arrow-right" style="width:11px;height:11px" class="muted"></i>
+        <span class="mono" style="font-size:12px">{{ destination }}</span>{% endif %}
+      </div>
+      {% endif %}
+      <form method="post" action="/data/pipelines/run/{{ selected_pipeline }}">
+        <button type="submit" class="btn primary">
+          <i data-lucide="play" style="width:12px;height:12px"></i> Run pipeline
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+<script>
+(function () {
+  'use strict';
+  globalThis.copySQL = function () {
+    const el = document.getElementById('sql-content');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(function () {
+      const btn = document.querySelector('[onclick="copySQL()"]');
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px"></i> Copied';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        setTimeout(function () { btn.innerHTML = orig; if (typeof lucide !== 'undefined') lucide.createIcons(); }, 1800);
+      }
+    }).catch(function () {});
+  };
+}());
+</script>
+{% endblock %}

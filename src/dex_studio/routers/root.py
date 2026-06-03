@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import json as _json
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -17,9 +19,29 @@ from dex_studio._engine import (
     validate_config_file,
 )
 from dex_studio.auth import logout, validate_and_login
-from dex_studio.routers._deps import base_ctx, render, require_auth, require_engine
+from dex_studio.routers._deps import base_ctx, render, require_auth, require_engine, verify_csrf
 
 router = APIRouter()
+
+
+def _hub_recent_runs(eng: Any) -> list[dict[str, Any]]:
+    runs: list[dict[str, Any]] = []
+    runs_path = eng.project_dir / ".dex" / "pipeline_runs.json"
+    with contextlib.suppress(Exception):
+        raw: list[dict[str, Any]] = _json.loads(runs_path.read_text())
+        for r in reversed(raw[-7:]):
+            dur_ms = float(r.get("duration_ms", 0))
+            dur_str = f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
+            runs.append(
+                {
+                    "type": "pipeline",
+                    "name": r.get("pipeline_name", "unknown"),
+                    "status": "success" if r.get("success") else "error",
+                    "started": str(r.get("timestamp", ""))[:19].replace("T", " "),
+                    "duration": dur_str,
+                }
+            )
+    return runs
 
 
 # ── Privacy alias — canonical home is /secops ─────────────────────────────────
@@ -39,7 +61,7 @@ async def privacy_redirect() -> RedirectResponse:
 async def hub(request: Request) -> HTMLResponse:
     if redir := require_auth(request):
         return redir  # type: ignore[return-value]
-    if redir := require_engine(request):
+    if redir := require_engine():
         return redir  # type: ignore[return-value]
     from dex_studio.routers._deps import get_eng
 
@@ -87,6 +109,8 @@ async def hub(request: Request) -> HTMLResponse:
             }
         )
 
+    recent_runs = _hub_recent_runs(eng)
+
     ctx = base_ctx(request) | {
         "stats": stats,
         "pipeline_count": pipeline_count,
@@ -97,7 +121,7 @@ async def hub(request: Request) -> HTMLResponse:
         "health_status": health.get("status", "unknown"),
         "layer_stats": layer_stats,
         "components": components,
-        "recent_runs": [],  # populated when RunStore lands
+        "recent_runs": recent_runs,
         "user_projects": [{"name": n, "path": str(p)} for n, p in find_user_projects()],
     }
     return render(request, "root/hub.html", ctx)
@@ -195,6 +219,9 @@ async def switch_project(
     request: Request,
     config_path: Annotated[str, Form()],
 ) -> RedirectResponse:
+    if redir := require_auth(request):
+        return redir
+    verify_csrf(request)
     path = config_path.strip()
     if path:
         try:
@@ -210,6 +237,9 @@ async def set_default_project(
     request: Request,
     config_path: Annotated[str, Form()],
 ) -> RedirectResponse:
+    if redir := require_auth(request):
+        return redir
+    verify_csrf(request)
     path = config_path.strip()
     if path:
         try:

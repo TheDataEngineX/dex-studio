@@ -58,10 +58,10 @@
 {% endif %}
 
 <!-- Add Source Dialog -->
-<div x-data="{open:false}" @open-add-source.window="open=true"
+<div x-data="{open:false,srcType:'csv'}" @open-add-source.window="open=true"
      x-show="open" x-cloak class="dex-modal-overlay"
      @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-  <div class="rt-Card" style="width:400px;padding:24px;background:var(--color-background)" @click.stop>
+  <div class="rt-Card" style="width:420px;padding:24px;background:var(--color-background)" @click.stop>
     <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Source</h3>
     <form method="post" action="/data/sources/add">
       <div class="dex-form-group" style="margin-bottom:10px">
@@ -70,15 +70,56 @@
       </div>
       <div class="dex-form-group" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Type *</label>
-        <select name="type" required style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
+        <select name="type" x-model="srcType" required style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
           {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
       </div>
-      <div class="dex-form-group" style="margin-bottom:16px">
+
+      <!-- Generic path — hidden for dbt (project_dir takes its place) -->
+      <div class="dex-form-group" style="margin-bottom:10px" x-show="srcType !== 'dbt'">
         <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Path / URL</label>
         <input type="text" name="path" placeholder="/data/file.csv" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+
+      <!-- Spark-specific fields -->
+      <template x-if="srcType === 'spark'">
+        <div>
+          <div class="dex-form-group" style="margin-bottom:10px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Spark master</label>
+            <input type="text" name="spark_master" placeholder="local[*]" value="local[*]" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          </div>
+          <div class="dex-form-group" style="margin-bottom:10px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Format</label>
+            <select name="spark_format" style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
+              <option value="parquet">parquet</option>
+              <option value="delta">delta</option>
+              <option value="iceberg">iceberg</option>
+              <option value="csv">csv</option>
+              <option value="json">json</option>
+            </select>
+          </div>
+        </div>
+      </template>
+
+      <!-- dbt-specific fields -->
+      <template x-if="srcType === 'dbt'">
+        <div>
+          <div class="dex-form-group" style="margin-bottom:10px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project dir *</label>
+            <input type="text" name="dbt_project_dir" placeholder="/path/to/dbt_project" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          </div>
+          <div class="dex-form-group" style="margin-bottom:10px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model *</label>
+            <input type="text" name="dbt_model" placeholder="my_model" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          </div>
+          <div class="dex-form-group" style="margin-bottom:10px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Target</label>
+            <input type="text" name="dbt_target" placeholder="dev" value="dev" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          </div>
+        </div>
+      </template>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
         <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
         <button type="submit" class="rt-Button" data-variant="solid" data-size="2">Add</button>
       </div>

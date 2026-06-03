@@ -1,104 +1,514 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
 
 {% block title %}Pipelines — DEX Studio{% endblock %}
+
 {% block page_title %}Pipelines{% endblock %}
+{% block page_sub %}{{ pipelines | length }} pipeline{{ 's' if pipelines | length != 1 }} · {{ pipelines | selectattr('status','equalto','running') | list | length }} running · {{ pipelines | selectattr('status','in',['error','failed']) | list | length }} failed{% endblock %}
+
 {% block page_actions %}
-<button @click="$dispatch('open-add-pipeline')"
-        class="rt-Button" data-variant="solid" data-size="2">
-  <i data-lucide="plus" style="width:13px;height:13px"></i> Add Pipeline
+<button class="btn sm ghost">
+  <i data-lucide="download" style="width:12px;height:12px"></i> Import YAML
+</button>
+<button class="btn sm primary" onclick="document.getElementById('add-pipeline-modal').showModal()">
+  <i data-lucide="plus" style="width:12px;height:12px"></i> New pipeline
 </button>
 {% endblock %}
 
 {% block content %}
-{% if pipelines %}
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter pipelines…" data-table="pipelines-table">
-</div>
-<div class="rt-Card" style="overflow:hidden">
-  <table id="pipelines-table" class="rt-TableRoot dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="rt-TableColumnHeaderCell sortable">Name</th>
-        <th class="rt-TableColumnHeaderCell sortable">Schedule</th>
-        <th class="rt-TableColumnHeaderCell sortable">Status</th>
-        <th class="rt-TableColumnHeaderCell sortable">Last Run</th>
-        <th class="rt-TableColumnHeaderCell sortable num">Duration</th>
-        <th class="rt-TableColumnHeaderCell">Rows In/Out</th>
-        <th class="rt-TableColumnHeaderCell">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for p in pipelines %}
-      <tr>
-        <td class="rt-TableCell">
-          <a href="/data/pipelines/{{ p.name }}" style="font-weight:600;color:var(--indigo-11);text-decoration:none;font-family:'Fira Code',monospace;font-size:12px">{{ p.name }}</a>
-        </td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.schedule }}</td>
-        <td class="rt-TableCell">{{ status_badge(p.status) }}</td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.last_run }}</td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.duration_ms }}{% if p.duration_ms != "—" %}ms{% endif %}</td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ p.rows_in }} / {{ p.rows_out }}</td>
-        <td class="rt-TableCell">
-          <div style="display:flex;gap:4px">
-            <form method="post" action="/data/pipelines/run/{{ p.name }}" style="display:inline">
-              <button type="submit" class="rt-Button" data-variant="soft" data-color="green" data-size="1" title="Run">
-                <i data-lucide="play" style="width:12px;height:12px"></i>
-              </button>
-            </form>
-            <a href="/data/pipelines/{{ p.name }}" class="rt-Button" data-variant="ghost" data-size="1" title="View">
-              <i data-lucide="eye" style="width:12px;height:12px"></i>
-            </a>
-            <form method="post" action="/data/pipelines/delete/{{ p.name }}" style="display:inline"
-                  onsubmit="return confirm('Delete pipeline {{ p.name }}?')">
-              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1" title="Delete">
-                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% else %}
-{{ empty_state("workflow", "No pipelines configured", "Add a pipeline to get started.") }}
-{% endif %}
 
-<!-- Add Pipeline Dialog -->
-<div x-data="{open:false}" @open-add-pipeline.window="open=true"
-     x-show="open" x-cloak class="dex-modal-overlay"
-     @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-  <div class="rt-Card" style="width:420px;padding:24px;background:var(--color-background)" @click.stop>
-    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Pipeline</h3>
+<div class="grid" style="grid-template-columns:1.1fr 1.8fr 1.1fr;gap:var(--space-3)">
+
+  {# ── Pipeline list ──────────────────────────────────────────────────────── #}
+  <div class="card bare">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);gap:8px">
+      <div class="input-icon" style="flex:1">
+        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+        <input class="input" id="pipe-search" placeholder="Filter pipelines…" style="font-size:12px;height:26px">
+      </div>
+      <button class="btn sm ghost">
+        <i data-lucide="sliders-horizontal" style="width:11px;height:11px"></i>
+      </button>
+    </div>
+
+    {% if pipelines %}
+    <div id="pipe-list">
+      {% for p in pipelines %}
+      {% set running = p.status == 'running' %}
+      {% set failed  = p.status in ('error','failed') %}
+      <button class="pipe-item {{ 'active' if loop.first }}"
+              data-name="{{ p.name }}"
+              data-status="{{ p.status }}"
+              data-schedule="{{ p.schedule }}"
+              data-last-run="{{ p.last_run }}"
+              data-duration="{{ p.duration_ms }}"
+              data-rows-in="{{ p.rows_in }}"
+              data-rows-out="{{ p.rows_out }}"
+              onclick="selectPipeline(this)"
+              style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:12px 14px 12px 11px;cursor:pointer;display:flex;gap:12px;align-items:center">
+        <i data-lucide="workflow" style="width:14px;height:14px;opacity:.4;flex-shrink:0"></i>
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:8px">
+            <span class="mono" style="font-weight:500;font-size:13px;color:var(--text)">{{ p.name }}</span>
+            {% if running %}<span class="pill running" style="height:14px;font-size:9px">running</span>
+            {% elif failed %}<span class="pill error" style="height:14px;font-size:9px">failed</span>
+            {% elif p.status in ('success','succeeded') %}<span class="pill success" style="height:14px;font-size:9px">ok</span>
+            {% else %}<span class="pill" style="height:14px;font-size:9px">{{ p.status or 'idle' }}</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:2px;pointer-events:none">
+            {{ p.schedule or 'manual' }} · last {{ p.last_run or 'never' }}
+          </div>
+        </div>
+        <div class="dim mono tnum" style="font-size:11px;flex-shrink:0">{{ p.duration_ms or '—' }}</div>
+      </button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dex-empty-state" style="padding:48px 16px">
+      <i data-lucide="workflow" style="width:28px;height:28px;opacity:.3;margin-bottom:12px"></i>
+      <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No pipelines yet</div>
+      <div class="muted" style="font-size:var(--text-xs)">Add a pipeline to get started.</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Detail panel ───────────────────────────────────────────────────────── #}
+  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
+
+    {# Header #}
+    <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0">
+      <span class="glyph accent">
+        <i data-lucide="workflow" style="width:13px;height:13px"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:8px">
+          <span class="mono" id="dag-name" style="font-weight:600;font-size:15px">
+            {{ pipelines[0].name if pipelines else '—' }}
+          </span>
+          <span id="dag-status-pill" class="pill {{ 'running' if pipelines and pipelines[0].status == 'running' else 'success' if pipelines and pipelines[0].status in ('success','succeeded') else 'error' if pipelines and pipelines[0].status in ('error','failed') else '' }}"
+                style="height:16px;font-size:9px">
+            {{ pipelines[0].status if pipelines else '—' }}
+          </span>
+        </div>
+        <div class="muted mono" id="dag-meta" style="font-size:11px;margin-top:2px">
+          {{ pipelines[0].schedule if pipelines else '—' }}
+        </div>
+      </div>
+      <button class="btn sm ghost">
+        <i data-lucide="eye" style="width:11px;height:11px"></i> YAML
+      </button>
+      <button class="btn sm ghost">
+        <i data-lucide="history" style="width:11px;height:11px"></i> History
+      </button>
+      <form method="post" id="run-form"
+            action="/data/pipelines/run/{{ pipelines[0].name if pipelines else '#' }}"
+            style="display:contents">
+        <button type="submit" class="btn sm primary">
+          <i data-lucide="play" style="width:11px;height:11px"></i> Run now
+        </button>
+      </form>
+    </div>
+
+    {# Progress strip — shown when running #}
+    <div id="dag-progress-strip"
+         style="padding:10px 16px;border-bottom:1px solid var(--border);background:color-mix(in oklch,var(--accent-9) 8%,transparent);{{ 'display:none' if not (pipelines and pipelines[0].status == 'running') }}">
+      <div class="row" style="margin-bottom:6px">
+        <span class="pill running" style="height:16px;font-size:10px">running…</span>
+        <span class="mono dim" style="font-size:11px;margin-left:8px">pipeline in progress</span>
+      </div>
+      <div class="progress thin">
+        <i style="width:100%;animation:indeterminate 1.4s ease infinite"></i>
+      </div>
+    </div>
+
+    {# DAG canvas #}
+    <div style="position:relative;height:340px;background:var(--bg);flex-shrink:0;overflow:hidden" id="dag-canvas">
+      {# Grid background #}
+      <div class="grid-bg" style="position:absolute;inset:0;pointer-events:none"></div>
+
+      {# SVG edges #}
+      <svg id="dag-svg"
+           style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"
+           viewBox="0 0 1000 340" preserveAspectRatio="none">
+        <defs>
+          <marker id="parr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--text-4)"/>
+          </marker>
+        </defs>
+      </svg>
+
+      {# DAG nodes rendered by JS #}
+    </div>
+
+    {# Footer tabs + nodes table #}
+    <div class="tabs" style="padding-left:14px;flex-shrink:0">
+      <button class="tab active" onclick="switchPipeTab('nodes',this)">Steps <span class="count" id="steps-count">—</span></button>
+      <button class="tab" onclick="switchPipeTab('triggers',this)">Schedule</button>
+      <button class="tab" onclick="switchPipeTab('tests',this)">Quality</button>
+    </div>
+
+    <div style="flex:1;overflow-y:auto" id="pipe-tab-nodes">
+      <table class="tbl dex-table" style="font-size:12px">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Step</th>
+            <th style="width:90px">Kind</th>
+          </tr>
+        </thead>
+        <tbody id="steps-body"></tbody>
+      </table>
+    </div>
+
+    <div id="pipe-tab-triggers" style="display:none;padding:16px">
+      <div class="muted" style="font-size:12px" id="trigger-detail">—</div>
+    </div>
+    <div id="pipe-tab-tests" style="display:none;padding:16px">
+      <div class="muted" style="font-size:12px">Quality checks are configured in dex.yaml under each pipeline's <code>quality:</code> block.</div>
+    </div>
+
+  </div>
+
+  {# ── Run History panel ───────────────────────────────────────────────────── #}
+  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
+
+    {# Header #}
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);gap:8px;flex-shrink:0">
+      <span class="glyph accent" style="width:22px;height:22px">
+        <i data-lucide="history" style="width:11px;height:11px"></i>
+      </span>
+      <span style="font-weight:600;font-size:13px;flex:1">Run History</span>
+      <span id="runs-scope" class="pill" style="height:16px;font-size:9px">all</span>
+    </div>
+
+    {# Run list #}
+    <div style="flex:1;overflow-y:auto" id="runs-panel">
+      <div class="muted" style="font-size:12px;padding:16px;text-align:center">Loading…</div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Add Pipeline modal ──────────────────────────────────────────────────── #}
+<dialog class="dex-dialog" id="add-pipeline-modal">
+  <div style="width:420px;max-width:95vw">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="font-size:15px;font-weight:600;margin:0">New Pipeline</h3>
+      <button class="btn sm ghost" onclick="this.closest('dialog').close()">
+        <i data-lucide="x" style="width:14px;height:14px"></i>
+      </button>
+    </div>
     <form method="post" action="/data/pipelines/add">
-      <div class="dex-form-group" style="margin-bottom:10px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
-        <input type="text" name="name" placeholder="etl_users" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
-      </div>
-      <div class="dex-form-row" style="margin-bottom:10px">
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Source</label>
-          <select name="source" style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
-            <option value="">— none —</option>
-            {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-          </select>
+      <div class="col" style="gap:12px">
+        <div class="col" style="gap:4px">
+          <label class="cap" for="pipe-name">Name *</label>
+          <input id="pipe-name" type="text" name="name" placeholder="etl_users" required
+                 class="input" style="font-family:var(--font-mono);font-size:12px">
         </div>
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Schedule (cron)</label>
-          <input type="text" name="schedule" placeholder="0 * * * *" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+          <div class="col" style="gap:4px">
+            <label class="cap" for="pipe-source">Source</label>
+            <select id="pipe-source" name="source" class="input" style="font-size:var(--text-sm)">
+              <option value="">— none —</option>
+              {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col" style="gap:4px">
+            <label class="cap" for="pipe-schedule">Schedule (cron)</label>
+            <input id="pipe-schedule" type="text" name="schedule" placeholder="0 * * * *"
+                   class="input" style="font-family:var(--font-mono);font-size:12px">
+          </div>
         </div>
-      </div>
-      <div class="dex-form-group" style="margin-bottom:16px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Destination</label>
-        <input type="text" name="destination" placeholder="warehouse.gold.users" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
-        <button type="submit" class="rt-Button" data-variant="solid" data-size="2">Create</button>
+        <div class="col" style="gap:4px">
+          <label class="cap" for="pipe-dest">Destination</label>
+          <input id="pipe-dest" type="text" name="destination" placeholder="warehouse.gold.users"
+                 class="input" style="font-family:var(--font-mono);font-size:12px">
+        </div>
+        <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+          <button type="button" class="btn sm ghost" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="submit" class="btn sm primary">Create</button>
+        </div>
       </div>
     </form>
   </div>
-</div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const PIPELINE_DATA = {{ pipeline_data_json | safe }};
+
+  const KIND_COLOR = {
+    filter:'var(--accent-9)', deduplicate:'var(--violet-9)', sql:'var(--blue-9)',
+    derive:'var(--amber-9)', cast:'var(--green-9)', source:'var(--text-3)',
+    output:'var(--green-9)'
+  };
+  const KIND_ICON = {
+    filter:'funnel', deduplicate:'copy-minus', sql:'code-2',
+    derive:'sparkles', cast:'arrow-right-left', source:'database', output:'layers'
+  };
+
+  const canvas = document.getElementById('dag-canvas');
+  const svg    = document.getElementById('dag-svg');
+  const NODE_H = 32;
+  const NODE_W = 130;
+
+  let currentNodes = [];
+  let byId = {};
+
+  function buildNodes(name) {
+    const p = PIPELINE_DATA[name] || {};
+    const steps = p.steps || [];
+    const nodes = [];
+
+    // source
+    nodes.push({ id:'n_src', x:3, y:44, n: p.source || name, k:'source', w:NODE_W });
+
+    // steps
+    const xStart = 24, xEnd = 74;
+    const span = steps.length > 1 ? (xEnd - xStart) / (steps.length - 1) : 0;
+    steps.forEach(function (step, i) {
+      const x = steps.length === 1 ? (xStart + xEnd) / 2 : xStart + i * span;
+      nodes.push({ id:'n_step_' + i, x: x, y:44, n: step.label, k: step.type, w:NODE_W });
+    });
+
+    // destination
+    nodes.push({ id:'n_dst', x:89, y:44, n: p.destination || name, k:'output', w:NODE_W });
+    return nodes;
+  }
+
+  function anchor(n, side) {
+    const pw = canvas.clientWidth  || 900;
+    const ph = canvas.clientHeight || 340;
+    const xPx = (n.x / 100) * pw + (side === 'right' ? n.w : 0);
+    const yPx = (n.y / 100) * ph + NODE_H / 2;
+    return { x: (xPx / pw) * 1000, y: (yPx / ph) * 340 };
+  }
+
+  function drawEdges() {
+    svg.querySelectorAll('path.dag-edge').forEach(function (p) { p.remove(); });
+    for (let i = 0; i < currentNodes.length - 1; i++) {
+      const A = anchor(currentNodes[i], 'right');
+      const B = anchor(currentNodes[i + 1], 'left');
+      const mid = (A.x + B.x) / 2;
+      const d   = 'M' + A.x + ',' + A.y + ' C' + mid + ',' + A.y + ' ' + mid + ',' + B.y + ' ' + B.x + ',' + B.y;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'var(--border)');
+      path.setAttribute('stroke-width', '1');
+      path.setAttribute('marker-end', 'url(#parr)');
+      path.setAttribute('class', 'dag-edge');
+      svg.appendChild(path);
+    }
+  }
+
+  function renderNodes() {
+    canvas.querySelectorAll('.dag-node-el').forEach(function (n) { n.remove(); });
+    currentNodes.forEach(function (n) {
+      const kc  = KIND_COLOR[n.k] || 'var(--text-3)';
+      const ico = KIND_ICON[n.k]  || 'circle';
+      const el  = document.createElement('div');
+      el.className = 'dag-node dag-node-el';
+      el.style.cssText = 'left:' + n.x + '%;top:' + n.y + '%;width:' + n.w + 'px;border-color:var(--border);background:var(--bg-elev)';
+      el.innerHTML =
+        '<span class="glyph" style="width:22px;height:22px;border-radius:4px;' +
+        'background:color-mix(in oklch,' + kc + ' 18%,transparent);color:' + kc + ';' +
+        'border:1px solid color-mix(in oklch,' + kc + ' 32%,transparent);flex-shrink:0">' +
+        '<i data-lucide="' + ico + '" style="width:11px;height:11px"></i></span>' +
+        '<div class="lbl" style="overflow:hidden">' +
+        '<b style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + n.n + '</b>' +
+        '<span style="font-size:9px;color:var(--text-4)">' + n.k + '</span></div>';
+      canvas.appendChild(el);
+    });
+    if (globalThis.lucide) lucide.createIcons({ el: canvas });
+  }
+
+  function renderStepsTable(name) {
+    const p = PIPELINE_DATA[name] || {};
+    const steps = p.steps || [];
+    const tbody = document.getElementById('steps-body');
+    const count = document.getElementById('steps-count');
+    if (!tbody) return;
+
+    // Source row
+    let html = '<tr><td class="mono dim">src</td>' +
+      '<td class="mono">' + (p.source || '—') + '</td>' +
+      '<td><span class="pill" style="height:16px;font-size:9.5px">source</span></td></tr>';
+
+    steps.forEach(function (s, i) {
+      html += '<tr><td class="mono dim">' + (i + 1) + '</td>' +
+        '<td class="mono">' + s.label + '</td>' +
+        '<td><span class="pill" style="height:16px;font-size:9.5px">' + s.type + '</span></td></tr>';
+    });
+
+    // Destination row
+    html += '<tr><td class="mono dim">dst</td>' +
+      '<td class="mono">' + (p.destination || '—') + '</td>' +
+      '<td><span class="pill" style="height:16px;font-size:9.5px">output</span></td></tr>';
+
+    tbody.innerHTML = html;
+    if (count) count.textContent = steps.length + 2;
+  }
+
+  function refreshDag(name) {
+    currentNodes = buildNodes(name);
+    byId = Object.fromEntries(currentNodes.map(function (n) { return [n.id, n]; }));
+    drawEdges();
+    renderNodes();
+    renderStepsTable(name);
+  }
+
+  // Initial render for the first pipeline
+  const firstPipe = document.querySelector('.pipe-item');
+  if (firstPipe) refreshDag(firstPipe.dataset.name);
+
+  let rszTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(rszTimer);
+    rszTimer = setTimeout(function () { drawEdges(); renderNodes(); }, 120);
+  });
+
+  // ── Pipeline search ─────────────────────────────────────────────────────
+  const searchInput = document.getElementById('pipe-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      document.querySelectorAll('.pipe-item').forEach(item => {
+        item.style.display = item.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  function statusClass(s) {
+    if (s === 'running')                    return 'running';
+    if (s === 'success' || s === 'succeeded') return 'success';
+    if (s === 'error'   || s === 'failed')    return 'error';
+    return '';
+  }
+
+  // ── Run History panel ───────────────────────────────────────────────────
+  let _runsInterval = null;
+  let _selectedPipeline = null;
+
+  function _runsUrl(name) {
+    return name ? '/data/pipelines/' + encodeURIComponent(name) + '/runs'
+                : '/data/pipelines/runs/all';
+  }
+
+  function _statusBadge(success, error) {
+    if (success) {
+      return '<span class="pill success" style="height:14px;font-size:9px">ok</span>';
+    }
+    const tip = error ? ' title="' + error.replace(/"/g, '&quot;') + '"' : '';
+    return '<span class="pill error" style="height:14px;font-size:9px"' + tip + '>fail</span>';
+  }
+
+  function _renderRuns(runs) {
+    const panel = document.getElementById('runs-panel');
+    if (!panel) return;
+    if (!runs.length) {
+      panel.innerHTML = '<div class="muted" style="font-size:12px;padding:16px;text-align:center">No runs recorded yet.</div>';
+      return;
+    }
+    let html = '';
+    runs.forEach(function (r) {
+      const dur = r.duration_ms != null ? r.duration_ms + 'ms' : '—';
+      const rows = r.rows_output != null ? r.rows_output.toLocaleString() : '—';
+      html += '<div style="display:flex;flex-direction:column;gap:2px;padding:8px 14px;border-bottom:1px solid var(--border)">' +
+        '<div class="row" style="gap:6px">' +
+          (runs.length > 1 || !_selectedPipeline
+            ? '<span class="mono dim" style="font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.pipeline_name + '</span>'
+            : '') +
+          _statusBadge(r.success, r.error) +
+        '</div>' +
+        '<div class="row" style="gap:8px;margin-top:2px">' +
+          '<span class="muted mono tnum" style="font-size:10.5px">' + r.timestamp + '</span>' +
+          '<span style="flex:1"></span>' +
+          '<span class="dim mono tnum" style="font-size:10px">' + dur + '</span>' +
+          '<span class="dim mono tnum" style="font-size:10px">' + rows + ' rows</span>' +
+        '</div>' +
+      '</div>';
+    });
+    panel.innerHTML = html;
+  }
+
+  function _loadRuns(name) {
+    fetch(_runsUrl(name))
+      .then(function (r) { return r.json(); })
+      .then(_renderRuns)
+      .catch(function () {
+        const panel = document.getElementById('runs-panel');
+        if (panel) panel.innerHTML = '<div class="muted" style="font-size:12px;padding:16px;text-align:center">Failed to load runs.</div>';
+      });
+  }
+
+  function _startRunsRefresh(name) {
+    _selectedPipeline = name || null;
+    const scopeEl = document.getElementById('runs-scope');
+    if (scopeEl) scopeEl.textContent = name || 'all';
+    _loadRuns(name);
+    if (_runsInterval) clearInterval(_runsInterval);
+    _runsInterval = setInterval(function () { _loadRuns(_selectedPipeline); }, 5000);
+  }
+
+  // Kick off with all pipelines on page load
+  _startRunsRefresh(null);
+
+  // ── Select pipeline ─────────────────────────────────────────────────────
+  globalThis.selectPipeline = function (el) {
+    document.querySelectorAll('.pipe-item').forEach(function (i) {
+      i.classList.remove('active');
+      i.style.borderLeftColor = 'transparent';
+      i.style.background = 'none';
+    });
+    el.classList.add('active');
+    el.style.borderLeftColor = 'var(--accent-9)';
+    el.style.background = 'color-mix(in oklch,var(--accent-9) 10%,transparent)';
+
+    const name   = el.dataset.name;
+    const status = el.dataset.status;
+    const sched  = el.dataset.schedule;
+
+    const nameEl = document.getElementById('dag-name');
+    if (nameEl) nameEl.textContent = name;
+
+    const sp = document.getElementById('dag-status-pill');
+    if (sp) {
+      sp.textContent = status;
+      sp.className = 'pill ' + statusClass(status);
+      sp.style.height = '16px'; sp.style.fontSize = '9px';
+    }
+
+    const meta = document.getElementById('dag-meta');
+    if (meta) meta.textContent = sched || '—';
+
+    const strip = document.getElementById('dag-progress-strip');
+    if (strip) strip.style.display = status === 'running' ? '' : 'none';
+
+    const form = document.getElementById('run-form');
+    if (form) form.action = '/data/pipelines/run/' + name;
+
+    const triggerDetail = document.getElementById('trigger-detail');
+    if (triggerDetail) triggerDetail.textContent = sched && sched !== '—' ? 'Schedule: ' + sched : 'No schedule — manual run only';
+
+    refreshDag(name);
+    _startRunsRefresh(name);
+  };
+
+  // ── Pipe tabs ───────────────────────────────────────────────────────────
+  globalThis.switchPipeTab = function (name, btn) {
+    document.querySelectorAll('#pipe-tab-nodes,#pipe-tab-triggers,#pipe-tab-tests,#pipe-tab-notifications').forEach(el => {
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const pane = document.getElementById('pipe-tab-' + name);
+    if (pane) pane.style.display = '';
+  };
+})();
+</script>
 {% endblock %}

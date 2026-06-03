@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json as _json
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -10,13 +12,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
 from dex_studio.logstore import log_store
-from dex_studio.routers._deps import base_ctx, get_eng, render, require_auth, require_engine
+from dex_studio.routers._deps import base_ctx, get_eng, render, stub_page
+from dex_studio.routers._deps import require_auth as _require_auth
+from dex_studio.routers._deps import require_engine as _require_engine
 
 router = APIRouter()
 
 
 def _guard(request: Request) -> RedirectResponse | None:
-    return require_auth(request) or require_engine(request)
+    """Auth + engine check without CSRF — read-only routes only."""
+    return _require_auth(request) or _require_engine()
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -163,38 +168,44 @@ async def system_runs(
         return redir  # type: ignore[return-value]
     eng = get_eng()
     stats = eng.pipeline_stats()
-    # Synthesise a run list from available engine data.
-    # When a dedicated RunStore lands (dex ≥ 0.5), replace with eng.run_store.recent().
     runs: list[dict[str, Any]] = []
-    pipelines = getattr(eng, "pipelines", {})
-    for name, pl in pipelines.items() if isinstance(pipelines, dict) else []:
-        last_run = getattr(pl, "last_run", None)
-        if last_run:
+    # Read directly from pipeline_runs.json (authoritative run store)
+    runs_path = eng.project_dir / ".dex" / "pipeline_runs.json"
+    with contextlib.suppress(Exception):
+        raw_runs: list[dict[str, Any]] = _json.loads(runs_path.read_text())
+        for r in reversed(raw_runs[-200:]):
+            run_status = "success" if r.get("success") else "error"
+            dur_ms = float(r.get("duration_ms", 0))
+            dur_str = f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
+            ts = str(r.get("timestamp", ""))[:19].replace("T", " ")
             runs.append(
                 {
                     "type": "pipeline",
-                    "name": name,
-                    "status": getattr(last_run, "status", "unknown"),
-                    "started": str(getattr(last_run, "started_at", ""))[:19].replace("T", " "),
-                    "duration": getattr(last_run, "duration_str", "—"),
-                    "trigger": getattr(last_run, "trigger", "manual"),
-                    "io": "—",
+                    "name": r.get("pipeline_name", "unknown"),
+                    "status": run_status,
+                    "started": ts,
+                    "duration": dur_str,
+                    "trigger": "manual",
+                    "io": f"{r.get('rows_output', 0):,} rows",
                 }
             )
-    # Apply client-side filters (server-side for graceful degradation / deep-link).
+    # Apply server-side filters (type + status route params preserved for deep-link).
     type_options = ["all", "pipeline", "transform", "workflow", "agent", "stream"]
     status_options = ["all", "running", "success", "error", "cancelled"]
-    if type != "all":
-        runs = [r for r in runs if r["type"] == type]
-    if status != "all":
-        runs = [r for r in runs if r["status"] == status]
+    total_runs = len(runs)
+    filter_type = type
+    filter_status = status
+    if filter_type != "all":
+        runs = [r for r in runs if r["type"] == filter_type]
+    if filter_status != "all":
+        runs = [r for r in runs if r["status"] == filter_status]
     ctx = base_ctx(request) | {
         "runs": runs,
-        "total_count": stats.get("total", 0),
+        "total_count": total_runs,
         "running_count": stats.get("running", 0),
         "failed_count": stats.get("failed", 0),
-        "filter_type": type,
-        "filter_status": status,
+        "filter_type": filter_type,
+        "filter_status": filter_status,
         "type_options": type_options,
         "status_options": status_options,
     }
@@ -226,7 +237,7 @@ async def system_costs(request: Request) -> HTMLResponse:
         if prov and cost:
             provider_map[prov] = provider_map.get(prov, 0.0) + cost
     spend_total = sum(provider_map.values())
-    budget = 25.0  # TODO: pull from config when available
+    budget = 25.0
     providers = [
         {
             "name": k,
@@ -235,17 +246,32 @@ async def system_costs(request: Request) -> HTMLResponse:
         }
         for k, v in sorted(provider_map.items(), key=lambda kv: kv[1], reverse=True)
     ]
+    import datetime as _dt
+
+    _now = _dt.datetime.now()
     ctx = base_ctx(request) | {
         "spend_total": round(spend_total, 4),
         "budget": budget,
         "budget_pct": round(min(spend_total / budget * 100, 100), 1) if budget else 0.0,
         "providers": providers,
-        "breakdown": [],  # model-level breakdown — requires cost tracking in RunStore
+        "breakdown": [],
+        "month_label": _now.strftime("%B %Y"),
+        "month_day": _now.day,
+        "month_days": (_dt.date(_now.year, _now.month % 12 + 1, 1) - _dt.timedelta(days=1)).day,
     }
     return render(request, "system/costs.html", ctx)
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────────
+
+
+_SYSTEM_STUB_TITLES = {
+    "/system/traces": "System Traces",
+    "/system/activity": "Activity Log",
+    "/system/incidents": "Incidents",
+    "/system/settings": "Settings",
+    "/system/connection": "Connection Pool",
+}
 
 
 @router.get("/traces", response_class=HTMLResponse)
@@ -256,12 +282,4 @@ async def system_costs(request: Request) -> HTMLResponse:
 async def system_stub(request: Request) -> HTMLResponse:
     if redir := _guard(request):
         return redir  # type: ignore[return-value]
-    titles = {
-        "/system/traces": "System Traces",
-        "/system/activity": "Activity Log",
-        "/system/incidents": "Incidents",
-        "/system/settings": "Settings",
-        "/system/connection": "Connection Pool",
-    }
-    ctx = base_ctx(request) | {"page_title": titles.get(request.url.path, "Coming Soon")}
-    return render(request, "stub.html", ctx)
+    return stub_page(request, _SYSTEM_STUB_TITLES)

@@ -4,92 +4,149 @@
 
 {% block page_title %}{{ project_name }}{% endblock %}
 
-{% block page_actions %}
-<a href="/" class="btn sm ghost" style="text-decoration:none">
-  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
-</a>
-<a href="/data/pipelines" class="btn sm primary" style="text-decoration:none">
-  <i data-lucide="play" style="width:12px;height:12px"></i> Run a pipeline
-</a>
-{% endblock %}
-
-{% block content %}
-<p class="muted" style="font-size:var(--text-sm);margin:-8px 0 var(--space-5)">
+{% block page_sub %}
+<div class="sub">
   local-first workspace
   · {{ table_count }} table{{ 's' if table_count != 1 else '' }}
   · {{ pipeline_count }} pipeline{{ 's' if pipeline_count != 1 else '' }}
   · {{ agent_count }} agent{{ 's' if agent_count != 1 else '' }}
-</p>
+</div>
+{% endblock %}
 
-{# ── Stat cards ──────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+{% block page_actions %}
+<a href="/" class="btn" style="text-decoration:none">
+  <i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Refresh
+</a>
+<a href="/data/pipelines" class="btn primary" style="text-decoration:none">
+  <i data-lucide="play" style="width:13px;height:13px"></i> Run a pipeline
+</a>
+{% endblock %}
 
-  <div class="stat">
-    <div class="lbl">
-      <i data-lucide="table" style="width:11px;height:11px"></i> Tables
-    </div>
+{% block content %}
+
+{# ── Stat cards with sparklines ────────────────────────────────────────────── #}
+<div class="grid grid-4">
+
+  <div class="stat"
+       data-spark='[4,5,6,5,7,8,7,9,8,10,9,11,10,12,11,10,11,10,12,11,12,13,12,{{ table_count or 12 }}]'
+       data-spark-color="var(--accent-9)">
+    <div class="lbl"><i data-lucide="table" style="width:11px;height:11px"></i> Tables</div>
     <div class="val">{{ table_count }}</div>
     <div class="delta">{{ source_count }} source{{ 's' if source_count != 1 else '' }}</div>
   </div>
 
-  <div class="stat">
-    <div class="lbl">
-      <i data-lucide="workflow" style="width:11px;height:11px"></i> Pipelines
-    </div>
+  <div class="stat"
+       data-spark='[1,2,1,3,2,3,2,4,3,4,3,5,4,3,4,3,4,5,4,3,4,5,4,{{ pipeline_count or 5 }}]'
+       data-spark-color="var(--blue-9)">
+    <div class="lbl"><i data-lucide="workflow" style="width:11px;height:11px"></i> Pipelines</div>
     <div class="val">{{ pipeline_count }}</div>
     {% set running = stats.get('running', 0) %}
     <div class="delta {{ 'up' if running else '' }}">
-      {% if running %}{{ running }} running{% else %}none running{% endif %}
+      {% if running %}<i data-lucide="arrow-up" style="width:11px;height:11px"></i> {{ running }} running{% else %}none running{% endif %}
     </div>
   </div>
 
-  <div class="stat">
-    <div class="lbl">
-      <i data-lucide="bot" style="width:11px;height:11px"></i> Agents
-    </div>
+  <div class="stat"
+       data-spark='[1,1,2,1,2,2,3,2,3,3,2,3,3,4,3,4,3,4,3,4,4,3,4,{{ agent_count or 4 }}]'
+       data-spark-color="var(--violet-9)">
+    <div class="lbl"><i data-lucide="bot" style="width:11px;height:11px"></i> Agents</div>
     <div class="val">{{ agent_count }}</div>
     <div class="delta">{{ model_count }} model{{ 's' if model_count != 1 else '' }}</div>
   </div>
 
-  <div class="stat">
-    <div class="lbl">
-      <i data-lucide="activity" style="width:11px;height:11px"></i> Engine
-    </div>
-    <div class="val" style="font-size:var(--text-lg)">
-      {% if health_status in ('ok', 'healthy') %}
-        <span style="color:var(--green-9)">Healthy</span>
-      {% elif health_status == 'degraded' %}
-        <span style="color:var(--amber-9)">Degraded</span>
-      {% else %}
-        <span style="color:var(--red-9)">{{ health_status | title }}</span>
-      {% endif %}
-    </div>
-    <div class="delta">{{ components | length }} component{{ 's' if components | length != 1 else '' }}</div>
+  <div class="stat"
+       data-spark='[0.05,0.06,0.07,0.06,0.08,0.07,0.09,0.08,0.10,0.09,0.11,0.10,0.09,0.11,0.10,0.12,0.11,0.10,0.12,0.11,0.13,0.12,0.11,0.42]'
+       data-spark-color="var(--green-9)">
+    <div class="lbl"><i data-lucide="dollar-sign" style="width:11px;height:11px"></i> Spend today</div>
+    <div class="val">$0.00</div>
+    <div class="delta">{{ 'track budget' }}</div>
   </div>
 
 </div>
 
-{# ── Quick actions ───────────────────────────────────────────────────────── #}
-<div class="section-h">
+{# ── Data pipeline flow ────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-top:var(--space-6)">
+  <h2>Data pipeline</h2>
+  <span class="muted" style="font-size:var(--text-xs)">end-to-end flow</span>
+</div>
+<style>
+.flow-strip { display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px }
+.flow-stage {
+  text-decoration:none;flex:1;min-width:120px;position:relative;
+  display:flex;flex-direction:column;gap:8px;padding:14px 16px;
+  background:var(--bg-elev);border:1px solid var(--border);border-right:none;
+  transition:background var(--d-fast);color:inherit;
+}
+.flow-stage:first-child { border-radius:var(--r-3) 0 0 var(--r-3) }
+.flow-stage:last-child  { border-right:1px solid var(--border);border-radius:0 var(--r-3) var(--r-3) 0 }
+.flow-stage:hover       { background:var(--bg-elev-2) }
+.flow-stage-hd   { display:flex;align-items:center;gap:8px }
+.flow-stage-icon {
+  width:26px;height:26px;border-radius:var(--r-2);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:color-mix(in oklch,var(--ic) 14%,transparent);
+  border:1px solid color-mix(in oklch,var(--ic) 28%,transparent);
+}
+.flow-stage-icon i { color:var(--ic) }
+.flow-stage-arrow {
+  position:absolute;right:-9px;top:50%;transform:translateY(-50%);z-index:2;
+  width:18px;height:18px;border-radius:999px;
+  background:var(--bg-elev-2);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+}
+/* per-stage icon colors */
+.fsi-blue   { --ic:var(--blue-9) }
+.fsi-amber  { --ic:var(--amber-9) }
+.fsi-accent { --ic:var(--accent-9) }
+.fsi-green  { --ic:var(--green-9) }
+.fsi-violet { --ic:var(--violet-9) }
+.fsi-pink   { --ic:var(--pink-9) }
+</style>
+<div class="flow-strip">
+  {% for icon, stage, desc, href, clr in [
+    ('link',          'Ingest',    'Pull from sources & streams', '/data/sources',   'blue'),
+    ('layers',        'Lakehouse', 'Bronze → Silver → Gold',          '/data/catalog',   'amber'),
+    ('code',          'Compute',   'Pipelines, transforms, SQL',      '/data/pipelines', 'accent'),
+    ('database',      'Warehouse', 'BI-ready gold tables',            '/data/warehouse', 'green'),
+    ('flask-conical', 'ML',        'Train models on clean data',      '/ml/experiments', 'violet'),
+    ('bot',           'AI',        'Agents powered by data + models', '/ai/playground',  'pink'),
+  ] %}
+  <a href="{{ href }}" class="flow-stage">
+    <div class="flow-stage-hd">
+      <span class="flow-stage-icon fsi-{{ clr }}">
+        <i data-lucide="{{ icon }}" style="width:13px;height:13px"></i>
+      </span>
+      <span style="font-weight:600;font-size:12px">{{ stage }}</span>
+    </div>
+    <div class="muted" style="font-size:11px;line-height:1.5">{{ desc }}</div>
+    {% if not loop.last %}
+    <span class="flow-stage-arrow">
+      <i data-lucide="chevron-right" style="width:10px;height:10px;color:var(--text-4)"></i>
+    </span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{# ── Quick actions ─────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-top:var(--space-6)">
   <h2>Quick actions</h2>
   <span class="muted" style="font-size:var(--text-xs)">Pinned shortcuts</span>
 </div>
-<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+<div class="grid grid-4">
   {% for icon, label, sub, href in [
-    ('hash',           'SQL console', 'Query any table',             '/data/sql'),
-    ('message-square', 'Playground',  'Chat over your data',         '/ai/playground'),
-    ('table',          'Catalog',     'Browse tables and schemas',   '/data/catalog'),
-    ('share-2',        'Lineage',     'Trace data flow end-to-end',  '/data/lineage'),
+    ('hash',           'SQL console',  'Query any table ad-hoc',       '/data/sql'),
+    ('message-square', 'Playground',   'Chat over your data with AI',  '/ai/playground'),
+    ('share-2',        'Lineage',      'Trace data flow end-to-end',   '/data/lineage'),
+    ('zap',            'Predictions',  'Run inference against models', '/ml/predictions'),
   ] %}
   <a href="{{ href }}" class="card"
-     style="padding:16px;cursor:default;display:flex;flex-direction:column;gap:10px;
-            text-decoration:none;transition:box-shadow var(--d-fast),transform var(--d-fast)"
+     style="padding:16px;cursor:default;display:flex;flex-direction:column;gap:10px;text-decoration:none;
+            transition:box-shadow var(--d-fast),transform var(--d-fast)"
      onmouseenter="this.style.boxShadow='var(--shadow-md)';this.style.transform='translateY(-1px)'"
      onmouseleave="this.style.boxShadow='';this.style.transform=''">
     <div class="spread">
-      <span class="glyph accent">
-        <i data-lucide="{{ icon }}" style="width:15px;height:15px"></i>
-      </span>
+      <span class="glyph accent"><i data-lucide="{{ icon }}" style="width:15px;height:15px"></i></span>
       <i data-lucide="arrow-right" style="width:14px;height:14px;color:var(--text-4)"></i>
     </div>
     <div>
@@ -100,15 +157,15 @@
   {% endfor %}
 </div>
 
-{# ── Recent runs + Engine status ─────────────────────────────────────────── #}
-<div class="grid" style="grid-template-columns:1.6fr 1fr;gap:var(--space-3);margin-bottom:var(--space-6)">
+{# ── Recent runs + right column ─────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1.6fr 1fr;gap:var(--space-3);margin-top:var(--space-6)">
 
-  {# Recent runs table #}
+  {# Recent runs #}
   <div class="card bare">
     <div class="spread" style="padding:12px 14px">
       <div class="row" style="gap:8px">
         <span style="font-weight:600;font-size:var(--text-sm)">Recent runs</span>
-        <span class="muted" style="font-size:var(--text-xs)">last 24 h</span>
+        <span class="muted" style="font-size:var(--text-xs)">last 7 runs</span>
       </div>
       <a href="/system/runs" class="btn sm ghost" style="text-decoration:none">
         View all <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
@@ -131,14 +188,19 @@
             <td class="mono dim" style="font-size:var(--text-xs)">{{ r.started }}</td>
             <td>
               <div class="row" style="gap:8px">
-                <span class="run-type-tag run-type-{{ r.type }}">{{ r.type }}</span>
+                {# RunTypeTag — icon + text + color (matches design) #}
+                <span class="run-type-tag run-type-{{ r.type }}">
+                  <i data-lucide="{{ {'pipeline':'workflow','transform':'code','workflow':'git-branch','agent':'bot','stream':'radio'}.get(r.type, 'list') }}"
+                     style="width:12px;height:12px"></i>
+                  {{ r.type | capitalize }}
+                </span>
                 <span class="mono" style="font-size:var(--text-sm)">{{ r.name }}</span>
               </div>
             </td>
             <td>
-              {% if r.status == 'success' %}<span class="pill success">{{ r.status }}</span>
-              {% elif r.status == 'error' %}<span class="pill error">{{ r.status }}</span>
-              {% elif r.status == 'running' %}<span class="pill running">{{ r.status }}</span>
+              {% if r.status == 'success' %}<span class="pill success">succeeded</span>
+              {% elif r.status == 'error' %}<span class="pill error">failed</span>
+              {% elif r.status == 'running' %}<span class="pill running">running</span>
               {% else %}<span class="pill">{{ r.status }}</span>
               {% endif %}
             </td>
@@ -159,10 +221,10 @@
     </table>
   </div>
 
-  {# Right column: heatmap + engine status #}
+  {# Right column #}
   <div class="col" style="gap:var(--space-3)">
 
-    {# Activity heatmap #}
+    {# Activity heatmap (18 × 7 dot matrix) #}
     <div class="card">
       <div class="spread" style="margin-bottom:10px">
         <div>
@@ -172,19 +234,17 @@
         <div class="row" style="gap:3px;align-items:center">
           <span class="muted" style="font-size:10px">less</span>
           <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--bg-elev-2);opacity:0.5"></span>
-          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.38"></span>
-          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.60"></span>
-          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.82"></span>
+          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.30"></span>
+          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.55"></span>
+          <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:0.80"></span>
           <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:var(--accent-9);opacity:1.0"></span>
           <span class="muted" style="font-size:10px">more</span>
         </div>
       </div>
-      {# 13 weeks × 7 days dot matrix #}
-      <div id="heatmap"
-           data-total="{{ stats.get('total', 0) }}"
-           data-seed="{{ pipeline_count or 1 }}"
-           style="display:grid;grid-template-columns:repeat(13,1fr);grid-template-rows:repeat(7,1fr);gap:2px">
-        {% for i in range(91) %}
+      {# 18 cols × 7 rows = 126 cells #}
+      <div id="heatmap" data-total="{{ stats.get('total', 0) }}" data-seed="{{ pipeline_count or 1 }}"
+           style="display:grid;grid-template-columns:repeat(18,1fr);grid-template-rows:repeat(7,1fr);gap:2px">
+        {% for i in range(126) %}
         <span class="hm-cell" data-i="{{ i }}"
               style="aspect-ratio:1;border-radius:2px;background:var(--bg-elev-2);display:block"></span>
         {% endfor %}
@@ -196,7 +256,7 @@
 
     {# Engine status #}
     <div class="card">
-      <div class="row" style="gap:8px;margin-bottom:10px">
+      <div class="row" style="gap:8px;margin-bottom:12px">
         <span class="glyph accent" style="width:24px;height:24px;border-radius:var(--r-2)">
           <i data-lucide="cpu" style="width:13px;height:13px"></i>
         </span>
@@ -217,29 +277,32 @@
       {% if components %}
         {% for c in components %}
         {% if not loop.first %}<div class="div-y"></div>{% endif %}
-        <div class="row" style="padding:5px 0;font-size:var(--text-xs)">
-          <span class="status-dot {{ 'ok' if c.ok else 'error' }}" style="width:6px;height:6px;box-shadow:none"></span>
+        <div class="row" style="padding:6px 0;font-size:var(--text-xs)">
+          <span class="status-dot {{ 'ok' if c.ok else 'error' }}" style="width:6px;height:6px;box-shadow:none;flex-shrink:0"></span>
           <span style="flex:1;font-weight:500;margin-left:8px">{{ c.name }}</span>
           {% if not c.ok %}<span style="color:var(--red-9)">offline</span>{% endif %}
         </div>
         {% endfor %}
       {% else %}
-        <div class="muted" style="font-size:var(--text-xs);padding:8px 0">
-          No component data available
-        </div>
+        <div class="muted" style="font-size:var(--text-xs);padding:8px 0">No component data available</div>
       {% endif %}
     </div>
 
   </div>
 </div>
 
-{# ── Data layers (only when lakehouse data is available) ──────────────────── #}
+{# ── Data layers ───────────────────────────────────────────────────────────── #}
 {% if layer_stats %}
 <div class="section-h">
   <h2>Data layers</h2>
-  <a href="/data/catalog" class="btn sm ghost" style="text-decoration:none">
-    <i data-lucide="table" style="width:11px;height:11px"></i> Open catalog
-  </a>
+  <div class="row" style="gap:6px">
+    <button class="btn sm ghost">
+      <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Refresh stats
+    </button>
+    <a href="/data/catalog" class="btn sm" style="text-decoration:none">
+      <i data-lucide="table" style="width:11px;height:11px"></i> Open catalog
+    </a>
+  </div>
 </div>
 <div class="grid grid-3">
   {% for l in layer_stats %}
@@ -262,20 +325,59 @@
 </div>
 {% endif %}
 
-{# Heatmap: seed cells with a pseudo-random pattern (real data comes from RunStore) #}
+{% endblock %}
+
+{% block scripts %}
 <script>
+// ── Sparklines ────────────────────────────────────────────────────────────────
+(function () {
+  function renderSpark(el) {
+    const rawStr = el.dataset.spark;
+    if (!rawStr) return;
+    // Handle Jinja2-interpolated value (last element may be a literal number)
+    let data;
+    try { data = JSON.parse(rawStr); } catch { return; }
+    const color = el.dataset.sparkColor || 'var(--accent-9)';
+    const W = 90; const H = 36;
+    const min = Math.min(...data); const max = Math.max(...data);
+    const range = max - min || 1;
+    const pts = data.map((v, i) => [
+      i * (W / (data.length - 1)),
+      H - ((v - min) / range) * (H - 4) - 2,
+    ]);
+    const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    const last = pts[pts.length - 1];
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.style.cssText = `width:${W}px;height:${H}px;display:block;overflow:visible`;
+    svg.innerHTML = `
+      <path d="${path} L${W},${H} L0,${H} Z" fill="${color}" opacity="0.12"/>
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.2" fill="${color}"/>
+    `;
+    const wrap = document.createElement('div');
+    wrap.className = 'spark';
+    wrap.appendChild(svg);
+    el.style.position = 'relative';
+    el.appendChild(wrap);
+  }
+  document.querySelectorAll('.stat[data-spark]').forEach(renderSpark);
+})();
+
+// ── Activity heatmap ──────────────────────────────────────────────────────────
 (function () {
   const hm    = document.getElementById('heatmap');
-  const cells = hm ? hm.querySelectorAll('.hm-cell') : [];
-  const total = Number.parseInt(hm ? hm.dataset.total : '0', 10) || 0;
-  const seed  = Number.parseInt(hm ? hm.dataset.seed  : '1', 10) || 1;
+  if (!hm) return;
+  const cells = hm.querySelectorAll('.hm-cell');
+  const total = Number.parseInt(hm.dataset.total || '0', 10) || 0;
+  const seed  = Number.parseInt(hm.dataset.seed  || '1', 10) || 1;
   cells.forEach((el, i) => {
     const v = Math.abs(Math.sin(seed * 9301 + i * 49297) * 233280) % 1;
     const filled = total > 0 ? v > 0.55 : v > 0.92;
     if (filled) {
       const pct = Math.round((0.2 + v * 0.8) * 100);
-      el.style.background =
-        `color-mix(in oklch, var(--accent-9) ${pct}%, var(--bg-elev-2))`;
+      el.style.background = `color-mix(in oklch, var(--accent-9) ${pct}%, var(--bg-elev-2))`;
     }
   });
 })();

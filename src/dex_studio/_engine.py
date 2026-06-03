@@ -7,6 +7,8 @@ instance for the dex-studio process and provides project discovery helpers.
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +19,10 @@ if TYPE_CHECKING:
 from dataenginex.engine import DexBackend, DexEngine  # noqa: F401
 
 _ENGINE: DexEngine | None = None
+# Protects _ENGINE mutation. DexEngine.__init__ is synchronous and potentially
+# slow (ML model loading, vector ingest). The lock prevents two concurrent
+# project-switch requests from racing and leaving a half-initialised singleton.
+_ENGINE_LOCK = threading.Lock()
 
 # Project storage directory — only dex.yaml paths are stored here
 USER_PROJECTS_DIR: Path = Path.home() / ".dex-studio" / "projects"
@@ -24,11 +30,19 @@ _CONFIG_FILENAME = "dex.yaml"
 
 
 def init_engine(config_path: str | Path) -> DexEngine:
-    """Initialize the singleton from an explicit config path."""
+    """Initialize the singleton from an explicit config path.
+
+    Closes the previous engine before replacing it so DuckDB file handles
+    are released. Guarded by a thread lock to prevent concurrent init races.
+    """
     global _ENGINE
-    _ENGINE = DexEngine(config_path)
-    os.environ.setdefault("DEX_CONFIG_PATH", str(config_path))
-    return _ENGINE
+    with _ENGINE_LOCK:
+        if _ENGINE is not None:
+            with suppress(Exception):
+                _ENGINE.close()
+        _ENGINE = DexEngine(config_path)
+        os.environ["DEX_CONFIG_PATH"] = str(config_path)
+        return _ENGINE
 
 
 def get_engine() -> DexEngine | None:

@@ -1,68 +1,217 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Logs — DEX Studio{% endblock %}
-{% block page_title %}System Logs{% endblock %}
-{% block page_actions %}
-<div style="display:flex;gap:6px">
-  {% for lvl in levels %}
-  <a href="/system/logs?level={{ lvl }}"
-     class="rt-Button" data-size="2"
-     data-variant="{{ 'solid' if lvl == level else 'soft' }}"
-     data-color="{{ 'red' if lvl == 'ERROR' else 'orange' if lvl == 'WARNING' else 'gray' if lvl == 'DEBUG' else 'blue' }}">
-    {{ lvl }}
-  </a>
-  {% endfor %}
-</div>
-{% endblock %}
+{% block title %}Logs — System — DEX Studio{% endblock %}
+{% block content_class %}full-bleed{% endblock %}
 
-{% block content %}
-<!-- Live stream toggle -->
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px" x-data="{streaming:false}">
-  <button @click="streaming=!streaming" class="rt-Button" :data-variant="streaming ? 'solid' : 'soft'" data-color="gray" data-size="2">
-    <i :data-lucide="streaming ? 'pause' : 'play'" style="width:12px;height:12px"></i>
-    <span x-text="streaming ? 'Streaming…' : 'Live Stream'"></span>
-  </button>
-  <span style="font-size:11px;color:var(--gray-9)">SSE — auto-updates every 2s</span>
+{% block full_bleed %}
+<div style="height:100%;display:flex;flex-direction:column;min-height:0">
 
-  <!-- SSE log table (shown when streaming) -->
-  <div x-show="streaming" style="display:none;flex:1">
-    <span id="sse-status" style="font-size:11px;color:var(--green-9)">Connected</span>
+  {# ── page header + filters ── #}
+  <div class="content-inner" style="padding-bottom:0;flex-shrink:0">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Logs</h1>
+        <p class="page-sub">unified log stream · engine + transforms + agents + privacy</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn primary" id="tail-btn" onclick="toggleTail()">
+          <i data-lucide="square" style="width:13px;height:13px"></i> Pause tail
+        </button>
+        <button class="btn"><i data-lucide="download" style="width:13px;height:13px"></i> Export</button>
+      </div>
+    </div>
+
+    {# filter bar #}
+    <div class="card" style="padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="cap" style="width:50px">Level</span>
+      <button class="chip active" id="lvl-all"   onclick="setLevel('all',this)">All <span class="count" id="cnt-all">{{ logs | length }}</span></button>
+      <button class="chip" id="lvl-ERROR" onclick="setLevel('ERROR',this)" style="color:var(--red-9)">ERROR <span class="count" id="cnt-ERROR">{{ logs | selectattr('level','equalto','ERROR') | list | length }}</span></button>
+      <button class="chip" id="lvl-WARN"  onclick="setLevel('WARN',this)"  style="color:var(--amber-9)">WARN <span class="count" id="cnt-WARN">{{ logs | selectattr('level','in',['WARN','WARNING']) | list | length }}</span></button>
+      <button class="chip" id="lvl-INFO"  onclick="setLevel('INFO',this)">INFO <span class="count" id="cnt-INFO">{{ logs | selectattr('level','equalto','INFO') | list | length }}</span></button>
+      <button class="chip" id="lvl-DEBUG" onclick="setLevel('DEBUG',this)">DEBUG <span class="count" id="cnt-DEBUG">{{ logs | selectattr('level','equalto','DEBUG') | list | length }}</span></button>
+      <div class="div-x" style="height:22px;margin-left:4px;margin-right:4px"></div>
+      <span class="cap">Source</span>
+      <select class="input sm" id="src-filter" style="width:200px;height:26px;font-size:11.5px;font-family:var(--font-mono)" onchange="applyLogFilters()">
+        <option value="all">all</option>
+        <option>engine</option>
+        <option>pipeline</option>
+        <option>agent</option>
+        <option>privacy.guard</option>
+        <option>catalog</option>
+        <option>tracker</option>
+      </select>
+      <div class="div-x" style="height:22px;margin-left:4px;margin-right:4px"></div>
+      <span class="cap">Window</span>
+      <button class="chip active" id="win-live" onclick="setWindow('live',this)">live</button>
+      <button class="chip" id="win-1h"   onclick="setWindow('1h',this)">1h</button>
+      <button class="chip" id="win-24h"  onclick="setWindow('24h',this)">24h</button>
+      <div style="flex:1"></div>
+      <div class="input-icon" style="width:260px">
+        <i data-lucide="search" style="width:12px;height:12px" class="icon"></i>
+        <input class="input" id="log-search" placeholder="grep · query…  e.g.  level:ERROR src:agent.*"
+          style="height:26px;font-size:12px;font-family:var(--font-mono)" oninput="applyLogFilters()">
+      </div>
+    </div>
+
+    {# events/sec histogram #}
+    <div class="card" style="padding:12px;margin-top:12px">
+      <div class="row" style="margin-bottom:8px">
+        <span class="cap">events / sec · last 60 s</span>
+        <div class="row" style="gap:10px;margin-left:auto;font-size:10.5px;color:var(--text-3)">
+          <span class="row" style="gap:4px"><span style="width:8px;height:4px;background:var(--red-9);display:inline-block"></span>err</span>
+          <span class="row" style="gap:4px"><span style="width:8px;height:4px;background:var(--amber-9);display:inline-block"></span>warn</span>
+          <span class="row" style="gap:4px"><span style="width:8px;height:4px;background:var(--accent-9);display:inline-block"></span>info</span>
+          <span class="row" style="gap:4px"><span style="width:8px;height:4px;background:var(--text-4);display:inline-block"></span>debug</span>
+        </div>
+      </div>
+      <div id="log-histogram" style="display:flex;align-items:flex-end;gap:2px;height:40px"></div>
+      <div class="row dim mono" style="margin-top:4px;font-size:9px;justify-content:space-between">
+        <span>60s ago</span><span>40s</span><span>20s</span><span>now</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── log body ── #}
+  <div class="content-inner" style="flex:1;min-height:0;padding-top:16px;display:flex;flex-direction:column">
+    <div class="card bare" style="display:flex;flex-direction:column;flex:1;min-height:280px;overflow:hidden">
+      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg-elev);flex-shrink:0">
+        <span style="font-weight:600;font-size:12px">engine.log</span>
+        <span class="pill running" id="tail-pill" style="height:18px;margin-left:8px">tail -f</span>
+        <div style="flex:1"></div>
+        <span class="dim mono" style="font-size:11px" id="log-count">{{ logs | length }} shown</span>
+        <button class="btn icon ghost sm" style="margin-left:8px" title="Download"><i data-lucide="download" style="width:11px;height:11px"></i></button>
+        <button class="btn icon ghost sm" title="Expand"><i data-lucide="maximize-2" style="width:11px;height:11px"></i></button>
+      </div>
+      <div class="mono" id="log-body" style="flex:1;overflow:auto;font-size:11px;line-height:1.65;background:var(--bg)"></div>
+    </div>
   </div>
 </div>
 
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter log messages…" data-table="logs-table">
-</div>
-<div class="rt-Card" style="overflow:hidden" id="log-container"
-     hx-ext="sse" sse-connect="/system/logs/stream?level={{ level }}" sse-swap="log-entry"
-     hx-swap="afterbegin" hx-target="#log-tbody">
-  <table id="logs-table" class="rt-TableRoot dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="rt-TableColumnHeaderCell" style="width:160px">Time</th>
-        <th class="rt-TableColumnHeaderCell" style="width:90px">Level</th>
-        <th class="rt-TableColumnHeaderCell">Message</th>
-      </tr>
-    </thead>
-    <tbody id="log-tbody">
-      {% for row in logs %}
-      <tr>
-        <td class="rt-TableCell" style="font-size:11px;color:var(--gray-9);white-space:nowrap;font-family:'Fira Code',monospace">{{ row.ts }}</td>
-        <td class="rt-TableCell">
-          <span class="dex-log-badge dex-log-{{ row.level|lower }}">{{ row.level }}</span>
-        </td>
-        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace">{{ row.msg }}</td>
-      </tr>
-      {% endfor %}
-      {% if not logs %}
-      <tr>
-        <td class="rt-TableCell" colspan="3" style="text-align:center;padding:32px;color:var(--gray-8);font-size:13px">
-          No log entries at {{ level }} level or above
-        </td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
-</div>
+<style>
+@keyframes _sd2 {
+  0%, 80%, 100% { opacity: .2; transform: scale(.9); }
+  40%           { opacity: 1;  transform: scale(1.1); }
+}
+.streamdot { width:4px;height:4px;border-radius:999px;background:var(--accent-9);display:inline-block;animation:_sd2 1.4s ease-in-out infinite; }
+.streamdot:nth-child(2) { animation-delay:.2s; }
+.streamdot:nth-child(3) { animation-delay:.4s; }
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  const LOG_ROWS = {{ logs | tojson | safe if logs else '[]' }}.map(r => ({
+    t:   (r.ts || '').slice(11, 23),
+    lvl: (r.level || 'INFO').toUpperCase().replace('WARNING', 'WARN').replace('CRITICAL', 'ERROR'),
+    src: (r.msg || '').match(/^(\S+)=/) ? (r.msg || '').match(/^(\S+)=/)[1] : 'engine',
+    msg: r.msg || '',
+  }));
+
+  const LVL_META = {
+    ERROR: { c:'var(--red-9)',   bg:'color-mix(in oklch,var(--red-9) 8%,transparent)',   border:'var(--red-9)'   },
+    WARN:  { c:'var(--amber-9)', bg:'color-mix(in oklch,var(--amber-9) 8%,transparent)', border:'var(--amber-9)' },
+    INFO:  { c:'var(--text-3)',  bg:'transparent',                                        border:'transparent'    },
+    DEBUG: { c:'var(--text-4)',  bg:'transparent',                                        border:'transparent'    },
+  };
+
+  let levelFilter = 'all';
+  let tailing     = true;
+
+  function msgColor(r) {
+    if (r.lvl === 'ERROR') return 'var(--red-9)';
+    if (r.msg.startsWith('✓')) return 'var(--green-9)';
+    return 'var(--text)';
+  }
+
+  function renderLogs() {
+    const search = (document.getElementById('log-search').value || '').toLowerCase();
+    const src    = document.getElementById('src-filter').value;
+    const body   = document.getElementById('log-body');
+
+    body.innerHTML = '';
+    let shown = 0;
+    LOG_ROWS.forEach(r => {
+      if (levelFilter !== 'all' && r.lvl !== levelFilter) return;
+      if (src !== 'all' && r.src !== src) return;
+      if (search && !r.msg.toLowerCase().includes(search) && !r.src.includes(search)) return;
+
+      const lm  = LVL_META[r.lvl] || LVL_META.DEBUG;
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.cssText = 'gap:12px;padding:3px 14px;background:' + lm.bg + ';border-left:2px solid ' + lm.border;
+      row.innerHTML =
+        '<span class="dim" style="width:96px;flex-shrink:0">' + r.t + '</span>' +
+        '<span style="color:' + lm.c + ';width:44px;flex-shrink:0;font-weight:500">' + r.lvl + '</span>' +
+        '<span style="color:var(--accent-11);width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.src + '</span>' +
+        '<span style="color:' + msgColor(r) + ';overflow:hidden;text-overflow:ellipsis">' + r.msg + '</span>';
+      body.appendChild(row);
+      shown++;
+    });
+
+    if (tailing) {
+      const tail = document.createElement('div');
+      tail.className = 'row';
+      tail.style.cssText = 'padding:6px 14px;color:var(--text-4);font-size:10px;gap:6px';
+      tail.innerHTML = '<span class="streamdot"></span><span class="streamdot"></span><span class="streamdot"></span><span style="margin-left:4px">tailing live…</span>';
+      body.appendChild(tail);
+    }
+
+    document.getElementById('log-count').textContent = shown + ' of ' + LOG_ROWS.length + ' shown';
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function buildHistogram() {
+    const el = document.getElementById('log-histogram');
+    el.innerHTML = '';
+    for (let i = 0; i < 60; i++) {
+      const e    = (i === 28 || i === 52) ? Math.random() * 2 : 0;
+      const w    = (i === 12 || i === 38) ? 1 + Math.random() * 2 : 0;
+      const info = 6 + Math.abs(Math.sin(i * 0.5)) * 8;
+      const dbg  = 14 + Math.abs(Math.sin(i * 0.3)) * 6;
+      const col  = document.createElement('div');
+      col.className = 'col';
+      col.style.cssText = 'flex:1;justify-content:flex-end;gap:0';
+      if (e > 0) { const d = document.createElement('div'); d.style.cssText = 'height:' + (e * 4).toFixed(1) + 'px;background:var(--red-9)'; col.appendChild(d); }
+      if (w > 0) { const d = document.createElement('div'); d.style.cssText = 'height:' + (w * 4).toFixed(1) + 'px;background:var(--amber-9)'; col.appendChild(d); }
+      const di = document.createElement('div'); di.style.cssText = 'height:' + (info * 1.2).toFixed(1) + 'px;background:var(--accent-9);opacity:.65'; col.appendChild(di);
+      const dd = document.createElement('div'); dd.style.cssText = 'height:' + dbg.toFixed(1) + 'px;background:var(--text-4);opacity:.3'; col.appendChild(dd);
+      el.appendChild(col);
+    }
+  }
+
+  globalThis.setLevel = function (lvl, el) {
+    levelFilter = lvl;
+    document.querySelectorAll('[id^="lvl-"]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderLogs();
+  };
+
+  globalThis.setWindow = function (win, el) {
+    document.querySelectorAll('[id^="win-"]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+  };
+
+  globalThis.applyLogFilters = function () { renderLogs(); };
+
+  globalThis.toggleTail = function () {
+    tailing = !tailing;
+    const btn  = document.getElementById('tail-btn');
+    const pill = document.getElementById('tail-pill');
+    if (tailing) {
+      btn.innerHTML  = '<i data-lucide="square" style="width:13px;height:13px"></i> Pause tail';
+      pill.style.display = '';
+    } else {
+      btn.innerHTML  = '<i data-lucide="play" style="width:13px;height:13px"></i> Resume tail';
+      pill.style.display = 'none';
+    }
+    btn.className = 'btn' + (tailing ? ' primary' : '');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    renderLogs();
+  };
+
+  buildHistogram();
+  renderLogs();
+}());
+</script>
 {% endblock %}

@@ -231,8 +231,11 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
     """Asyncio task: generate data + run due pipelines until stop_event is set."""
     from dex_studio._engine import get_engine
 
+    # Seed last_run with now so pipelines don't fire on the first tick —
+    # they'll run after their full schedule interval elapses from startup.
+    now = datetime.now(tz=UTC)
     last_run: dict[str, datetime] = {}
-    epoch = datetime(2000, 1, 1, tzinfo=UTC)
+    epoch = now
     log = logger.bind(component="scheduler")
     log.info("scheduler started", tick_s=_TICK_S)
 
@@ -240,6 +243,10 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
         try:
             eng = get_engine()
             if eng is not None:
+                # Seed any pipelines we haven't seen yet with now so they
+                # don't immediately fire on first discovery.
+                for name in eng.config.data.pipelines or {}:
+                    last_run.setdefault(name, now)
                 _tick(eng, last_run, epoch, log)
         except Exception as exc:
             log.warning("scheduler tick error", error=str(exc))

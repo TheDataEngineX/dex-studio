@@ -64,7 +64,12 @@
       {% for row in sample_rows %}
       <tr>
         {% for col in sample_cols %}
-        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.get(col,"") }}</td>
+        {% set cv = row.get(col) %}
+        {% if cv is none %}
+        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-8);font-style:italic">NULL</td>
+        {% else %}
+        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
+        {% endif %}
         {% endfor %}
       </tr>
       {% endfor %}

@@ -38,12 +38,15 @@ class TestExpectedKey:
             result = _expected_key()
         assert result == "file-key"
 
-    def test_no_key_returns_none(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_no_key_auto_generates(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Auth is always on — auto-generate a key when none is configured."""
         monkeypatch.delenv("DEX_STUDIO_API_KEY", raising=False)
-        missing = tmp_path / "no.key"
+        missing = tmp_path / "generated.key"
+        assert not missing.exists()
         with patch("dex_studio.auth._KEY_FILE", missing):
             result = _expected_key()
-        assert result is None
+        assert isinstance(result, str) and len(result) > 0
+        assert missing.exists(), "key must be persisted to disk after generation"
 
 
 class TestMakeToken:

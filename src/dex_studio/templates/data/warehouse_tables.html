@@ -16,7 +16,7 @@
     <tbody>
       {% for t in tables %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500;color:var(--indigo-11)">{{ t.get("name","") }}</td>
+        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500"><a href="/data/catalog/{{ t.get('name','') }}" style="color:var(--indigo-11);text-decoration:none">{{ t.get("name","") }}</a></td>
         <td class="rt-TableCell num" style="font-size:12px">{{ t.get("row_count","—") }}</td>
         <td class="rt-TableCell" style="font-size:12px">{{ t.get("size","—") }}</td>
         <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ t.get("updated_at","—") }}</td>

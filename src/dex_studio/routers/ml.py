@@ -9,16 +9,19 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from dex_studio.routers._deps import base_ctx, get_eng, render, require_auth, require_engine
+from dex_studio.routers._deps import (
+    base_ctx,
+    flash,
+    get_eng,
+    guard,
+    render,
+    stub_page,
+)
 from dex_studio.utils import fmt_ts
 
 router = APIRouter()
 
 _STAGES = ["development", "staging", "production"]
-
-
-def _guard(request: Request) -> RedirectResponse | None:
-    return require_auth(request) or require_engine(request)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -27,7 +30,7 @@ def _guard(request: Request) -> RedirectResponse | None:
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def ml_dashboard(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     models = eng.model_registry.list_models()
@@ -63,11 +66,11 @@ def _model_rows(eng: Any) -> list[dict[str, str]]:
 
 @router.get("/models", response_class=HTMLResponse)
 async def models(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
-    flash = request.session.pop("flash", None)
-    ctx = base_ctx(request) | {"models": _model_rows(eng), "stages": _STAGES, "flash": flash}
+    flash_msg = request.session.pop("flash", None)
+    ctx = base_ctx(request) | {"models": _model_rows(eng), "stages": _STAGES, "flash": flash_msg}
     return render(request, "ml/models.html", ctx)
 
 
@@ -79,7 +82,7 @@ async def register_model(
     framework: Annotated[str, Form()] = "",
     artifact_path: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     try:
         from dataenginex.ml.registry import ModelArtifact, ModelStage
@@ -93,9 +96,9 @@ async def register_model(
             parameters={"framework": framework.strip()} if framework.strip() else {},
         )
         eng.model_registry.register(artifact)
-        request.session["flash"] = {"msg": f"Model '{name}' registered.", "kind": "success"}
+        flash(request, f"Model '{name}' registered.")
     except Exception as exc:
-        request.session["flash"] = {"msg": str(exc), "kind": "error"}
+        flash(request, str(exc), "error")
     return RedirectResponse("/ml/models", status_code=303)
 
 
@@ -105,7 +108,7 @@ async def promote_model(
     name: str,
     stage: Annotated[str, Form()],
 ) -> RedirectResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     try:
         from dataenginex.ml.registry import ModelStage
@@ -114,18 +117,18 @@ async def promote_model(
         latest = eng.model_registry.get_latest(name)
         if latest:
             eng.model_registry.promote(name, latest.version, ModelStage(stage))
-            request.session["flash"] = {"msg": f"'{name}' promoted to {stage}.", "kind": "success"}
+            flash(request, f"'{name}' promoted to {stage}.")
     except Exception as exc:
-        request.session["flash"] = {"msg": str(exc), "kind": "error"}
+        flash(request, str(exc), "error")
     return RedirectResponse("/ml/models", status_code=303)
 
 
 @router.post("/models/delete/{name}")
 async def delete_model(request: Request, name: str) -> RedirectResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     get_eng().delete_model(name)
-    request.session["flash"] = {"msg": f"Model '{name}' deleted.", "kind": "success"}
+    flash(request, f"Model '{name}' deleted.")
     return RedirectResponse("/ml/models", status_code=303)
 
 
@@ -134,7 +137,7 @@ async def delete_model(request: Request, name: str) -> RedirectResponse:
 
 @router.get("/experiments", response_class=HTMLResponse)
 async def experiments(request: Request, exp: str = "") -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     exp_list: list[dict[str, Any]] = []
@@ -192,7 +195,7 @@ async def experiments(request: Request, exp: str = "") -> HTMLResponse:
 
 @router.get("/predictions", response_class=HTMLResponse)
 async def predictions(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     model_names = eng.model_registry.list_models()
@@ -211,7 +214,7 @@ async def run_prediction(
     model: Annotated[str, Form()],
     input_json: Annotated[str, Form()],
 ) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     output = ""
@@ -225,6 +228,11 @@ async def run_prediction(
             output = json.dumps(result, indent=2, default=str)
     except json.JSONDecodeError as exc:
         error = f"Invalid JSON: {exc}"
+    except FileNotFoundError:
+        error = (
+            f"Model artifact not found for '{model}'. "
+            "Train and save the model first, or register a valid artifact path."
+        )
     except Exception as exc:
         error = str(exc)
     ctx = base_ctx(request) | {
@@ -242,27 +250,44 @@ async def run_prediction(
 # ── Features ──────────────────────────────────────────────────────────────────
 
 
+def _feature_group_names(fs: Any) -> list[str]:
+    if hasattr(fs, "list_feature_groups"):
+        return fs.list_feature_groups() or []
+    if hasattr(fs, "list_groups"):
+        raw = fs.list_groups() or []
+        return [g if isinstance(g, str) else str(g.get("name", g)) for g in raw]
+    return []
+
+
+def _feature_group_detail(fs: Any, name: str) -> dict[str, str]:
+    entity = ""
+    row_count = ""
+    with contextlib.suppress(Exception):
+        row = fs._conn.execute(  # type: ignore[union-attr]
+            "SELECT entity_key FROM _feature_groups WHERE name = ?", [name]
+        ).fetchone()
+        if row:
+            entity = str(row[0])
+    with contextlib.suppress(Exception):
+        safe = name.replace('"', '""')
+        row2 = fs._conn.execute(  # type: ignore[union-attr]
+            f'SELECT COUNT(*) FROM "{safe}"'  # noqa: S608
+        ).fetchone()
+        if row2:
+            row_count = f"{row2[0]:,}"
+    return {"name": name, "entity": entity, "row_count": row_count}
+
+
 @router.get("/features", response_class=HTMLResponse)
 async def features(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     groups: list[dict[str, str]] = []
-    if eng.feature_store and hasattr(eng.feature_store, "list_groups"):
-        try:
-            raw = eng.feature_store.list_groups() or []
-            for g in raw:
-                groups.append(
-                    {
-                        "name": str(g.get("name", "") if isinstance(g, dict) else g),
-                        "entity": str(g.get("entity", "") if isinstance(g, dict) else ""),
-                        "feature_count": str(
-                            g.get("feature_count", "") if isinstance(g, dict) else ""
-                        ),
-                    }
-                )
-        except Exception:
-            pass
+    if eng.feature_store is not None:
+        with contextlib.suppress(Exception):
+            for name in _feature_group_names(eng.feature_store):
+                groups.append(_feature_group_detail(eng.feature_store, name))
     ctx = base_ctx(request) | {"feature_groups": groups}
     return render(request, "ml/features.html", ctx)
 
@@ -272,7 +297,7 @@ async def features(request: Request) -> HTMLResponse:
 
 @router.get("/drift", response_class=HTMLResponse)
 async def drift(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     features_list: list[dict[str, str]] = []
@@ -309,7 +334,7 @@ async def run_drift(  # noqa: C901
     table: Annotated[str, Form()] = "",
     feature: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
     eng = get_eng()
     try:
@@ -327,8 +352,9 @@ async def run_drift(  # noqa: C901
             request.session["drift_error"] = f"Table '{table}' not found in silver layer."
             return RedirectResponse(_DRIFT_URL, status_code=303)
 
+        abs_path = str(parquet_path.resolve())
         with duckdb.connect(":memory:") as conn:
-            row = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{parquet_path}')").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM read_parquet($1)", [abs_path]).fetchone()
             total = row[0] if row else 0
             if total < 10:
                 request.session["drift_error"] = "Not enough rows for drift detection."
@@ -336,19 +362,20 @@ async def run_drift(  # noqa: C901
             mid = total // 2
             if not feature:
                 cols = conn.execute(
-                    f"DESCRIBE SELECT * FROM read_parquet('{parquet_path}') LIMIT 1"
+                    "DESCRIBE SELECT * FROM read_parquet($1) LIMIT 1", [abs_path]
                 ).fetchall()
                 numeric = [c[0] for c in cols if c[1] in ("DOUBLE", "FLOAT", "BIGINT", "INTEGER")]
                 feature = numeric[0] if numeric else ""
             if not feature:
                 request.session["drift_error"] = "No numeric feature found."
                 return RedirectResponse(_DRIFT_URL, status_code=303)
+            safe_col = feature.replace('"', '""')
             ref_rows = conn.execute(
-                f"SELECT {feature} FROM read_parquet('{parquet_path}') LIMIT {mid}"
+                f'SELECT "{safe_col}" FROM read_parquet($1) LIMIT {mid}', [abs_path]
             ).fetchall()
             cur_rows = conn.execute(
-                f"SELECT {feature} FROM read_parquet('{parquet_path}')"
-                f" LIMIT {total - mid} OFFSET {mid}"
+                f'SELECT "{safe_col}" FROM read_parquet($1) LIMIT {total - mid} OFFSET {mid}',
+                [abs_path],
             ).fetchall()
         reference = [float(r[0]) for r in ref_rows if r[0] is not None]
         current = [float(r[0]) for r in cur_rows if r[0] is not None]
@@ -368,19 +395,19 @@ async def run_drift(  # noqa: C901
 
 # ── Stubs ─────────────────────────────────────────────────────────────────────
 
+_ML_STUB_TITLES = {
+    "/ml/hyperopt": "Hyperparameter Optimization",
+    "/ml/ab-test": "A/B Testing",
+    "/ml/model-card": "Model Cards",
+    "/ml/promotions": "Promotion Workflow",
+}
+
 
 @router.get("/hyperopt", response_class=HTMLResponse)
 @router.get("/ab-test", response_class=HTMLResponse)
 @router.get("/model-card", response_class=HTMLResponse)
 @router.get("/promotions", response_class=HTMLResponse)
 async def ml_stub(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
+    if redir := guard(request):
         return redir  # type: ignore[return-value]
-    titles = {
-        "/ml/hyperopt": "Hyperparameter Optimization",
-        "/ml/ab-test": "A/B Testing",
-        "/ml/model-card": "Model Cards",
-        "/ml/promotions": "Promotion Workflow",
-    }
-    ctx = base_ctx(request) | {"page_title": titles.get(request.url.path, "Coming Soon")}
-    return render(request, "stub.html", ctx)
+    return stub_page(request, _ML_STUB_TITLES)

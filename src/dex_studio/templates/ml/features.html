@@ -14,22 +14,22 @@
     <thead>
       <tr>
         <th class="rt-TableColumnHeaderCell sortable">Group</th>
-        <th class="rt-TableColumnHeaderCell sortable">Entity</th>
-        <th class="rt-TableColumnHeaderCell sortable num">Features</th>
+        <th class="rt-TableColumnHeaderCell sortable">Entity key</th>
+        <th class="rt-TableColumnHeaderCell sortable num">Rows</th>
       </tr>
     </thead>
     <tbody>
       {% for g in feature_groups %}
       <tr>
         <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--violet-11)">{{ g.name }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ g.entity }}</td>
-        <td class="rt-TableCell" style="font-size:12px;text-align:right;font-family:'Fira Code',monospace">{{ g.feature_count }}</td>
+        <td class="rt-TableCell" style="font-size:12px;color:var(--text-2)">{{ g.entity or "—" }}</td>
+        <td class="rt-TableCell" style="font-size:12px;text-align:right;font-family:'Fira Code',monospace">{{ g.row_count or "—" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-{{ empty_state("layers", "No feature groups configured", "Configure a feature store in your dex.yaml to see feature groups here.") }}
+{{ empty_state("layers", "No feature groups yet", "Run a gold pipeline to populate the feature store automatically.") }}
 {% endif %}
 {% endblock %}

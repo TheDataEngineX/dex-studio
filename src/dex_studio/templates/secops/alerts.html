@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Alerts{% endblock %}
+{% block page_subtitle %}
+  {% if alert_rules %}
+    {{ alert_rules | length }} rule{{ 's' if alert_rules | length != 1 else '' }}
+    {%- if firing_count %} · <span style="color:var(--red-9)">{{ firing_count }} firing</span>{% endif %}
+    {%- if armed_count %} · {{ armed_count }} armed{% endif %}
+  {% else %}
+    no alert rules configured
+  {% endif %}
+{% endblock %}
+{% block page_actions %}
+<button class="btn"><i data-lucide="book" style="width:13px;height:13px"></i> Templates</button>
+<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New rule</button>
+{% endblock %}
+
+{% block content %}
+
+{% if firing_count > 0 %}
+{# ── firing banner ── #}
+<div class="card" style="padding:16px;margin-bottom:16px;border-color:color-mix(in oklch,var(--red-9) 35%,var(--border));background:linear-gradient(180deg,color-mix(in oklch,var(--red-9) 6%,var(--bg-elev)),var(--bg-elev))">
+  <div class="row" style="gap:10px">
+    <span class="glyph" style="width:32px;height:32px;border-radius:8px;color:var(--red-9);background:color-mix(in oklch,var(--red-9) 18%,transparent);border-color:color-mix(in oklch,var(--red-9) 35%,transparent)">
+      <i data-lucide="alert-triangle" style="width:14px;height:14px"></i>
+    </span>
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px">{{ firing_count }} alert{{ 's' if firing_count != 1 else '' }} firing right now</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">
+        {% for r in alert_rules if r.state == 'firing' %}
+        <span class="mono" style="color:var(--text-2)">{{ r.name }}</span>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    <button class="btn ghost"><i data-lucide="check" style="width:11px;height:11px"></i> Acknowledge all</button>
+  </div>
+</div>
+{% endif %}
+
+{% if alert_rules %}
+
+{# ── metric strip ── #}
+<div class="grid grid-4">
+  <div class="stat card">
+    <div class="stat-label">Total rules</div>
+    <div class="stat-value">{{ alert_rules | length }}</div>
+    <div class="stat-delta">configured</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Firing</div>
+    <div class="stat-value" style="{% if firing_count > 0 %}color:var(--red-9){% endif %}">{{ firing_count }}</div>
+    <div class="stat-delta {% if firing_count > 0 %}down{% endif %}">{% if firing_count > 0 %}action needed{% else %}all clear{% endif %}</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Armed</div>
+    <div class="stat-value">{{ armed_count }}</div>
+    <div class="stat-delta">monitoring</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Snoozed</div>
+    <div class="stat-value">{{ alert_rules | selectattr('state', 'equalto', 'snoozed') | list | length }}</div>
+    <div class="stat-delta">paused</div>
+  </div>
+</div>
+
+{# ── filter chips ── #}
+<div class="section-h">
+  <h2>Rules</h2>
+  <div class="row" style="gap:6px">
+    <button class="chip active" id="state-all"     onclick="setStateFilter('all',this)">All <span class="count">{{ alert_rules | length }}</span></button>
+    {% if firing_count %}<button class="chip" id="state-firing"  onclick="setStateFilter('firing',this)">Firing <span class="count">{{ firing_count }}</span></button>{% endif %}
+    {% if armed_count  %}<button class="chip" id="state-armed"   onclick="setStateFilter('armed',this)">Armed <span class="count">{{ armed_count }}</span></button>{% endif %}
+    {% set snoozed_count = alert_rules | selectattr('state', 'equalto', 'snoozed') | list | length %}
+    {% if snoozed_count %}<button class="chip" id="state-snoozed" onclick="setStateFilter('snoozed',this)">Snoozed <span class="count">{{ snoozed_count }}</span></button>{% endif %}
+  </div>
+</div>
+
+<div class="card bare">
+  <table class="tbl" id="rules-table">
+    <thead>
+      <tr>
+        <th>Rule</th>
+        <th>Condition</th>
+        <th>Severity</th>
+        <th>Channel</th>
+        <th>State</th>
+        <th class="num">Firings · 7d</th>
+        <th>Last fired</th>
+        <th style="width:60px"></th>
+      </tr>
+    </thead>
+    <tbody id="rules-tbody"></tbody>
+  </table>
+</div>
+
+{% else %}
+
+{# ── empty state ── #}
+<div class="card" style="padding:56px 24px;text-align:center;margin-bottom:24px">
+  <span class="glyph lg" style="width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 16px">
+    <i data-lucide="bell" style="width:24px;height:24px"></i>
+  </span>
+  <div style="font-weight:600;font-size:15px;color:var(--text-2)">No alert rules configured</div>
+  <div class="muted" style="font-size:12.5px;margin-top:8px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.65">
+    Alert rules fire when drift is detected, pipelines fail, or spend thresholds are crossed.
+    DEX auto-creates drift rules when <code>ml.drift</code> is configured.
+  </div>
+</div>
+
+{# ── built-in rule types ── #}
+<div class="section-h">
+  <h2>Built-in rule types</h2>
+</div>
+<div class="grid grid-3">
+  {% for icon, name, trigger, channel in [
+    ('activity',      'drift.*',            'PSI > threshold on any monitored feature',    'audit log'),
+    ('git-branch',    'pipeline.failure.*', 'Any pipeline last run failed',                'audit log'),
+    ('shield',        'outbound.blocked',   'PrivacyGuard blocks an outbound LLM call',   'audit log + slack'),
+    ('database',      'freshness.*',        'Any source table exceeds staleness window',   'slack #data'),
+    ('trending-down', 'experiment.regression','Any tracked metric regressed ≥ threshold', 'slack #ml'),
+    ('dollar-sign',   'spend.over_budget',  'MTD API spend exceeds configured cap',       'email + slack'),
+  ] %}
+  <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px">
+    <div class="row" style="gap:8px">
+      <span class="glyph"><i data-lucide="{{ icon }}" style="width:13px;height:13px"></i></span>
+      <span class="mono" style="font-size:12px;font-weight:600">{{ name }}</span>
+    </div>
+    <div class="muted" style="font-size:11.5px;line-height:1.5">{{ trigger }}</div>
+    <div class="chip" style="font-size:10.5px;align-self:flex-start">{{ channel }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+<script>
+(function () {
+  'use strict';
+
+  const RULES = {{ alert_rules | tojson }};
+  if (!RULES || RULES.length === 0) return;
+
+  const SEV_PILL  = { high: 'error', med: 'warn', low: 'info' };
+  const SEV_LABEL = { high: 'high',  med: 'med',  low: 'low'  };
+
+  let stateFilter = 'all';
+
+  function stateClass(state) {
+    if (state === 'firing')  return 'error';
+    if (state === 'snoozed') return '';
+    return 'success';
+  }
+
+  function renderRules() {
+    const tbody = document.getElementById('rules-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    RULES.forEach(function (r) {
+      if (stateFilter !== 'all' && r.state !== stateFilter) return;
+      const snoozeHtml = r.snooze_until
+        ? '<span class="dim mono" style="font-size:10px;margin-left:6px">until ' + r.snooze_until + '</span>'
+        : '';
+      const firingsHtml = r.firings > 0 ? r.firings : '<span class="dim">—</span>';
+      const tr = document.createElement('tr');
+      tr.setAttribute('data-state', r.state);
+      tr.innerHTML =
+        '<td class="mono" style="font-weight:500;font-size:12px">' + r.name + '</td>' +
+        '<td class="muted mono" style="font-size:11px">' + (r.condition || '—') + '</td>' +
+        '<td><span class="pill ' + (SEV_PILL[r.severity] || '') + '" style="height:18px">' + (SEV_LABEL[r.severity] || r.severity) + '</span></td>' +
+        '<td class="mono dim" style="font-size:11px">' + (r.channel || '—') + '</td>' +
+        '<td><span class="pill ' + stateClass(r.state) + '" style="height:18px">' + r.state + '</span>' + snoozeHtml + '</td>' +
+        '<td class="num mono">' + firingsHtml + '</td>' +
+        '<td class="dim mono" style="font-size:11px">' + (r.last_fired || '—') + '</td>' +
+        '<td><div class="row" style="gap:2px;justify-content:flex-end">' +
+          '<button class="btn icon ghost sm" title="Edit"><i data-lucide="pencil" style="width:11px;height:11px"></i></button>' +
+          '<button class="btn icon ghost sm" title="More"><i data-lucide="more-horizontal" style="width:11px;height:11px"></i></button>' +
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  globalThis.setStateFilter = function (state, el) {
+    stateFilter = state;
+    document.querySelectorAll('[id^="state-"]').forEach(function (b) { b.classList.remove('active'); });
+    el.classList.add('active');
+    renderRules();
+  };
+
+  renderRules();
+}());
+</script>
+{% endblock %}
