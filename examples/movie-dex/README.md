@@ -53,15 +53,15 @@ dex validate dex.yaml
 
 # 4. Open in DEX Studio
 # Point DEX Studio to this dex.yaml via the onboarding screen, then:
-#   Compute → Pipelines → Run all bronze_* pipelines
-#   Compute → Pipelines → Run all silver_* pipelines
-#   Compute → Pipelines → Run all gold_* pipelines
+#   /data/pipelines → Run all bronze_* pipelines
+#   /data/pipelines → Run all silver_* pipelines
+#   /data/pipelines → Run all gold_* pipelines
 
 # 5. Run an ML experiment
 #   ML → Experiments → rating_predictor → Run
 
 # 6. Chat with an agent
-#   AI → Playground → movie_recommender
+#   /ai/playground → movie_recommender
 ```
 
 ______________________________________________________________________

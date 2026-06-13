@@ -26,6 +26,9 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "structlog>=25.5.0",
     "scikit-learn>=1.8.0",
+    "gtts>=2.2.4",
+    "orjson>=3.11.0",
+    "uvloop>=0.22.0; sys_platform != 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +61,9 @@ dev = [
     "mypy>=2.1.0",
     "coverage>=7.14.0",
     "types-pyyaml>=6.0.12.20260518",
+    "edge-tts>=7.0.0",
+    "asciinema>=2.4.0",
+    "playwright>=1.50.0",
 ]
 
 [tool.poe]
@@ -69,6 +75,10 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/demo/*.py" = ["E501"]  # demo scripts embed JS/CSS strings that can't be wrapped
+"examples/**/*.py" = ["E402"]  # example scripts use sys.path manipulation before imports
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

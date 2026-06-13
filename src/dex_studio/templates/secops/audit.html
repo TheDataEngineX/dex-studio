@@ -2,7 +2,7 @@
 
 {% block title %}Audit Log — SecOps — DEX Studio{% endblock %}
 {% block page_title %}Audit log{% endblock %}
-{% block page_subtitle %}immutable record of every action that touched data, policy, or external systems{% endblock %}
+{% block page_sub %}immutable record of every action that touched data, policy, or external systems{% endblock %}
 {% block page_badge %}<span class="pill" style="height:22px">{{ events | length }} event{{ 's' if events | length != 1 else '' }} · 30d retention</span>{% endblock %}
 {% block page_actions %}
 <button class="btn"><i data-lucide="download" style="width:13px;height:13px"></i> Export (JSONL)</button>

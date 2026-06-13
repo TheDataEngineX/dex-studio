@@ -317,6 +317,24 @@
     });
   }
 
+  // Ensure textarea value is included in form submission (form attribute
+  // association isn't handled by all tools/HTMX serialization)
+  const sqlForm = document.getElementById('sql-run-form');
+  if (sqlForm) {
+    sqlForm.addEventListener('submit', function () {
+      const ta = document.getElementById('sql-editor');
+      if (!ta) return;
+      const existing = document.getElementById('sql-query-ghost');
+      if (existing) existing.remove();
+      const ghost = document.createElement('input');
+      ghost.type = 'hidden';
+      ghost.id = 'sql-query-ghost';
+      ghost.name = 'query';
+      ghost.value = ta.value;
+      this.appendChild(ghost);
+    });
+  }
+
   // ⌘↵ / Ctrl↵ to run
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

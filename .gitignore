@@ -74,6 +74,7 @@ site/
 # Architecture audit + local todo (personal, generated)
 AUDIT.md
 TODO.md
+research/
 
 # Claude Code — local overrides (personal, never commit)
 .claude/settings.local.json
@@ -83,3 +84,6 @@ docs/superpowers/
 .code-review-graph/
 DESIGN-BRIEF-2026.md
 Dex Studio - Claude Design/
+
+# Demo pipeline working files
+work/

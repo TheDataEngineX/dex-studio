@@ -12,9 +12,9 @@
 <a href="/data/lineage" class="btn sm ghost">
   <i data-lucide="share-2" style="width:12px;height:12px"></i> ER diagram
 </a>
-<a href="/data/catalog" class="btn sm primary">
+<button class="btn sm primary" x-data @click="$store.regModal.open=true">
   <i data-lucide="plus" style="width:12px;height:12px"></i> Register table
-</a>
+</button>
 {% endblock %}
 
 {% block content %}
@@ -196,5 +196,46 @@
     });
   }
 })();
+</script>
+
+{# ── Register table modal ──────────────────────────────────────────────────── #}
+<div x-data x-show="$store.regModal.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.regModal.open=false">
+  <div class="card" style="width:440px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Register external table</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.regModal.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <form method="post" action="/data/catalog/register" style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="cap" for="reg-table-name" style="display:block;margin-bottom:4px">Table name</label>
+        <input id="reg-table-name" class="input" name="table_name" required placeholder="e.g. external_ratings" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="reg-file-path" style="display:block;margin-bottom:4px">File path (parquet or CSV)</label>
+        <input id="reg-file-path" class="input" name="file_path" required placeholder="/data/my_file.parquet" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="reg-layer" style="display:block;margin-bottom:4px">Layer</label>
+        <select id="reg-layer" class="input" name="layer" style="width:100%">
+          <option value="bronze">Bronze — raw ingestion</option>
+          <option value="silver">Silver — cleaned</option>
+          <option value="gold">Gold — curated</option>
+        </select>
+      </div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <button type="button" class="btn ghost" @click="$store.regModal.open=false">Cancel</button>
+        <button type="submit" class="btn primary">Register</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('regModal', { open: false });
+  });
 </script>
 {% endblock %}

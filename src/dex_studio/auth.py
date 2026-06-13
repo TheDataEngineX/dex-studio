@@ -10,9 +10,18 @@ from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from starlette.requests import HTTPConnection
 
 SESSION_COOKIE = "dex_session"
 _KEY_FILE = Path.home() / ".dex-studio" / "api.key"
+
+
+class RequiresLogin(Exception):
+    """Raised by auth_dep — app exception handler redirects to /login."""
+
+
+class RequiresEngine(Exception):
+    """Raised by engine_dep — app exception handler redirects to /onboarding."""
 
 
 def _generate_and_save_key() -> str:
@@ -20,6 +29,7 @@ def _generate_and_save_key() -> str:
     key = secrets.token_urlsafe(32)
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     _KEY_FILE.write_text(key)
+    _KEY_FILE.chmod(0o600)
     print(  # noqa: T201 — intentional: must be visible on first boot
         "\n"
         "┌─────────────────────────────────────────────────────────┐\n"
@@ -53,17 +63,16 @@ def _make_token(api_key: str) -> str:
     return hashlib.sha256(f"dex-session:{api_key}".encode()).hexdigest()
 
 
-def auth_required(request: Request) -> RedirectResponse | None:
-    """Return a redirect to /login if the session is invalid, else None.
-
-    Usage in route handlers::
-
-        if redir := auth_required(request):
-            return redir
-    """
+def is_authenticated(request: HTTPConnection) -> bool:
+    """Return True if the session carries a valid token."""
     key = _expected_key()
     token = request.session.get("token", "")
-    if hmac.compare_digest(token, _make_token(key)):
+    return hmac.compare_digest(token, _make_token(key))
+
+
+def auth_required(request: Request) -> RedirectResponse | None:
+    """Return a redirect to /login if session is invalid, else None. (Legacy — prefer auth_dep.)"""
+    if is_authenticated(request):
         return None
     return RedirectResponse(url="/login", status_code=303)
 

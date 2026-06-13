@@ -4,15 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Open Project — DEX Studio</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.4.0/styles.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/studio.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    /* Apply stored theme before paint to avoid flash */
+    (function() {
+      var stored = globalThis.localStorage && localStorage.getItem('dex-theme');
+      document.documentElement.dataset.theme = stored || 'dark';
+    })();
+  </script>
+  <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
 <body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium"
       style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)"
-      x-data="{tab:'open'}">
+      x-data="{
+        tab: 'open',
+        selectedIsExample: {{ 'true' if (all_projects and all_projects[0].source == 'example') else 'false' }},
+        onSelect(e) {
+          var opt = e.target.options[e.target.selectedIndex];
+          this.selectedIsExample = opt.dataset.source === 'example';
+        }
+      }">
 
   <div class="rt-Card animate-scale-in" style="width:480px;padding:32px">
     <!-- Header -->
@@ -43,7 +55,7 @@
       <button @click="tab='open'" type="button"
               :style="tab==='open' ? 'border-bottom:2px solid var(--indigo-9);color:var(--indigo-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--gray-10)'"
               style="padding:7px 14px;background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:-1px;display:flex;align-items:center;gap:5px">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Open Project
       </button>
       <button @click="tab='new'" type="button"
@@ -56,16 +68,33 @@
 
     <!-- Open tab -->
     <div x-show="tab==='open'">
-      {% if projects %}
+      {% if all_projects %}
       <form method="post" action="/onboarding/open">
         <div class="dex-form-group" style="margin-bottom:12px">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project</label>
-          <select name="path" class="rt-SelectTrigger" style="width:100%;padding:8px 10px;font-size:13px;border-radius:5px;border:1px solid var(--gray-6);background:var(--color-background);color:var(--gray-12)">
-            {% for label, path in projects %}
-            <option value="{{ path }}">{{ label }}</option>
-            {% endfor %}
+          <label for="project_select" style="font-size:12px;font-weight:500;color:var(--gray-11)">Project</label>
+          <select id="project_select" name="config_path"
+                  class="rt-SelectTrigger"
+                  style="width:100%;padding:8px 10px;font-size:13px;border-radius:5px;border:1px solid var(--gray-6);background:var(--color-background);color:var(--gray-12)"
+                  @change="onSelect($event)">
+            {% set user_projs = all_projects | selectattr('source', 'equalto', 'user') | list %}
+            {% set example_projs = all_projects | selectattr('source', 'equalto', 'example') | list %}
+            {% if user_projs %}
+            <optgroup label="My Projects">
+              {% for p in user_projs %}
+              <option value="{{ p.path }}" data-source="user">{{ p.name }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+            {% if example_projs %}
+            <optgroup label="Examples">
+              {% for p in example_projs %}
+              <option value="{{ p.path }}" data-source="example">{{ p.name }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
           </select>
         </div>
+        <input type="hidden" name="is_example" :value="selectedIsExample ? '1' : ''">
         <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">Open Selected</button>
       </form>
 
@@ -78,11 +107,14 @@
 
       <form method="post" action="/onboarding/open">
         <div class="dex-form-group" style="margin-bottom:12px">
-          {% if not projects %}<label style="font-size:12px;font-weight:500;color:var(--gray-11)">Config path</label>{% endif %}
-          <input type="text" name="path" placeholder="/path/to/dex.yaml"
-                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          {% if not all_projects %}<label for="config_path_manual" style="font-size:12px;font-weight:500;color:var(--gray-11)">Config path</label>{% endif %}
+          <input id="config_path_manual" type="text" name="config_path" placeholder="/path/to/dex.yaml"
+                 class="rt-TextFieldInput"
+                 style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
         </div>
-        <button type="submit" class="rt-Button" data-variant="{% if projects %}outline{% else %}solid{% endif %}" data-size="2" style="width:100%">
+        <button type="submit" class="rt-Button"
+                data-variant="{% if all_projects %}outline{% else %}solid{% endif %}"
+                data-size="2" style="width:100%">
           Open from Path
         </button>
       </form>
@@ -92,17 +124,18 @@
     <div x-show="tab==='new'" style="display:none">
       <form method="post" action="/onboarding/create">
         <div class="dex-form-group" style="margin-bottom:12px">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project Name</label>
-          <input type="text" name="name" placeholder="my-project" required
+          <label for="project_name" style="font-size:12px;font-weight:500;color:var(--gray-11)">Project Name</label>
+          <input id="project_name" type="text" name="project_name" placeholder="my-project" required
                  class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-size:13px">
         </div>
         <div class="dex-form-group" style="margin-bottom:16px">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">
+          <label for="project_path" style="font-size:12px;font-weight:500;color:var(--gray-11)">
             Location
             <span style="font-weight:400;color:var(--gray-9)">(leave blank for ~/.dex-studio/projects/)</span>
           </label>
-          <input type="text" name="path" placeholder="~/.dex-studio/projects/my-project"
-                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+          <input id="project_path" type="text" name="project_path" placeholder="~/.dex-studio/projects/my-project"
+                 class="rt-TextFieldInput"
+                 style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
         </div>
         <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">
           Create &amp; Open
@@ -111,7 +144,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script>lucide.createIcons();</script>
+  <!-- icons are inline SVG; no lucide runtime needed -->
 </body>
 </html>

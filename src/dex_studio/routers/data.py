@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import datetime
-import json
 import os
 import re
 import time
@@ -16,11 +14,15 @@ import duckdb
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from dex_studio import _json
+from dex_studio.flow import build_nodes
+from dex_studio.jobs import run_pipeline_bg
 from dex_studio.routers._deps import (
+    JsonReadDep,
+    ReadDep,
+    WriteDep,
     base_ctx,
     flash,
-    get_eng,
-    guard,
     render,
     stub_page,
 )
@@ -31,6 +33,7 @@ router = APIRouter()
 _SOURCE_TYPES = [
     "csv",
     "parquet",
+    "delta",
     "duckdb",
     "postgres",
     "mysql",
@@ -47,10 +50,7 @@ _SOURCE_TYPES = [
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def data_dashboard(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def data_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
     stats = eng.pipeline_stats()
     sources = eng.config.data.sources or {}
     layers = eng.warehouse_layers()
@@ -215,10 +215,7 @@ def _serialize_run(r: Any) -> dict[str, Any]:
 
 
 @router.get("/pipelines", response_class=HTMLResponse)
-async def pipelines(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def pipelines(request: Request, eng: ReadDep) -> HTMLResponse:
     rows = _build_pipeline_rows(eng)
     pipeline_data = {
         r["name"]: {"source": r["source"], "destination": r["destination"], "steps": r["steps"]}
@@ -227,58 +224,54 @@ async def pipelines(request: Request) -> HTMLResponse:
     ctx = base_ctx(request) | {
         "pipelines": rows,
         "source_types": _SOURCE_TYPES,
-        "pipeline_data_json": json.dumps(pipeline_data),
+        "pipeline_data_json": _json.dumps(pipeline_data),
     }
     return render(request, "data/pipelines.html", ctx)
 
 
 @router.get("/pipelines/runs/all")
-async def pipeline_runs_all(request: Request) -> Any:
+def pipeline_runs_all(request: Request, eng: JsonReadDep) -> Any:
     """JSON — last 50 runs across all pipelines."""
     from fastapi.responses import JSONResponse
 
-    if guard(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    eng = get_eng()
     runs = eng.store.get_pipeline_runs(None)[:50]
     return JSONResponse([_serialize_run(r) for r in runs])
 
 
 @router.get("/pipelines/{name}/runs")
-async def pipeline_runs_for(request: Request, name: str) -> Any:
+def pipeline_runs_for(request: Request, eng: JsonReadDep, name: str) -> Any:
     """JSON — last 20 runs for a single pipeline."""
     from fastapi.responses import JSONResponse
 
-    if guard(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    eng = get_eng()
     runs = eng.store.get_pipeline_runs(name)[:20]
     return JSONResponse([_serialize_run(r) for r in runs])
 
 
 @router.post("/pipelines/run/{name}")
-async def run_pipeline(request: Request, name: str) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
-    # Fire and forget in thread pool — pipeline is CPU/IO-heavy.
-    asyncio.get_running_loop().run_in_executor(None, eng.run_pipeline, name)
-    flash(request, f"Pipeline '{name}' started — refresh in a moment for results.")
+def run_pipeline(request: Request, _: WriteDep, name: str) -> RedirectResponse:
+    status = run_pipeline_bg(name)
+    if status == "started":
+        flash(request, f"Pipeline '{name}' started — refresh in a moment for results.")
+    elif status == "running":
+        flash(request, f"Pipeline '{name}' is already running.", "warning")
+    elif status == "low_memory":
+        flash(request, "Not enough memory to run a pipeline safely. Free up RAM first.", "error")
+    else:
+        flash(request, "System busy — too many pipelines queued. Try again shortly.", "warning")
     return RedirectResponse("/data/pipelines", status_code=303)
 
 
 @router.post("/pipelines/add")
-async def add_pipeline(
+def add_pipeline(
     request: Request,
+    eng: WriteDep,
     name: Annotated[str, Form()],
     source: Annotated[str, Form()] = "",
     schedule: Annotated[str, Form()] = "",
     destination: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
     try:
-        get_eng().add_pipeline(name.strip(), source.strip(), schedule.strip(), destination.strip())
+        eng.add_pipeline(name.strip(), source.strip(), schedule.strip(), destination.strip())
         flash(request, f"Pipeline '{name}' added.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -286,11 +279,9 @@ async def add_pipeline(
 
 
 @router.post("/pipelines/delete/{name}")
-async def delete_pipeline(request: Request, name: str) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def delete_pipeline(request: Request, eng: WriteDep, name: str) -> RedirectResponse:
     try:
-        get_eng().delete_pipeline(name)
+        eng.delete_pipeline(name)
         flash(request, f"Pipeline '{name}' deleted.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -298,15 +289,14 @@ async def delete_pipeline(request: Request, name: str) -> RedirectResponse:
 
 
 @router.post("/pipelines/{name}/schedule")
-async def update_schedule(
+def update_schedule(
     request: Request,
+    eng: WriteDep,
     name: str,
     schedule: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
     try:
-        get_eng().update_pipeline_schedule(name, schedule.strip() or None)
+        eng.update_pipeline_schedule(name, schedule.strip() or None)
         flash(request, f"Schedule updated for '{name}'.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -314,10 +304,7 @@ async def update_schedule(
 
 
 @router.get("/pipelines/{name}", response_class=HTMLResponse)
-async def pipeline_detail(request: Request, name: str) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
     cfg = (eng.config.data.pipelines or {}).get(name)
     if cfg is None:
         return RedirectResponse("/data/pipelines", status_code=303)  # type: ignore[return-value]
@@ -371,25 +358,17 @@ def _build_source_rows(eng: Any) -> list[dict[str, str]]:
 
 
 @router.get("/sources", response_class=HTMLResponse)
-async def sources(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def sources(request: Request, eng: ReadDep) -> HTMLResponse:
     rows = _build_source_rows(eng)
-    flash_msg = request.session.pop("flash", None)
     ctx = base_ctx(request) | {
         "sources": rows,
         "source_types": _SOURCE_TYPES,
-        "flash": flash_msg,
     }
     return render(request, "data/sources.html", ctx)
 
 
 @router.get("/sources/{name}", response_class=HTMLResponse)
-async def source_detail(request: Request, name: str) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def source_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
     stats = eng.source_stats(name) or {}
     schema = eng.source_schema(name) or []
     sample_rows = eng.source_sample(name, limit=10) or []
@@ -430,8 +409,9 @@ def _source_connection(
 
 
 @router.post("/sources/add")
-async def add_source(
+def add_source(
     request: Request,
+    eng: WriteDep,
     name: Annotated[str, Form()],
     type_: Annotated[str, Form(alias="type")],
     path: Annotated[str, Form()] = "",
@@ -441,8 +421,6 @@ async def add_source(
     dbt_model: Annotated[str, Form()] = "",
     dbt_target: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
     try:
         t = type_.strip()
         connection = _source_connection(
@@ -453,7 +431,7 @@ async def add_source(
             dbt_model.strip(),
             dbt_target.strip(),
         )
-        get_eng().add_source(name.strip(), t, path.strip(), connection=connection)
+        eng.add_source(name.strip(), t, path.strip(), connection=connection)
         flash(request, f"Source '{name}' added.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -461,11 +439,9 @@ async def add_source(
 
 
 @router.post("/sources/delete/{name}")
-async def delete_source(request: Request, name: str) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def delete_source(request: Request, eng: WriteDep, name: str) -> RedirectResponse:
     try:
-        get_eng().delete_source(name)
+        eng.delete_source(name)
         flash(request, f"Source '{name}' removed.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -476,7 +452,7 @@ async def delete_source(request: Request, name: str) -> RedirectResponse:
 
 
 _DEFAULT_SQL = (
-    "SELECT table_name, table_schema, estimated_size\n"
+    "SELECT table_name, table_schema, table_type\n"
     "FROM information_schema.tables\n"
     "ORDER BY table_schema, table_name\n"
     "LIMIT 50;"
@@ -506,6 +482,9 @@ _UNSAFE_FUNCTIONS = re.compile(
     re.IGNORECASE,
 )
 
+# DuckDB allows `FROM '/path/to/file'` as a shorthand for read_*() — block it.
+_UNSAFE_LITERAL_FROM = re.compile(r"""\bFROM\s+['"]""", re.IGNORECASE)
+
 
 def _validate_sql(query: str) -> str | None:
     """Return an error string if query is not allowed, else None."""
@@ -522,14 +501,16 @@ def _validate_sql(query: str) -> str | None:
             "Direct read_*() calls are disabled. "
             "Query the pre-registered table views instead (listed in the sidebar)."
         )
+    if _UNSAFE_LITERAL_FROM.search(stripped):
+        return (
+            "Literal file paths in FROM clauses are disabled. "
+            "Query the pre-registered table views instead."
+        )
     return None
 
 
 @router.get("/sql", response_class=HTMLResponse)
-async def sql_console(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def sql_console(request: Request, eng: ReadDep) -> HTMLResponse:
     catalog_entries: list[dict[str, Any]] = []
     for layer in ("bronze", "silver", "gold"):
         for tbl in eng.warehouse_tables(layer):
@@ -582,27 +563,23 @@ def _run_sql(
 
 
 @router.post("/sql/execute", response_class=HTMLResponse)
-async def execute_sql(
+def execute_sql(
     request: Request,
+    eng: WriteDep,
     query: Annotated[str, Form()],
 ) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-
     error = _validate_sql(query) or ""
     columns: list[str] = []
     results: list[dict[str, Any]] = []
     exec_ms: float | None = None
 
     if not error:
-        eng = get_eng()
         lakehouse = eng.project_dir / ".dex" / "lakehouse"
         columns, results, exec_ms, error = _run_sql(lakehouse, query)
 
     # Build catalog sidebar entries (needed when rendering the full sql.html page)
     catalog_entries: list[dict[str, Any]] = []
     with contextlib.suppress(Exception):
-        eng = get_eng()
         for _layer in ("bronze", "silver", "gold"):
             for _tbl in eng.warehouse_tables(_layer):
                 _schema = eng.warehouse_table_schema(_tbl["name"], _layer) or []
@@ -628,10 +605,7 @@ async def execute_sql(
 
 
 @router.get("/lakehouse", response_class=HTMLResponse)
-async def lakehouse(request: Request, layer: str = "") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def lakehouse(request: Request, eng: ReadDep, layer: str = "") -> HTMLResponse:
     layers = eng.warehouse_layers()
     if not layer:
         nonempty = (lyr["name"] for lyr in layers if lyr.get("table_count", 0) > 0)
@@ -646,10 +620,7 @@ async def lakehouse(request: Request, layer: str = "") -> HTMLResponse:
 
 
 @router.get("/lakehouse/tables", response_class=HTMLResponse)
-async def lakehouse_tables_partial(request: Request, layer: str = "bronze") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def lakehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronze") -> HTMLResponse:
     tables = eng.warehouse_tables(layer)
     ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
     return render(request, "data/warehouse_tables.html", ctx)
@@ -659,10 +630,7 @@ async def lakehouse_tables_partial(request: Request, layer: str = "bronze") -> H
 
 
 @router.get("/warehouse", response_class=HTMLResponse)
-async def warehouse(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def warehouse(request: Request, eng: ReadDep) -> HTMLResponse:
     tables = eng.warehouse_tables("gold")
     ctx = base_ctx(request) | {
         "tables": tables,
@@ -672,10 +640,7 @@ async def warehouse(request: Request) -> HTMLResponse:
 
 
 @router.get("/warehouse/tables", response_class=HTMLResponse)
-async def warehouse_tables_partial(request: Request, layer: str = "bronze") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def warehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronze") -> HTMLResponse:
     tables = eng.warehouse_tables(layer)
     ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
     return render(request, "data/warehouse_tables.html", ctx)
@@ -797,10 +762,7 @@ def _get_lineage_events(eng: Any, pipeline: str = "") -> list[dict[str, Any]]:
 
 
 @router.get("/lineage/graph-partial", response_class=HTMLResponse)
-async def lineage_graph_partial(request: Request, pipeline: str = "") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def lineage_graph_partial(request: Request, eng: ReadDep, pipeline: str = "") -> HTMLResponse:
     events = _get_lineage_events(eng, pipeline)
     diagram = _build_mermaid(events) if events else ""
     if diagram:
@@ -811,10 +773,9 @@ async def lineage_graph_partial(request: Request, pipeline: str = "") -> HTMLRes
 
 
 @router.get("/lineage", response_class=HTMLResponse)
-async def lineage(request: Request, pipeline: str = "", view: str = "table") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def lineage(
+    request: Request, eng: ReadDep, pipeline: str = "", view: str = "table"
+) -> HTMLResponse:
     all_events = _get_lineage_events(eng, pipeline)
     pipeline_names = sorted({e["pipeline_name"] for e in all_events if e["pipeline_name"]})
     lin_nodes, lin_edges = _lineage_graph_from_config(eng)
@@ -834,10 +795,7 @@ async def lineage(request: Request, pipeline: str = "", view: str = "table") -> 
 
 
 @router.get("/quality", response_class=HTMLResponse)
-async def quality(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def quality(request: Request, eng: ReadDep) -> HTMLResponse:
     history = eng.quality_history()
     runs = history.get("runs", [])
     # Build flat check rows from latest run
@@ -872,25 +830,87 @@ async def quality(request: Request) -> HTMLResponse:
 
 
 @router.post("/quality/run")
-async def run_quality(request: Request) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def run_quality(request: Request, eng: WriteDep) -> RedirectResponse:
     try:
-        get_eng().quality_check_all_tables()
+        eng.quality_check_all_tables()
         flash(request, "Quality checks complete.")
     except Exception as exc:
         flash(request, str(exc), "error")
     return RedirectResponse("/data/quality", status_code=303)
 
 
+@router.post("/quality/tests/add")
+def add_quality_test(
+    request: Request,
+    eng: WriteDep,
+    table: Annotated[str, Form()],
+    test_type: Annotated[str, Form()],
+    column: Annotated[str, Form()] = "",
+    threshold: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    try:
+        tests_path = eng.project_dir / ".dex" / "quality_tests.json"
+        existing: list[dict[str, Any]] = []
+        with contextlib.suppress(Exception):
+            existing = _json.loads(tests_path.read_text())
+        existing.append(
+            {
+                "table": table,
+                "test_type": test_type,
+                "column": column,
+                "threshold": threshold,
+                "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            }
+        )
+        tests_path.parent.mkdir(parents=True, exist_ok=True)
+        tests_path.write_text(_json.dumps(existing, indent=2))
+        flash(request, f"Test '{test_type}' added for table '{table}'.")
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse("/data/quality", status_code=303)
+
+
+@router.post("/catalog/register")
+def catalog_register(
+    request: Request,
+    eng: WriteDep,
+    table_name: Annotated[str, Form()],
+    file_path: Annotated[str, Form()],
+    layer: Annotated[str, Form()] = "bronze",
+) -> RedirectResponse:
+    try:
+        import shutil
+
+        project_root = eng.project_dir.resolve()
+        src = Path(file_path.strip()).resolve()
+        if not str(src).startswith(str(project_root) + "/"):
+            flash(request, "File path must be within the project directory.", "error")
+            return RedirectResponse("/data/catalog", status_code=303)
+        if not src.exists():
+            flash(request, f"File not found: {file_path}", "error")
+            return RedirectResponse("/data/catalog", status_code=303)
+        dest_dir = eng.project_dir / ".dex" / "lakehouse" / layer
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^a-z0-9_]", "_", table_name.strip().lower())
+        dest = dest_dir / f"{safe_name}.parquet"
+        if src.suffix.lower() == ".csv":
+            duckdb.execute(
+                "COPY (SELECT * FROM read_csv_auto(?)) TO ? (FORMAT PARQUET)",
+                [str(src), str(dest)],
+            )
+        else:
+            shutil.copy2(src, dest)
+        flash(request, f"Table '{safe_name}' registered in {layer} layer.")
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse("/data/catalog", status_code=303)
+
+
 # ── Catalog (alias for sources) ───────────────────────────────────────────────
 
 
 @router.get("/catalog", response_class=HTMLResponse)
-async def catalog(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def catalog(request: Request, eng: ReadDep) -> HTMLResponse:
     entries: list[dict[str, Any]] = []
     layer_colors = {"bronze": "orange", "silver": "indigo", "gold": "amber"}
     for layer in ("bronze", "silver", "gold"):
@@ -913,10 +933,7 @@ async def catalog(request: Request) -> HTMLResponse:
 
 
 @router.get("/catalog/{table_name}", response_class=HTMLResponse)
-async def catalog_detail(request: Request, table_name: str) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def catalog_detail(request: Request, eng: ReadDep, table_name: str) -> HTMLResponse:
     # Find the layer this table lives in
     found_layer: str | None = None
     found_path: str | None = None
@@ -968,10 +985,7 @@ async def catalog_detail(request: Request, table_name: str) -> HTMLResponse:
 
 
 @router.get("/transforms", response_class=HTMLResponse)
-async def transforms(request: Request, pipeline: str = "") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def transforms(request: Request, eng: ReadDep, pipeline: str = "") -> HTMLResponse:
     rows = _build_pipeline_rows(eng)
     if not pipeline and rows:
         pipeline = rows[0]["name"]
@@ -983,17 +997,108 @@ async def transforms(request: Request, pipeline: str = "") -> HTMLResponse:
             sql = getattr(s, "sql", "") or ""
             if sql:
                 steps.append({"type": str(getattr(s, "type", "sql")), "sql": sql.strip()})
+    all_steps: list[dict[str, str]] = []
+    if cfg:
+        for s in getattr(cfg, "transforms", None) or []:
+            key = getattr(s, "key", None)
+            key_str = ", ".join(key) if isinstance(key, list) else (key or "")
+            detail = (
+                getattr(s, "sql", None)
+                or getattr(s, "condition", None)
+                or getattr(s, "expression", None)
+                or key_str
+                or getattr(s, "name", None)
+                or ""
+            )
+            all_steps.append(
+                {"type": str(getattr(s, "type", "")), "detail": str(detail).strip()[:140]}
+            )
     schedule_str = fmt_cron(cfg.schedule) if cfg and getattr(cfg, "schedule", None) else "—"
     ctx = base_ctx(request) | {
         "pipelines": rows,
         "selected_pipeline": pipeline,
         "steps": steps,
+        "all_steps": all_steps,
+        "nodes": build_nodes(cfg),
+        "transform_types": ["filter", "derive", "deduplicate", "sql"],
         "schedule": schedule_str,
         "source": str(getattr(cfg, "source", "") or "") if cfg else "",
         "destination": str(getattr(cfg, "destination", "") or "") if cfg else "",
         "active_tab": "data",
     }
     return render(request, "data/transforms.html", ctx)
+
+
+@router.post("/transforms/{pipeline}/add")
+def add_transform(
+    request: Request,
+    eng: WriteDep,
+    pipeline: str,
+    type_: Annotated[str, Form(alias="type")],
+    condition: Annotated[str, Form()] = "",
+    name: Annotated[str, Form()] = "",
+    expression: Annotated[str, Form()] = "",
+    key: Annotated[str, Form()] = "",
+    sql: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    step: dict[str, Any] = {"type": type_.strip()}
+    if condition.strip():
+        step["condition"] = condition.strip()
+    if name.strip():
+        step["name"] = name.strip()
+    if expression.strip():
+        step["expression"] = expression.strip()
+    if key.strip():
+        keys = [k.strip() for k in key.split(",") if k.strip()]
+        step["key"] = keys if len(keys) > 1 else keys[0]
+    if sql.strip():
+        step["sql"] = sql.strip()
+    try:
+        eng.add_pipeline_transform(pipeline, step)
+        flash(request, f"Added {type_.strip()} step to '{pipeline}'.")
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/data/transforms?pipeline={pipeline}", status_code=303)
+
+
+@router.post("/transforms/{pipeline}/delete/{index}")
+def delete_transform(
+    request: Request, eng: WriteDep, pipeline: str, index: int
+) -> RedirectResponse:
+    try:
+        eng.delete_pipeline_transform(pipeline, index)
+        flash(request, f"Removed step {index + 1} from '{pipeline}'.")
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/data/transforms?pipeline={pipeline}", status_code=303)
+
+
+@router.get("/transforms/{pipeline}/preview", response_class=HTMLResponse)
+def transform_flow_preview(request: Request, eng: ReadDep, pipeline: str) -> HTMLResponse:
+    """HTMX partial — the flow canvas with real per-stage row counts (sampled)."""
+    cfg = (eng.config.data.pipelines or {}).get(pipeline)
+    if cfg is None:
+        return HTMLResponse("")
+    stages: list[Any] | None = None
+    with contextlib.suppress(Exception):
+        stages = eng.preview_flow(pipeline).get("stages")
+    ctx = base_ctx(request) | {
+        "nodes": build_nodes(cfg, stages),
+        "selected_pipeline": pipeline,
+        "auto_load": False,
+    }
+    return render(request, "data/flow_canvas.html", ctx)
+
+
+@router.post("/transforms/{pipeline}/reorder/{index}/{direction}")
+def reorder_transform(
+    request: Request, eng: WriteDep, pipeline: str, index: int, direction: int
+) -> RedirectResponse:
+    try:
+        eng.reorder_pipeline_transform(pipeline, index, 1 if direction > 0 else -1)
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse(f"/data/transforms?pipeline={pipeline}", status_code=303)
 
 
 # ── Streaming ─────────────────────────────────────────────────────────────────
@@ -1004,10 +1109,7 @@ _STREAMING_TYPES = frozenset(
 
 
 @router.get("/streaming", response_class=HTMLResponse)
-async def streaming(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def streaming(request: Request, eng: ReadDep) -> HTMLResponse:
     topics = [
         {
             "name": name,
@@ -1037,7 +1139,5 @@ _DATA_STUB_TITLES = {
 @router.get("/asset-graph", response_class=HTMLResponse)
 @router.get("/contracts", response_class=HTMLResponse)
 @router.get("/templates", response_class=HTMLResponse)
-async def data_stub(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def data_stub(request: Request, _: ReadDep) -> HTMLResponse:
     return stub_page(request, _DATA_STUB_TITLES)

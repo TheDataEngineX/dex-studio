@@ -6,7 +6,9 @@
 
 **Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
 
-> _Demo GIF lands in v0.5 (see [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md))._ Today the studio is functional but the polished CSV → train classifier → ask-questions-with-LLM walkthrough is the next milestone.
+[![DEX Studio demo](docs/demo.gif)](https://youtu.be/PLACEHOLDER)
+
+> 40-second highlight · [Full 5-min walkthrough →](https://youtu.be/PLACEHOLDER)
 
 ______________________________________________________________________
 
@@ -25,17 +27,17 @@ uv sync
 uv run poe dev                          # http://localhost:7860 with hot-reload
 ```
 
-Point it at a specific config:
+Point it at a specific config via env:
 
 ```bash
-dex-studio --config /path/to/dex.yaml
+export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 ```
 
 ______________________________________________________________________
 
 ## What you get
 
-Single page-of-glass UI for everything the [`dataenginex`](https://github.com/TheDataEngineX/dex) library does — no separate API server, no microservices.
+Single page-of-glass UI for everything the [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) library does — no separate API server, no microservices.
 
 | Domain | Today | Phase 2/3 of [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) |
 | --- | --- | --- |
@@ -78,7 +80,7 @@ ______________________________________________________________________
 | Templates | Jinja2 (server-rendered HTML) |
 | Interactivity | HTMX + Alpine.js |
 | Styling | Custom CSS + Radix UI design tokens |
-| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dex) — direct import, no HTTP hop |
+| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) — direct import, no HTTP hop |
 | Config | PyYAML + Pydantic |
 | Build | Hatchling + uv |
 | Testing | pytest + httpx TestClient |
@@ -107,7 +109,7 @@ ______________________________________________________________________
 
 | Repo | Purpose |
 | --- | --- |
-| [dataenginex](https://github.com/TheDataEngineX/dex) | The Python library (PyPI) — engine, config, all backends |
+| [dataenginex](https://github.com/TheDataEngineX/dataenginex) | The Python library (PyPI) — engine, config, all backends |
 | [dex-studio](https://github.com/TheDataEngineX/dex-studio) | This repo — web UI |
 | [docs](https://github.com/TheDataEngineX/docs) | Documentation site — ADRs + 10-week roadmap |
 
@@ -115,7 +117,7 @@ ______________________________________________________________________
 
 ## Status
 
-Pre-1.0, rebuilding scope through v0.5. See the [DEX scope-reset CHANGELOG](https://github.com/TheDataEngineX/dex/blob/main/CHANGELOG.md) for the rationale and the [2026 roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) for what ships next.
+Pre-1.0, rebuilding scope through v0.5. See the [DEX scope-reset CHANGELOG](https://github.com/TheDataEngineX/dataenginex/blob/main/CHANGELOG.md) for the rationale and the [2026 roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) for what ships next.
 
 ______________________________________________________________________
 

@@ -6,16 +6,12 @@ import contextlib
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 
-from dex_studio.routers._deps import base_ctx, get_eng, render, require_auth, require_engine
+from dex_studio.routers._deps import ReadDep, base_ctx, render
 from dex_studio.utils import fmt_ts
 
 router = APIRouter()
-
-
-def _guard(request: Request) -> RedirectResponse | None:
-    return require_auth(request) or require_engine()
 
 
 def _privacy_guard(eng: Any) -> Any:
@@ -33,10 +29,7 @@ def _secops_audit(eng: Any) -> Any:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def secops_overview(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def secops_overview(request: Request, eng: ReadDep) -> HTMLResponse:
     guard = _privacy_guard(eng)
 
     strategies: list[dict[str, str]] = []
@@ -109,10 +102,7 @@ async def secops_overview(request: Request) -> HTMLResponse:
 
 
 @router.get("/audit", response_class=HTMLResponse)
-async def secops_audit(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def secops_audit(request: Request, eng: ReadDep) -> HTMLResponse:
     audit = _secops_audit(eng)
 
     if audit is None:
@@ -141,10 +131,7 @@ async def secops_audit(request: Request) -> HTMLResponse:
 
 
 @router.get("/alerts", response_class=HTMLResponse)
-async def secops_alerts(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def secops_alerts(request: Request, eng: ReadDep) -> HTMLResponse:
     alert_rules: list[dict[str, Any]] = []
 
     # Drift monitoring → alert rules

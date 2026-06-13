@@ -2,7 +2,7 @@
 
 {% block title %}Experiments — ML — DEX Studio{% endblock %}
 {% block page_title %}Experiments{% endblock %}
-{% block page_subtitle %}
+{% block page_sub %}
   {% if experiments %}
     {{ experiments | length }} experiment{{ 's' if experiments | length != 1 else '' }}
     · {{ experiments | sum(attribute='run_count') }} total run{{ 's' if experiments | sum(attribute='run_count') != 1 else '' }}
@@ -11,8 +11,12 @@
   {% endif %}
 {% endblock %}
 {% block page_actions %}
-<button class="btn"><i data-lucide="book" style="width:13px;height:13px"></i> Templates</button>
-<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New experiment</button>
+<button class="btn" x-data @click="$store.expTpl.open=true">
+  <i data-lucide="book" style="width:13px;height:13px"></i> Templates
+</button>
+<button class="btn primary" x-data @click="$store.expModal.open=true">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> New experiment
+</button>
 {% endblock %}
 
 {% block content %}
@@ -147,4 +151,73 @@
 {% endif %}
 {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('expModal', { open: false });
+    Alpine.store('expTpl',   { open: false });
+  });
+</script>
+
+{# ── New experiment modal ── #}
+<div x-data x-show="$store.expModal.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.expModal.open=false">
+  <div class="card" style="width:380px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">New experiment</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.expModal.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <form method="post" action="/ml/experiments/new" style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label for="exp-name" class="cap" style="display:block;margin-bottom:4px">Experiment name</label>
+        <input id="exp-name" class="input" name="exp_name" required
+               placeholder="e.g. rating_v2_tuning" style="width:100%">
+        <div class="muted" style="font-size:11px;margin-top:4px">Use snake_case. Runs will be grouped under this name.</div>
+      </div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <button type="button" class="btn ghost" @click="$store.expModal.open=false">Cancel</button>
+        <button type="submit" class="btn primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Templates panel ── #}
+<div x-data x-show="$store.expTpl.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.expTpl.open=false">
+  <div class="card" style="width:480px;padding:24px;max-height:80vh;overflow:auto" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Experiment templates</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.expTpl.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    {% set tpls = [
+      ("Rating predictor", "random_forest_rating", "Random forest on gold_movie_features → predict imdb_rating. Good baseline."),
+      ("Genre classifier", "genre_decade_clf", "Classify movie decade from genre & rating signals. Multi-class RF."),
+      ("Recommender score", "gbm_recommender", "Gradient boosting recommendation score from director + genre features."),
+      ("Hyperparameter sweep", "hparam_sweep", "Grid search over n_estimators and max_depth for any sklearn estimator."),
+    ] %}
+    <div style="display:flex;flex-direction:column;gap:10px">
+      {% for name, slug, desc in tpls %}
+      <form method="post" action="/ml/experiments/new">
+        <input type="hidden" name="exp_name" value="{{ slug }}">
+        <div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:12px">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">{{ name }}</div>
+            <div class="muted" style="font-size:11px;margin-top:2px;line-height:1.4">{{ desc }}</div>
+          </div>
+          <button type="submit" class="btn sm primary" style="flex-shrink:0">Use</button>
+        </div>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 {% endblock %}

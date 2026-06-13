@@ -32,7 +32,7 @@ _CONFIG_FILENAME = "dex.yaml"
 def init_engine(config_path: str | Path) -> DexEngine:
     """Initialize the singleton from an explicit config path.
 
-    Closes the previous engine before replacing it so DuckDB file handles
+    Closes the previous engine before replacing it so SQLite connections
     are released. Guarded by a thread lock to prevent concurrent init races.
     """
     global _ENGINE

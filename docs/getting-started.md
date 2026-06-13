@@ -63,3 +63,27 @@ projects:
   careerdex: ~/projects/careerdex/dex.yaml
   moviedex: /data/pipelines/moviedex/dex.yaml
 ```
+
+## Generating Demo Assets
+
+To regenerate screenshots, the demo video, and the README GIF after UI changes:
+
+```bash
+# System prerequisites (one-time)
+brew install ffmpeg           # macOS
+sudo apt install ffmpeg       # Ubuntu/Debian
+cargo install agg             # asciinema GIF exporter (requires Rust)
+
+# Python dev deps
+uv sync --all-groups
+uv run playwright install chromium
+
+# Screenshots only (~60s, no ffmpeg needed)
+uv run poe screenshots
+
+# Full demo video + screenshots (~10 min, requires ffmpeg + agg)
+uv run poe demo
+```
+
+Outputs land in `docs/`. Commit them alongside the code change.
+After generating `docs/demo-full.mp4`, upload it to YouTube and update the `PLACEHOLDER` URL in `README.md`.

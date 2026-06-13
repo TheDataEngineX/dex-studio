@@ -108,6 +108,24 @@
     msg: r.msg || '',
   }));
 
+  // Live SSE tail — connects to /system/logs/stream
+  let _sse = null;
+  function startSSE() {
+    if (_sse) { _sse.close(); }
+    _sse = new EventSource('/system/logs/stream?level=DEBUG');
+    _sse.onmessage = function (ev) {
+      try {
+        const r = JSON.parse(ev.data);
+        const lvl = (r.level || r.lvl || 'INFO').toUpperCase().replace('WARNING','WARN').replace('CRITICAL','ERROR');
+        const ts  = r.ts || r.timestamp || new Date().toISOString();
+        LOG_ROWS.push({ t: ts.slice(11, 23), lvl, src: r.logger || r.source || 'engine', msg: r.event || r.msg || '' });
+        if (LOG_ROWS.length > 1000) LOG_ROWS.shift();
+        if (tailing) renderLogs();
+      } catch { /* ignore malformed frames */ }
+    };
+  }
+  startSSE();
+
   const LVL_META = {
     ERROR: { c:'var(--red-9)',   bg:'color-mix(in oklch,var(--red-9) 8%,transparent)',   border:'var(--red-9)'   },
     WARN:  { c:'var(--amber-9)', bg:'color-mix(in oklch,var(--amber-9) 8%,transparent)', border:'var(--amber-9)' },

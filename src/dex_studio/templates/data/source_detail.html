@@ -4,9 +4,9 @@
 {% block title %}{{ source_name }} — DEX Studio{% endblock %}
 {% block page_title %}
 <div style="display:flex;align-items:center;gap:8px">
-  <a href="/data/sources" style="color:var(--gray-9);text-decoration:none;font-size:14px;font-weight:400">Sources</a>
-  <i data-lucide="chevron-right" style="width:13px;height:13px;color:var(--gray-7)"></i>
-  <span style="font-family:'Fira Code',monospace;font-size:15px">{{ source_name }}</span>
+  <a href="/data/sources" style="color:var(--text-3);text-decoration:none;font-size:14px;font-weight:400">Sources</a>
+  <i data-lucide="chevron-right" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span class="mono" style="font-size:15px">{{ source_name }}</span>
 </div>
 {% endblock %}
 
@@ -15,32 +15,32 @@
 {% if stats %}
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
   {% for k, v in stats.items() %}
-  <div class="rt-Card" style="padding:12px 18px">
-    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-9);margin-bottom:4px">{{ k }}</div>
-    <div style="font-size:16px;font-weight:700;color:var(--gray-12)">{{ v }}</div>
+  <div class="card" style="padding:12px 18px">
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:4px">{{ k }}</div>
+    <div style="font-size:16px;font-weight:700">{{ v }}</div>
   </div>
   {% endfor %}
 </div>
 {% endif %}
 
 <!-- Schema -->
-<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Schema</h3>
+<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Schema</h3>
 {% if schema %}
-<div class="rt-Card" style="overflow:hidden;margin-bottom:24px">
-  <table class="rt-TableRoot dex-table" style="width:100%">
+<div class="card" style="overflow:hidden;margin-bottom:24px">
+  <table class="dex-table tbl" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell">Column</th>
-        <th class="rt-TableColumnHeaderCell">Type</th>
-        <th class="rt-TableColumnHeaderCell">Nullable</th>
+        <th>Column</th>
+        <th>Type</th>
+        <th>Nullable</th>
       </tr>
     </thead>
     <tbody>
       {% for col in schema %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
-        <td class="rt-TableCell"><span class="rt-Badge" data-accent-color="blue" data-variant="soft" data-size="1">{{ col.get("column_type","") }}</span></td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ "yes" if col.get("nullable") else "no" }}</td>
+        <td class="mono" style="font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
+        <td><span class="pill" style="background:var(--blue-3);color:var(--blue-11)">{{ col.get("column_type","") }}</span></td>
+        <td style="font-size:12px;color:var(--text-3)">{{ "yes" if col.get("nullable") else "no" }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -51,13 +51,13 @@
 {% endif %}
 
 <!-- Sample -->
-<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Sample Data</h3>
+<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Sample Data</h3>
 {% if sample_rows %}
-<div class="rt-Card" style="overflow:auto">
-  <table class="rt-TableRoot dex-table" style="width:100%;min-width:600px">
+<div class="card" style="overflow:auto">
+  <table class="dex-table tbl" style="width:100%;min-width:600px">
     <thead>
       <tr>
-        {% for col in sample_cols %}<th class="rt-TableColumnHeaderCell">{{ col }}</th>{% endfor %}
+        {% for col in sample_cols %}<th>{{ col }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
@@ -66,9 +66,9 @@
         {% for col in sample_cols %}
         {% set cv = row.get(col) %}
         {% if cv is none %}
-        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-8);font-style:italic">NULL</td>
+        <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-4);font-style:italic">NULL</td>
         {% else %}
-        <td class="rt-TableCell" style="font-size:12px;font-family:'Fira Code',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
+        <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
         {% endif %}
         {% endfor %}
       </tr>

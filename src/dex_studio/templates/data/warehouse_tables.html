@@ -3,23 +3,25 @@
 <div style="margin-bottom:10px">
   <input class="dex-table-filter" placeholder="Filter tables…" data-table="warehouse-table">
 </div>
-<div class="rt-Card" style="overflow:hidden">
-  <table id="warehouse-table" class="rt-TableRoot dex-table" style="width:100%">
+<div class="card bare">
+  <table id="warehouse-table" class="dex-table" style="width:100%">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell sortable">Table</th>
-        <th class="rt-TableColumnHeaderCell sortable num">Rows</th>
-        <th class="rt-TableColumnHeaderCell sortable">Size</th>
-        <th class="rt-TableColumnHeaderCell sortable">Updated</th>
+        <th class="sortable">Table</th>
+        <th class="sortable num">Rows</th>
+        <th class="sortable">Size</th>
+        <th class="sortable">Updated</th>
       </tr>
     </thead>
     <tbody>
       {% for t in tables %}
       <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:500"><a href="/data/catalog/{{ t.get('name','') }}" style="color:var(--indigo-11);text-decoration:none">{{ t.get("name","") }}</a></td>
-        <td class="rt-TableCell num" style="font-size:12px">{{ t.get("row_count","—") }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ t.get("size","—") }}</td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ t.get("updated_at","—") }}</td>
+        <td class="mono" style="font-size:12px;font-weight:500">
+          <a href="/data/catalog/{{ t.get('name','') }}" style="color:var(--accent-11);text-decoration:none">{{ t.get("name","") }}</a>
+        </td>
+        <td class="num" style="font-size:12px">{{ t.get("row_count","—") }}</td>
+        <td style="font-size:12px">{{ t.get("size","—") }}</td>
+        <td class="muted" style="font-size:12px">{{ t.get("updated_at","—") }}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -2,7 +2,7 @@
 
 {% block title %}Alerts — SecOps — DEX Studio{% endblock %}
 {% block page_title %}Alerts{% endblock %}
-{% block page_subtitle %}
+{% block page_sub %}
   {% if alert_rules %}
     {{ alert_rules | length }} rule{{ 's' if alert_rules | length != 1 else '' }}
     {%- if firing_count %} · <span style="color:var(--red-9)">{{ firing_count }} firing</span>{% endif %}

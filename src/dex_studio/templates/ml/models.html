@@ -2,7 +2,7 @@
 
 {% block title %}Models — ML — DEX Studio{% endblock %}
 {% block page_title %}Models{% endblock %}
-{% block page_subtitle %}
+{% block page_sub %}
   {{ models | length }} model{{ 's' if models | length != 1 else '' }} registered
   {% if models %} · {{ stages | length }} stages{% endif %}
 {% endblock %}
@@ -77,10 +77,10 @@
   <table class="tbl" id="models-tbl">
     <thead>
       <tr>
-        <th>Model</th>
-        <th>Version</th>
-        <th>Framework</th>
-        <th>Stage</th>
+        <th class="sortable">Model</th>
+        <th class="sortable" style="width:80px">Version</th>
+        <th class="sortable">Framework</th>
+        <th class="sortable">Stage</th>
         <th style="width:140px">Promote to</th>
         <th style="width:40px"></th>
       </tr>

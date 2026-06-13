@@ -12,7 +12,7 @@
 {% endblock %}
 
 {% block page_sub %}
-<div class="sub">all outbound calls routed through the local privacy guard · PII never leaves disk unmasked</div>
+<div class="sub">{% if allow_local %}external outbound calls routed through the privacy guard · local LLMs ({{ local_targets | join(', ') }}) bypass the guard · PII never leaves disk unmasked{% else %}all outbound calls routed through the local privacy guard · PII never leaves disk unmasked{% endif %}</div>
 {% endblock %}
 
 {% block page_actions %}
@@ -35,7 +35,7 @@
     <div class="val">{{ outbound_calls_today | default('—') }}</div>
     <div class="delta {{ 'up' if outbound_calls_today else 'muted' }}">
       {% if outbound_calls_today %}<i data-lucide="arrow-up" style="width:11px;height:11px"></i>{% endif %}
-      {{ outbound_delta if outbound_delta is defined else ('active' if outbound_calls_today else 'no calls yet') }}
+      {{ outbound_delta if outbound_delta is defined else ('active' if outbound_calls_today else 'local calls bypass the guard' if allow_local else 'no calls yet') }}
     </div>
   </div>
 
@@ -225,6 +225,7 @@
             <i data-lucide="shield-check" style="width:28px;height:28px;opacity:.3;margin-bottom:10px"></i>
             <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No outbound calls recorded yet</div>
             <div class="muted" style="font-size:var(--text-xs)">
+              {% if allow_local %}Local LLM calls bypass the guard when <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">allow_local</code> is enabled.{% endif %}
               Events appear here once the guard intercepts outbound LLM calls.
             </div>
           </div>

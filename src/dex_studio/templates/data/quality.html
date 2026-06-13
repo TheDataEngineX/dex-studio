@@ -6,12 +6,14 @@
 {% block page_sub %}{% set total = checks | length %}{% set failing_ct = checks | rejectattr('passed') | list | length %}{{ total }} tables checked · {{ total - failing_ct }} passing · {{ failing_ct }} failing{% endblock %}
 
 {% block page_actions %}
-<a href="/data/quality" class="btn sm ghost">
-  <i data-lucide="book-open" style="width:12px;height:12px"></i> Test catalog
-</a>
-<a href="/data/quality" class="btn sm primary">
+<form method="post" action="/data/quality/run" style="display:inline">
+  <button type="submit" class="btn sm ghost">
+    <i data-lucide="play" style="width:12px;height:12px"></i> Run all checks
+  </button>
+</form>
+<button class="btn sm primary" x-data @click="$store.testModal.open=true">
   <i data-lucide="plus" style="width:12px;height:12px"></i> New test
-</a>
+</button>
 {% endblock %}
 
 {% block content %}
@@ -96,21 +98,26 @@
 {% endif %}
 
 {# ── All checks ── #}
-<div class="section-h">
+<div class="section-h" style="margin-top:16px">
   <h2>All tables</h2>
-  <div class="row" style="gap:6px">
+  <div class="row" style="gap:8px;margin-left:auto">
+    <div class="input-icon" style="width:220px">
+      <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
+      <input id="q-search" class="input" placeholder="Search tables…" style="height:26px;font-size:12px"
+             oninput="qFilter()">
+    </div>
     <span class="chip active">All <span class="count">{{ checks | length }}</span></span>
   </div>
 </div>
 <div class="card bare">
-  <table class="tbl dex-table">
+  <table id="q-table" class="tbl dex-table">
     <thead>
       <tr>
         <th style="width:30px"></th>
-        <th>Table</th>
-        <th style="width:100px">Score</th>
-        <th style="width:120px">Completeness</th>
-        <th style="width:120px">Uniqueness</th>
+        <th class="sortable" style="cursor:pointer">Table <span class="sort-icon">↕</span></th>
+        <th class="sortable" style="cursor:pointer;width:100px">Score <span class="sort-icon">↕</span></th>
+        <th class="sortable" style="cursor:pointer;width:120px">Completeness <span class="sort-icon">↕</span></th>
+        <th class="sortable" style="cursor:pointer;width:120px">Uniqueness <span class="sort-icon">↕</span></th>
         <th style="width:90px">Status</th>
         <th style="width:30px"></th>
       </tr>
@@ -147,6 +154,20 @@
 {% block scripts %}
 <script>
 (function () {
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('testModal', { open: false });
+  });
+
+  globalThis.qFilter = function () {
+    const q = document.getElementById('q-search').value.toLowerCase();
+    document.querySelectorAll('#q-table tbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+})();
+
+(function () {
   // Sparklines for stat cards
   document.querySelectorAll('.stat[data-spark]').forEach(el => {
     const data  = JSON.parse(el.dataset.spark);
@@ -170,4 +191,54 @@
   });
 })();
 </script>
+
+{# ── New test modal ── #}
+<div x-data x-show="$store.testModal.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.testModal.open=false">
+  <div class="card" style="width:420px;padding:24px" @click.stop
+       x-data="{testType:'not_null'}">
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Add quality test</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.testModal.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <form method="post" action="/data/quality/tests/add" style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label for="qt-table" class="cap" style="display:block;margin-bottom:4px">Table</label>
+        <select id="qt-table" class="input" name="table" required style="width:100%">
+          {% for c in checks %}
+          <option value="{{ c.table }}">{{ c.table }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="qt-type" class="cap" style="display:block;margin-bottom:4px">Test type</label>
+        <select id="qt-type" class="input" name="test_type" x-model="testType" style="width:100%">
+          <option value="not_null">Not null — no missing values</option>
+          <option value="unique">Unique — no duplicates</option>
+          <option value="range">Range — values within min/max</option>
+          <option value="freshness">Freshness — updated recently</option>
+          <option value="row_count">Row count — minimum rows</option>
+        </select>
+      </div>
+      <div x-show="testType!=='freshness'&&testType!=='row_count'">
+        <label for="qt-col" class="cap" style="display:block;margin-bottom:4px">Column (optional)</label>
+        <input id="qt-col" class="input" name="column" placeholder="e.g. movie_id" style="width:100%">
+      </div>
+      <div x-show="testType==='range'||testType==='row_count'">
+        <label for="qt-thresh" class="cap" style="display:block;margin-bottom:4px">
+          <span x-show="testType==='range'">Range (min,max)</span>
+          <span x-show="testType==='row_count'">Minimum rows</span>
+        </label>
+        <input id="qt-thresh" class="input" name="threshold" placeholder="e.g. 0,10" style="width:100%">
+      </div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <button type="button" class="btn ghost" @click="$store.testModal.open=false">Cancel</button>
+        <button type="submit" class="btn primary">Add test</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}

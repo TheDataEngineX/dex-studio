@@ -190,45 +190,155 @@
 
 </div>
 
-{# ── Add Pipeline modal ──────────────────────────────────────────────────── #}
-<dialog class="dex-dialog" id="add-pipeline-modal">
-  <div style="width:420px;max-width:95vw">
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:18px">
+{# ── New Pipeline wizard ─────────────────────────────────────────────────── #}
+<dialog class="dex-dialog" id="add-pipeline-modal" style="width:680px;max-width:95vw">
+  <div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="font-size:15px;font-weight:600;margin:0">New Pipeline</h3>
-      <button class="btn sm ghost" onclick="this.closest('dialog').close()">
+      <button class="btn icon ghost sm" onclick="this.closest('dialog').close()">
         <i data-lucide="x" style="width:14px;height:14px"></i>
       </button>
     </div>
-    <form method="post" action="/data/pipelines/add">
-      <div class="col" style="gap:12px">
-        <div class="col" style="gap:4px">
-          <label class="cap" for="pipe-name">Name *</label>
-          <input id="pipe-name" type="text" name="name" placeholder="etl_users" required
-                 class="input" style="font-family:var(--font-mono);font-size:12px">
-        </div>
-        <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+
+    {# Step tabs #}
+    <div class="row" style="gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+      {% for num, label in [(1,'Source'),(2,'Transforms'),(3,'Sink')] %}
+      <div id="pwiz-tab-{{ num }}"
+           style="padding:8px 16px;font-size:12px;font-weight:500;cursor:default;
+                  color:{{ 'var(--accent-11)' if loop.first else 'var(--text-3)' }};
+                  border-bottom:2px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};
+                  margin-bottom:-1px">
+        <span style="opacity:.5">{{ num }}</span> · {{ label }}
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Live preview canvas #}
+    <div style="display:flex;align-items:center;gap:6px;padding:10px 12px;
+                background:var(--bg);border:1px solid var(--border);border-radius:var(--r-2);
+                margin-bottom:16px;min-height:58px;overflow-x:auto">
+      <div id="pwiz-src-node"
+           style="flex-shrink:0;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);
+                  border-top:3px solid var(--border-strong);border-radius:var(--r-2);min-width:110px">
+        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:3px">source</div>
+        <div id="pwiz-src-lbl" class="mono muted" style="font-size:11px">— none —</div>
+      </div>
+      <div class="muted" style="flex-shrink:0;opacity:.35"><i data-lucide="arrow-right" style="width:16px;height:16px"></i></div>
+      <div id="pwiz-xform-strip" style="display:flex;align-items:center;gap:5px;flex:1"></div>
+      <div id="pwiz-dst-node"
+           style="flex-shrink:0;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);
+                  border-top:3px solid var(--green-9);border-radius:var(--r-2);min-width:110px">
+        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--green-11);margin-bottom:3px">sink</div>
+        <div id="pwiz-dst-lbl" class="mono muted" style="font-size:11px">— none —</div>
+      </div>
+    </div>
+
+    <form method="post" action="/data/pipelines/add" id="pwiz-form">
+
+      {# Step 1: Source #}
+      <div id="pwiz-step-1">
+        <div class="col" style="gap:12px">
           <div class="col" style="gap:4px">
-            <label class="cap" for="pipe-source">Source</label>
-            <select id="pipe-source" name="source" class="input" style="font-size:var(--text-sm)">
-              <option value="">— none —</option>
-              {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-            </select>
-          </div>
-          <div class="col" style="gap:4px">
-            <label class="cap" for="pipe-schedule">Schedule (cron)</label>
-            <input id="pipe-schedule" type="text" name="schedule" placeholder="0 * * * *"
+            <label class="cap" for="pwiz-name">Pipeline name *</label>
+            <input id="pwiz-name" type="text" name="name" placeholder="etl_movies_gold" required
                    class="input" style="font-family:var(--font-mono);font-size:12px">
           </div>
+          <div class="col" style="gap:6px">
+            <span class="cap">Select source</span>
+            <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px">
+              {% set src_desc = {'csv':'flat file','parquet':'columnar','postgres':'SQL DB',
+                                 'kafka':'stream','dbt':'transform','api':'REST API','sqlite':'local DB'} %}
+              {% for t in source_types %}
+              <label class="card" style="padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;transition:border-color .15s"
+                     onmouseenter="this.style.borderColor='var(--accent-9)'"
+                     onmouseleave="this.style.borderColor=this.querySelector('input').checked?'var(--accent-9)':''">
+                <input type="radio" name="source" value="{{ t }}" style="accent-color:var(--accent-9);flex-shrink:0"
+                       onchange="pwizSetSource('{{ t }}')">
+                <div>
+                  <div style="font-weight:500;font-size:12px;font-family:var(--font-mono)">{{ t }}</div>
+                  <div class="muted" style="font-size:10.5px;margin-top:1px">{{ src_desc.get(t,'connector') }}</div>
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
         </div>
-        <div class="col" style="gap:4px">
-          <label class="cap" for="pipe-dest">Destination</label>
-          <input id="pipe-dest" type="text" name="destination" placeholder="warehouse.gold.users"
-                 class="input" style="font-family:var(--font-mono);font-size:12px">
+      </div>
+
+      {# Step 2: Transforms #}
+      <div id="pwiz-step-2" style="display:none">
+        <div class="muted" style="font-size:12px;margin-bottom:10px">Click to add transform steps. All steps are optional.</div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+          {% for kind, icon, label, desc in [
+            ('filter','funnel','Filter rows','Keep rows matching a condition'),
+            ('deduplicate','copy-minus','Deduplicate','Remove duplicate rows'),
+            ('sql','code-2','SQL transform','Custom SQL query on the dataset'),
+            ('derive','plus-circle','Derive column','Add a computed column'),
+            ('cast','arrow-right-left','Cast types','Change column data types'),
+            ('aggregate','sigma','Aggregate','Group by + aggregate functions'),
+          ] %}
+          <button type="button" class="card"
+                  style="padding:10px 12px;text-align:left;cursor:pointer;display:flex;gap:8px;align-items:flex-start"
+                  onclick="pwizAddTransform('{{ kind }}','{{ icon }}','{{ label }}')"
+                  onmouseenter="this.style.borderColor='var(--accent-9)'"
+                  onmouseleave="this.style.borderColor=''">
+            <span class="glyph accent" style="width:24px;height:24px;flex-shrink:0">
+              <i data-lucide="{{ icon }}" style="width:12px;height:12px"></i>
+            </span>
+            <div>
+              <div style="font-weight:500;font-size:12px">{{ label }}</div>
+              <div class="muted" style="font-size:10.5px;margin-top:1px;line-height:1.4">{{ desc }}</div>
+            </div>
+          </button>
+          {% endfor %}
         </div>
-        <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
-          <button type="button" class="btn sm ghost" onclick="this.closest('dialog').close()">Cancel</button>
-          <button type="submit" class="btn sm primary">Create</button>
+        <div id="pwiz-steps-list" class="col" style="gap:6px">
+          <div id="pwiz-no-steps" class="muted" style="font-size:12px;text-align:center;padding:10px 0">
+            No transforms added — source flows directly to sink.
+          </div>
         </div>
+      </div>
+
+      {# Step 3: Sink #}
+      <div id="pwiz-step-3" style="display:none">
+        <div class="col" style="gap:12px">
+          <div class="col" style="gap:4px">
+            <label class="cap" for="pwiz-dest">Destination *</label>
+            <input id="pwiz-dest" type="text" name="destination" placeholder="warehouse.gold.movies"
+                   class="input" style="font-family:var(--font-mono);font-size:12px"
+                   oninput="document.getElementById('pwiz-dst-lbl').textContent=this.value||'— none —'">
+            <div class="muted" style="font-size:11px;margin-top:4px">Format: <code>layer.schema.table</code></div>
+          </div>
+          <div class="col" style="gap:4px">
+            <label class="cap" for="pwiz-sched">Schedule (optional)</label>
+            <div class="row" style="gap:8px">
+              <input id="pwiz-sched" type="text" name="schedule" placeholder="0 2 * * *"
+                     class="input" style="font-family:var(--font-mono);font-size:12px;flex:1">
+              <select class="input" style="width:160px;font-size:12px"
+                      onchange="if(this.value){document.getElementById('pwiz-sched').value=this.value;this.value=''}">
+                <option value="">— presets —</option>
+                <option value="@hourly">@hourly</option>
+                <option value="0 2 * * *">Daily 2 am</option>
+                <option value="0 * * * *">Every hour</option>
+                <option value="*/15 * * * *">Every 15 min</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <input type="hidden" name="transforms" id="pwiz-transforms-field" value="">
+
+      <div class="row" style="gap:8px;margin-top:18px">
+        <button type="button" class="btn ghost" id="pwiz-back" style="display:none" onclick="pwizNav(-1)">← Back</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button type="button" class="btn primary" id="pwiz-next" onclick="pwizNav(1)">
+          Next <i data-lucide="arrow-right" style="width:12px;height:12px"></i>
+        </button>
+        <button type="submit" class="btn primary" id="pwiz-create" style="display:none">
+          <i data-lucide="plus" style="width:12px;height:12px"></i> Create pipeline
+        </button>
       </div>
     </form>
   </div>
@@ -238,8 +348,124 @@
 
 {% block scripts %}
 <script>
+// ── Pipeline wizard ────────────────────────────────────────────────────────
+(function () {
+  let _pwizStep = 1;
+  const _xforms = [];
+
+  function _tab(n) {
+    [1, 2, 3].forEach(i => {
+      const t = document.getElementById('pwiz-tab-' + i);
+      if (!t) return;
+      t.style.color    = i === n ? 'var(--accent-11)' : 'var(--text-3)';
+      t.style.borderBottom = i === n ? '2px solid var(--accent-9)' : '2px solid transparent';
+    });
+  }
+
+  function _steps(n) {
+    [1, 2, 3].forEach(i => {
+      const s = document.getElementById('pwiz-step-' + i);
+      if (s) s.style.display = i === n ? '' : 'none';
+    });
+    const back = document.getElementById('pwiz-back');
+    const next = document.getElementById('pwiz-next');
+    const crt  = document.getElementById('pwiz-create');
+    if (back) back.style.display = n > 1 ? '' : 'none';
+    if (next) next.style.display = n < 3 ? '' : 'none';
+    if (crt)  crt.style.display  = n === 3 ? '' : 'none';
+  }
+
+  globalThis.pwizNav = function (dir) {
+    _pwizStep = Math.max(1, Math.min(3, _pwizStep + dir));
+    _tab(_pwizStep);
+    _steps(_pwizStep);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  };
+
+  globalThis.pwizSetSource = function (name) {
+    const lbl = document.getElementById('pwiz-src-lbl');
+    if (lbl) lbl.textContent = name;
+  };
+
+  globalThis.pwizAddTransform = function (kind, icon, label) {
+    _xforms.push({ kind, label });
+    _updateXformStrip();
+    _updateXformList();
+    document.getElementById('pwiz-transforms-field').value = _xforms.map(x => x.kind).join(',');
+  };
+
+  function _updateXformStrip() {
+    const strip = document.getElementById('pwiz-xform-strip');
+    if (!strip) return;
+    strip.innerHTML = '';
+    _xforms.forEach((x, i) => {
+      if (i > 0) {
+        const arr = document.createElement('div');
+        arr.innerHTML = '<i data-lucide="arrow-right" style="width:12px;height:12px;opacity:.35"></i>';
+        strip.appendChild(arr);
+      }
+      const node = document.createElement('div');
+      node.style.cssText = 'flex-shrink:0;padding:6px 9px;background:color-mix(in oklch,var(--accent-9) 10%,var(--bg-elev));' +
+        'border:1px solid color-mix(in oklch,var(--accent-9) 28%,transparent);border-top:3px solid var(--accent-9);' +
+        'border-radius:var(--r-2);font-size:11px;font-family:var(--font-mono)';
+      node.textContent = x.label;
+      strip.appendChild(node);
+    });
+    if (typeof lucide !== 'undefined') {
+      try { lucide.createIcons({ el: strip }); } catch { lucide.createIcons(); }
+    }
+  }
+
+  function _updateXformList() {
+    const list = document.getElementById('pwiz-steps-list');
+    const none = document.getElementById('pwiz-no-steps');
+    if (!list) return;
+    if (none) none.style.display = _xforms.length ? 'none' : '';
+    list.querySelectorAll('.pwiz-step-row').forEach(r => r.remove());
+    _xforms.forEach((x, i) => {
+      const row = document.createElement('div');
+      row.className = 'pwiz-step-row row';
+      row.style.cssText = 'gap:8px;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--r-2)';
+      row.innerHTML =
+        `<span class="mono muted" style="font-size:11px;width:20px;flex-shrink:0">${i + 1}</span>` +
+        `<span class="chip" style="font-size:11px">${x.kind}</span>` +
+        `<span style="flex:1;font-size:12px">${x.label}</span>` +
+        `<button type="button" class="btn icon ghost sm" title="Remove" style="color:var(--red-9)" data-idx="${i}">` +
+        `<i data-lucide="x" style="width:11px;height:11px"></i></button>`;
+      row.querySelector('[data-idx]').addEventListener('click', () => {
+        _xforms.splice(i, 1);
+        _updateXformStrip();
+        _updateXformList();
+        document.getElementById('pwiz-transforms-field').value = _xforms.map(z => z.kind).join(',');
+      });
+      list.appendChild(row);
+    });
+    if (typeof lucide !== 'undefined') {
+      try { lucide.createIcons({ el: list }); } catch { lucide.createIcons(); }
+    }
+  }
+
+  // Reset wizard when dialog opens
+  document.getElementById('add-pipeline-modal').addEventListener('close', () => {
+    _pwizStep = 1; _xforms.length = 0;
+    _tab(1); _steps(1);
+    _updateXformStrip(); _updateXformList();
+    const f = document.getElementById('pwiz-form');
+    if (f) f.reset();
+    ['pwiz-src-lbl','pwiz-dst-lbl'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '— none —';
+    });
+  });
+}());
+
+// ── Pipeline page ──────────────────────────────────────────────────────────
 (function () {
   const PIPELINE_DATA = {{ pipeline_data_json | safe }};
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
 
   const KIND_COLOR = {
     filter:'var(--accent-9)', deduplicate:'var(--violet-9)', sql:'var(--blue-9)',
@@ -320,8 +546,8 @@
         'border:1px solid color-mix(in oklch,' + kc + ' 32%,transparent);flex-shrink:0">' +
         '<i data-lucide="' + ico + '" style="width:11px;height:11px"></i></span>' +
         '<div class="lbl" style="overflow:hidden">' +
-        '<b style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + n.n + '</b>' +
-        '<span style="font-size:9px;color:var(--text-4)">' + n.k + '</span></div>';
+        '<b style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(n.n) + '</b>' +
+        '<span style="font-size:9px;color:var(--text-4)">' + esc(n.k) + '</span></div>';
       canvas.appendChild(el);
     });
     if (globalThis.lucide) lucide.createIcons({ el: canvas });
@@ -336,18 +562,18 @@
 
     // Source row
     let html = '<tr><td class="mono dim">src</td>' +
-      '<td class="mono">' + (p.source || '—') + '</td>' +
+      '<td class="mono">' + esc(p.source || '—') + '</td>' +
       '<td><span class="pill" style="height:16px;font-size:9.5px">source</span></td></tr>';
 
     steps.forEach(function (s, i) {
       html += '<tr><td class="mono dim">' + (i + 1) + '</td>' +
-        '<td class="mono">' + s.label + '</td>' +
-        '<td><span class="pill" style="height:16px;font-size:9.5px">' + s.type + '</span></td></tr>';
+        '<td class="mono">' + esc(s.label) + '</td>' +
+        '<td><span class="pill" style="height:16px;font-size:9.5px">' + esc(s.type) + '</span></td></tr>';
     });
 
     // Destination row
     html += '<tr><td class="mono dim">dst</td>' +
-      '<td class="mono">' + (p.destination || '—') + '</td>' +
+      '<td class="mono">' + esc(p.destination || '—') + '</td>' +
       '<td><span class="pill" style="height:16px;font-size:9.5px">output</span></td></tr>';
 
     tbody.innerHTML = html;
@@ -403,7 +629,7 @@
     if (success) {
       return '<span class="pill success" style="height:14px;font-size:9px">ok</span>';
     }
-    const tip = error ? ' title="' + error.replace(/"/g, '&quot;') + '"' : '';
+    const tip = error ? ' title="' + esc(error) + '"' : '';
     return '<span class="pill error" style="height:14px;font-size:9px"' + tip + '>fail</span>';
   }
 
@@ -421,7 +647,7 @@
       html += '<div style="display:flex;flex-direction:column;gap:2px;padding:8px 14px;border-bottom:1px solid var(--border)">' +
         '<div class="row" style="gap:6px">' +
           (runs.length > 1 || !_selectedPipeline
-            ? '<span class="mono dim" style="font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.pipeline_name + '</span>'
+            ? '<span class="mono dim" style="font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.pipeline_name) + '</span>'
             : '') +
           _statusBadge(r.success, r.error) +
         '</div>' +

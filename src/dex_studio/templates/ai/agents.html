@@ -2,7 +2,7 @@
 
 {% block title %}Agents — AI — DEX Studio{% endblock %}
 {% block page_title %}Agents{% endblock %}
-{% block page_subtitle %}
+{% block page_sub %}
   {% set active_count = agents | selectattr('status', 'equalto', 'available') | list | length %}
   {{ agents | length }} configured · {{ active_count }} available
 {% endblock %}

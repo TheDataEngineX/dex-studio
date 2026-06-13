@@ -4,24 +4,64 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json as _json
+from html import escape as _html_escape
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sse_starlette.sse import EventSourceResponse
 
 from dex_studio.logstore import log_store
-from dex_studio.routers._deps import base_ctx, get_eng, render, stub_page
-from dex_studio.routers._deps import require_auth as _require_auth
-from dex_studio.routers._deps import require_engine as _require_engine
+from dex_studio.routers._deps import ReadDep, base_ctx, render, stub_page
 
 router = APIRouter()
 
+_cpu_last: tuple[float, float] = (0.0, 0.0)  # (total, idle) at last sample
 
-def _guard(request: Request) -> RedirectResponse | None:
-    """Auth + engine check without CSRF — read-only routes only."""
-    return _require_auth(request) or _require_engine()
+
+def _sys_metrics() -> dict[str, Any]:
+    """Read live CPU%, RAM, and uptime from /proc — no extra deps."""
+    global _cpu_last
+    metrics: dict[str, Any] = {}
+    # ── RAM ──────────────────────────────────────────────────────────────────
+    with contextlib.suppress(Exception):
+        meminfo = Path("/proc/meminfo").read_text()
+        mem: dict[str, int] = {}
+        for line in meminfo.splitlines():
+            parts = line.split()
+            if parts[0].rstrip(":") in ("MemTotal", "MemAvailable"):
+                mem[parts[0].rstrip(":")] = int(parts[1])
+        total_kb = mem.get("MemTotal", 0)
+        avail_kb = mem.get("MemAvailable", 0)
+        used_kb = total_kb - avail_kb
+        metrics["mem_used_gb"] = round(used_kb / 1_048_576, 1)
+        metrics["mem_total_gb"] = round(total_kb / 1_048_576, 1)
+        metrics["mem_pct"] = round(used_kb / total_kb * 100, 1) if total_kb else 0.0
+    # ── CPU (delta since last call) ───────────────────────────────────────────
+    with contextlib.suppress(Exception):
+        stat_line = Path("/proc/stat").read_text().splitlines()[0]
+        vals = [int(x) for x in stat_line.split()[1:]]
+        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+        total = sum(vals)
+        prev_total, prev_idle = _cpu_last
+        d_total = total - prev_total
+        d_idle = idle - prev_idle
+        _cpu_last = (total, idle)
+        metrics["cpu_pct"] = round((1.0 - d_idle / d_total) * 100, 1) if d_total else 0.0
+    # ── Uptime ────────────────────────────────────────────────────────────────
+    with contextlib.suppress(Exception):
+        uptime_secs = float(Path("/proc/uptime").read_text().split()[0])
+        days, rem = divmod(int(uptime_secs), 86400)
+        hours, rem2 = divmod(rem, 3600)
+        mins = rem2 // 60
+        if days:
+            metrics["uptime_str"] = f"{days}d {hours}h {mins}m"
+        elif hours:
+            metrics["uptime_str"] = f"{hours}h {mins}m"
+        else:
+            metrics["uptime_str"] = f"{mins}m"
+    return metrics
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -30,10 +70,7 @@ def _guard(request: Request) -> RedirectResponse | None:
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 @router.get("/status", response_class=HTMLResponse)
-async def system_status(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def system_status(request: Request, eng: ReadDep) -> HTMLResponse:
     health = eng.health()
     components: list[dict[str, Any]] = []
     for name, val in health.get("components", {}).items():
@@ -49,6 +86,7 @@ async def system_status(request: Request) -> HTMLResponse:
         "health": health,
         "components": components,
         "is_healthy": health.get("status") in ("ok", "healthy"),
+        **_sys_metrics(),
     }
     return render(request, "system/status.html", ctx)
 
@@ -57,9 +95,7 @@ async def system_status(request: Request) -> HTMLResponse:
 
 
 @router.get("/logs", response_class=HTMLResponse)
-async def system_logs(request: Request, level: str = "INFO") -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
+def system_logs(request: Request, _: ReadDep, level: str = "INFO") -> HTMLResponse:
     level_upper = level.upper()
     records = log_store.recent(limit=200, min_level=level_upper)
     log_rows = [{"ts": r.ts, "level": r.level, "msg": r.msg} for r in records]
@@ -72,7 +108,7 @@ async def system_logs(request: Request, level: str = "INFO") -> HTMLResponse:
 
 
 @router.get("/logs/stream")
-async def logs_stream(request: Request, level: str = "INFO") -> EventSourceResponse:
+def logs_stream(request: Request, _: ReadDep, level: str = "INFO") -> EventSourceResponse:
     """SSE endpoint — streams new structlog entries as they arrive (2s poll)."""
     level_upper = level.upper()
     last_seq = log_store.seq
@@ -87,19 +123,16 @@ async def logs_stream(request: Request, level: str = "INFO") -> EventSourceRespo
                 new_count = current_seq - last_seq
                 records = log_store.recent(limit=new_count * 2, min_level=level_upper)
                 for r in reversed(records[:new_count]):
-                    lc = r.level.lower()
-                    mono = "font-family:'Fira Code',monospace"
+                    lc = _html_escape(r.level.lower())
                     row_html = (
                         f"<tr>"
-                        f'<td class="rt-TableCell"'
-                        f' style="font-size:11px;white-space:nowrap;{mono}">'
-                        f"{r.ts}</td>"
-                        f'<td class="rt-TableCell">'
+                        f'<td class="mono" style="font-size:11px;white-space:nowrap">'
+                        f"{_html_escape(r.ts)}</td>"
+                        f"<td>"
                         f'<span class="dex-log-badge dex-log-{lc}">'
-                        f"{r.level}</span></td>"
-                        f'<td class="rt-TableCell"'
-                        f' style="font-size:12px;{mono}">'
-                        f"{r.msg}</td></tr>"
+                        f"{_html_escape(r.level)}</span></td>"
+                        f'<td class="mono" style="font-size:12px">'
+                        f"{_html_escape(r.msg)}</td></tr>"
                     )
                     yield {"event": "log-entry", "data": row_html}
                 last_seq = current_seq
@@ -112,10 +145,7 @@ async def logs_stream(request: Request, level: str = "INFO") -> EventSourceRespo
 
 
 @router.get("/metrics", response_class=HTMLResponse)
-async def system_metrics(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def system_metrics(request: Request, eng: ReadDep) -> HTMLResponse:
     stats = eng.pipeline_stats()
     models = eng.model_registry.list_models()
     lineage_count = len(eng.lineage.all_events) if eng.lineage else 0
@@ -134,10 +164,7 @@ async def system_metrics(request: Request) -> HTMLResponse:
 
 
 @router.get("/components", response_class=HTMLResponse)
-async def system_components(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def system_components(request: Request, eng: ReadDep) -> HTMLResponse:
     health = eng.health()
     components: list[dict[str, Any]] = []
     for name, val in health.get("components", {}).items():
@@ -158,35 +185,29 @@ async def system_components(request: Request) -> HTMLResponse:
 
 
 @router.get("/runs", response_class=HTMLResponse)
-async def system_runs(
+def system_runs(
     request: Request,
+    eng: ReadDep,
     type: str = "all",
     status: str = "all",
 ) -> HTMLResponse:
     """Unified run history — pipelines, transforms, workflows, agents, streams."""
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
     stats = eng.pipeline_stats()
     runs: list[dict[str, Any]] = []
-    # Read directly from pipeline_runs.json (authoritative run store)
-    runs_path = eng.project_dir / ".dex" / "pipeline_runs.json"
     with contextlib.suppress(Exception):
-        raw_runs: list[dict[str, Any]] = _json.loads(runs_path.read_text())
-        for r in reversed(raw_runs[-200:]):
-            run_status = "success" if r.get("success") else "error"
-            dur_ms = float(r.get("duration_ms", 0))
+        for r in reversed(eng.store.get_pipeline_runs()[-200:]):
+            dur_ms = r.duration_ms
             dur_str = f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
-            ts = str(r.get("timestamp", ""))[:19].replace("T", " ")
+            ts = str(r.timestamp)[:19].replace("T", " ")
             runs.append(
                 {
                     "type": "pipeline",
-                    "name": r.get("pipeline_name", "unknown"),
-                    "status": run_status,
+                    "name": r.pipeline_name,
+                    "status": "success" if r.success else "error",
                     "started": ts,
                     "duration": dur_str,
                     "trigger": "manual",
-                    "io": f"{r.get('rows_output', 0):,} rows",
+                    "io": f"{r.rows_output:,} rows",
                 }
             )
     # Apply server-side filters (type + status route params preserved for deep-link).
@@ -216,15 +237,12 @@ async def system_runs(
 
 
 @router.get("/costs", response_class=HTMLResponse)
-async def system_costs(request: Request) -> HTMLResponse:
+def system_costs(request: Request, eng: ReadDep) -> HTMLResponse:
     """External API spend — per-provider breakdown.
 
     Populated by the AuditLogger / cost-tracking subsystem once available
     (dex ≥ 0.5). Until then, renders a zero-state scaffold.
     """
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
     # Pull spend data from audit events when available.
     audit = getattr(eng, "secops_audit", None)
     events = audit.events if audit is not None else []
@@ -279,7 +297,5 @@ _SYSTEM_STUB_TITLES = {
 @router.get("/incidents", response_class=HTMLResponse)
 @router.get("/settings", response_class=HTMLResponse)
 @router.get("/connection", response_class=HTMLResponse)
-async def system_stub(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
+def system_stub(request: Request, _: ReadDep) -> HTMLResponse:
     return stub_page(request, _SYSTEM_STUB_TITLES)

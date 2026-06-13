@@ -74,8 +74,8 @@
   --text-4:    var(--gray-8);
 
   /* ---- typography ---- */
-  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, "JetBrains Mono", monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --text-xs:   11px;
   --text-sm:   12.5px;
@@ -967,6 +967,50 @@ code, pre, .mono { font-family: var(--font-mono); }
 }
 .progress.thin { height: 4px; }
 .progress.thick { height: 10px; }
+@keyframes indeterminate {
+  0%   { transform: translateX(-110%); }
+  60%  { transform: translateX(20%); }
+  100% { transform: translateX(110%); }
+}
+.progress > i.indeterminate {
+  width: 45%; animation: indeterminate 1.4s ease infinite;
+}
+
+/* ── Top page loader ─────────────────────────────────────────────────────────── */
+#top-loader {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 9999;
+  background: linear-gradient(90deg, var(--accent-9), var(--accent-10));
+  transform: scaleX(0); transform-origin: left; pointer-events: none; opacity: 0;
+}
+#top-loader.active {
+  opacity: 1; transform: scaleX(0.9);
+  transition: transform 1.8s var(--ease-out-expo), opacity .1s;
+}
+#top-loader.done {
+  transform: scaleX(1); opacity: 0;
+  transition: transform .12s ease-out, opacity .3s .1s;
+}
+
+/* ── Button loading / aria-busy ──────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn.loading, .btn[aria-busy="true"] {
+  opacity: .7; cursor: not-allowed; pointer-events: none; position: relative;
+}
+.btn.loading > *, .btn[aria-busy="true"] > * { visibility: hidden; }
+.btn.loading::after, .btn[aria-busy="true"]::after {
+  content: ''; position: absolute; inset: 0; margin: auto;
+  width: 13px; height: 13px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: spin .65s linear infinite;
+}
+
+/* ── Danger button variant ───────────────────────────────────────────────────── */
+.btn.danger {
+  background: var(--red-9); color: #fff;
+  border-color: color-mix(in oklch, var(--red-9) 70%, black);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, white 18%, transparent), 0 1px 2px rgba(0,0,0,.2);
+}
+.btn.danger:hover { background: color-mix(in oklch, var(--red-9) 88%, black); }
 
 /* scrollbar (subtle) */
 .content::-webkit-scrollbar, .nav::-webkit-scrollbar, .editor .code::-webkit-scrollbar,
@@ -1004,40 +1048,6 @@ svg.lc { stroke: currentColor; stroke-width: 1.6; fill: none; stroke-linecap: ro
   position: fixed; inset: 0; z-index: 500;
   background: rgba(0, 0, 0, 0.45);
   display: flex; align-items: center; justify-content: center;
-}
-
-/* ============================================================
-   legacy layout shims — preserved during template migration
-   ============================================================ */
-
-/* sidebar (old fixed-layout variant — kept for pre-migration templates) */
-.dex-sidebar {
-  display: flex; flex-direction: column;
-  background: var(--bg-elev);
-  border-right: 1px solid var(--border);
-  width: var(--sidebar-w);
-  position: fixed; top: 0; left: 0; height: 100vh;
-  z-index: 100;
-  overflow-y: auto;
-}
-.dex-content {
-  margin-left: var(--sidebar-w);
-  background: var(--bg);
-  min-height: 100vh;
-}
-.dex-mobile-header { display: none; }
-
-@media (max-width: 767px) {
-  .dex-sidebar { display: none; }
-  .dex-sidebar.dex-sidebar-open { display: flex; box-shadow: 4px 0 24px rgba(0,0,0,.35); }
-  .dex-mobile-header {
-    display: flex; align-items: center;
-    padding: 0 16px; height: 52px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-elev);
-    position: sticky; top: 0; z-index: 100;
-  }
-  .dex-content { margin-left: 0; }
 }
 
 /* ============================================================

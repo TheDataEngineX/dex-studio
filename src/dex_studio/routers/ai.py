@@ -10,11 +10,15 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from dex_studio import _json
+from dex_studio.auth import is_authenticated
 from dex_studio.routers._deps import (
+    JsonReadDep,
+    ReadDep,
+    WriteDep,
     base_ctx,
     flash,
     get_eng,
-    guard,
     render,
     stub_page,
 )
@@ -26,17 +30,25 @@ _SSE_PREFIX = "data: "
 _SSE_MEDIA = "text/event-stream"
 
 
+_AGENT_TIMEOUT_S = 30
+
+
 async def _agent_result(agent: Any, text: str) -> tuple[str, float, int]:
     """Invoke agent and return (response, latency_ms, tool_calls)."""
+    import asyncio
+
     t0 = time.monotonic()
     if hasattr(agent, "run"):
-        result: Any = agent.run(text)
+        fn = agent.run
     elif hasattr(agent, "chat"):
-        result = agent.chat(text)
+        fn = agent.chat
     else:
         return str(agent), (time.monotonic() - t0) * 1000, 0
-    if inspect.iscoroutine(result):
-        result = await result
+
+    if inspect.iscoroutinefunction(fn):
+        result: Any = await asyncio.wait_for(fn(text), timeout=_AGENT_TIMEOUT_S)
+    else:
+        result = await asyncio.wait_for(asyncio.to_thread(fn, text), timeout=_AGENT_TIMEOUT_S)
     latency_ms = (time.monotonic() - t0) * 1000
     tool_calls = 0
     if isinstance(result, dict):
@@ -65,10 +77,7 @@ def _count_memory(obj: Any) -> int:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def ai_dashboard(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def ai_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
     agent_count = len(eng.agents)
     tool_count = 0
     with contextlib.suppress(Exception):
@@ -113,25 +122,21 @@ def _agent_rows(eng: Any) -> list[dict[str, str]]:
 
 
 @router.get("/agents", response_class=HTMLResponse)
-async def agents(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    flash_msg = request.session.pop("flash", None)
-    ctx = base_ctx(request) | {"agents": _agent_rows(get_eng()), "flash": flash_msg}
+def agents(request: Request, eng: ReadDep) -> HTMLResponse:
+    ctx = base_ctx(request) | {"agents": _agent_rows(eng)}
     return render(request, "ai/agents.html", ctx)
 
 
 @router.post("/agents/add")
-async def add_agent(
+def add_agent(
     request: Request,
+    eng: WriteDep,
     name: Annotated[str, Form()],
     runtime: Annotated[str, Form()] = "builtin",
     system_prompt: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
     try:
-        get_eng().add_agent(name.strip(), runtime.strip(), system_prompt.strip())
+        eng.add_agent(name.strip(), runtime.strip(), system_prompt.strip())
         flash(request, f"Agent '{name}' created.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -139,11 +144,9 @@ async def add_agent(
 
 
 @router.post("/agents/delete/{name}")
-async def delete_agent(request: Request, name: str) -> RedirectResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def delete_agent(request: Request, eng: WriteDep, name: str) -> RedirectResponse:
     try:
-        get_eng().delete_agent(name)
+        eng.delete_agent(name)
         flash(request, f"Agent '{name}' deleted.")
     except Exception as exc:
         flash(request, str(exc), "error")
@@ -154,12 +157,9 @@ async def delete_agent(request: Request, name: str) -> RedirectResponse:
 
 
 @router.get("/playground", response_class=HTMLResponse)
-async def playground(request: Request, agent: str = "") -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def playground(request: Request, eng: ReadDep, agent: str = "") -> HTMLResponse:
     agent_names = list(eng.agents.keys())
-    selected = agent or (agent_names[0] if agent_names else "")
+    selected = agent if agent in agent_names else (agent_names[0] if agent_names else "")
     catalog_entries: list[dict[str, Any]] = []
     for layer in ("bronze", "silver", "gold"):
         for tbl in eng.warehouse_tables(layer):
@@ -183,18 +183,15 @@ async def playground(request: Request, agent: str = "") -> HTMLResponse:
 
 
 @router.post("/chat")
-async def chat(request: Request) -> Any:
+async def chat(request: Request, eng: JsonReadDep) -> Any:
     """Simple JSON chat endpoint — runs the named agent and returns the response."""
     from fastapi.responses import JSONResponse
 
-    if guard(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     body = await request.json()
     agent_name: str = body.get("agent", "")
     message: str = body.get("message", "")
     if not message:
         return JSONResponse({"error": "No message provided"}, status_code=400)
-    eng = get_eng()
     agent = eng.agents.get(agent_name)
     if agent is None:
         available = list(eng.agents.keys())
@@ -220,20 +217,16 @@ async def chat(request: Request) -> Any:
                 "tool_calls": tool_calls,
             }
         )
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "Agent invocation failed"}, status_code=500)
 
 
 @router.get("/predict/models")
-async def predict_models(request: Request) -> Any:
+async def predict_models(request: Request, eng: JsonReadDep) -> Any:
     """Return model names + feature schemas by introspecting pkl files."""
     from fastapi.responses import JSONResponse
 
-    if guard(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    eng = get_eng()
     models_dir = eng._dex_dir / "models"  # type: ignore[attr-defined]
-    import json
     import pickle
     from pathlib import Path
 
@@ -241,7 +234,7 @@ async def predict_models(request: Request) -> Any:
     model_map: dict[str, list[Any]] = {}
     if registry_path.exists():
         with contextlib.suppress(Exception):
-            model_map = json.loads(registry_path.read_text())
+            model_map = _json.loads(registry_path.read_text())
 
     result = []
     for name, versions in model_map.items():
@@ -268,12 +261,10 @@ async def predict_models(request: Request) -> Any:
 
 
 @router.post("/native")
-async def native_call(request: Request) -> Any:
+async def native_call(request: Request, _: JsonReadDep) -> Any:
     """Direct tool call — no LLM. Body: {tool, args}. Returns {result, tool, duration_ms}."""
     from fastapi.responses import JSONResponse
 
-    if guard(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     body = await request.json()
     tool_name: str = body.get("tool", "")
     args: dict[str, Any] = body.get("args") or {}
@@ -290,16 +281,15 @@ async def native_call(request: Request) -> Any:
         return JSONResponse(
             {"result": result, "tool": tool_name, "duration_ms": round(duration_ms, 1)}
         )
-    except KeyError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=404)
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except KeyError:
+        return JSONResponse({"error": f"Tool '{tool_name}' not found"}, status_code=404)
+    except Exception:
+        return JSONResponse({"error": "Tool invocation failed"}, status_code=500)
 
 
 def _sse(payload: dict[str, Any]) -> str:
-    import json
 
-    return _SSE_PREFIX + json.dumps(payload) + "\n\n"
+    return _SSE_PREFIX + _json.dumps(payload) + "\n\n"
 
 
 async def _sse_generate(
@@ -317,8 +307,12 @@ async def _sse_generate(
 
     try:
         content, latency_ms, tool_calls = await _agent_result(agent_obj, message)
-    except Exception as exc:
-        yield _sse({"error": str(exc)})
+    except TimeoutError:
+        msg = f"Agent timed out after {_AGENT_TIMEOUT_S}s — is the LLM backend running?"
+        yield _sse({"error": msg})
+        return
+    except Exception:
+        yield _sse({"error": "Agent invocation failed"})
         return
 
     with contextlib.suppress(Exception):
@@ -343,16 +337,11 @@ _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 @router.get("/chat/stream")
-async def chat_stream(request: Request, agent: str = "", message: str = "") -> Any:
+async def chat_stream(
+    request: Request, eng: JsonReadDep, agent: str = "", message: str = ""
+) -> Any:
     """SSE streaming endpoint — yields tokens as the agent generates them."""
     from fastapi.responses import StreamingResponse
-
-    if guard(request):
-
-        async def _unauth() -> Any:
-            yield _sse({"error": "Unauthorized"})
-
-        return StreamingResponse(_unauth(), media_type=_SSE_MEDIA, headers=_SSE_HEADERS)
 
     if not message or not agent:
 
@@ -361,7 +350,6 @@ async def chat_stream(request: Request, agent: str = "", message: str = "") -> A
 
         return StreamingResponse(_bad(), media_type=_SSE_MEDIA, headers=_SSE_HEADERS)
 
-    eng = get_eng()
     return StreamingResponse(
         _sse_generate(agent, eng.agents.get(agent), message, eng),
         media_type=_SSE_MEDIA,
@@ -371,6 +359,9 @@ async def chat_stream(request: Request, agent: str = "", message: str = "") -> A
 
 @router.websocket("/playground/ws/{agent_name}")
 async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
+    if not is_authenticated(websocket):  # type: ignore[arg-type]
+        await websocket.close(code=3000)
+        return
     await websocket.accept()
     eng = get_eng()
     agent = eng.agents.get(agent_name)
@@ -407,10 +398,7 @@ async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
 
 
 @router.get("/traces", response_class=HTMLResponse)
-async def traces(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def traces(request: Request, eng: ReadDep) -> HTMLResponse:
     trace_rows: list[dict[str, str]] = []
     if eng.ai_audit and hasattr(eng.ai_audit, "get_events"):
         try:
@@ -435,9 +423,7 @@ async def traces(request: Request) -> HTMLResponse:
 
 
 @router.get("/tools", response_class=HTMLResponse)
-async def tools(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def tools(request: Request, _: ReadDep) -> HTMLResponse:
     tool_rows: list[dict[str, str]] = []
     try:
         from dataenginex.ai.tools import tool_registry
@@ -459,10 +445,7 @@ async def tools(request: Request) -> HTMLResponse:
 
 
 @router.get("/memory", response_class=HTMLResponse)
-async def memory(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def memory(request: Request, eng: ReadDep) -> HTMLResponse:
     mem_defs = [
         ("short", eng.ai_memory, "Short-term"),
         ("long", eng.ai_long_memory, "Long-term"),
@@ -482,10 +465,7 @@ async def memory(request: Request) -> HTMLResponse:
 
 
 @router.get("/workflows", response_class=HTMLResponse)
-async def ai_workflows(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def ai_workflows(request: Request, eng: ReadDep) -> HTMLResponse:
     workflows: list[dict[str, Any]] = []
     with contextlib.suppress(Exception):
         ai_cfg = getattr(eng.config, "ai", None)
@@ -531,7 +511,5 @@ _AI_STUB_TITLES = {
 @router.get("/retrieval", response_class=HTMLResponse)
 @router.get("/vectors", response_class=HTMLResponse)
 @router.get("/collections", response_class=HTMLResponse)
-async def ai_stub(request: Request) -> HTMLResponse:
-    if redir := guard(request):
-        return redir  # type: ignore[return-value]
+def ai_stub(request: Request, _: ReadDep) -> HTMLResponse:
     return stub_page(request, _AI_STUB_TITLES)

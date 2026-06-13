@@ -3,7 +3,7 @@
 ## 1. Purpose
 
 DEX Studio is a **local, Python-first, open-source web UI** that provides a single
-control plane for end-to-end data projects powered by [TheDataEngineX/dex](https://github.com/TheDataEngineX/dex).
+control plane for end-to-end data projects powered by [TheDataEngineX/dataenginex](https://github.com/TheDataEngineX/dataenginex).
 
 It does **not** fork or rebrand upstream DEX. It imports `dataenginex` directly as a library
 and unifies all workflows in one place:
@@ -20,7 +20,7 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Observability
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │                      Routers                              │    │
-│  │  root · data · ml · ai · system                          │    │
+│  │  root · data · ml · ai · secops · system                  │    │
 │  └────────────────────┬─────────────────────────────────────┘    │
 │                        │ Jinja2 templates + HTMX                  │
 │  ┌─────────────────────┴───────────────────────────────────┐     │
@@ -70,6 +70,7 @@ dex-studio/
 │       │   ├── data.py             # Data domain routes
 │       │   ├── ml.py               # ML domain routes
 │       │   ├── ai.py               # AI domain routes
+│       │   ├── secops.py           # SecOps domain routes
 │       │   ├── system.py           # System domain routes
 │       │   └── _deps.py            # Shared FastAPI deps (engine, auth, render)
 │       ├── templates/
@@ -158,7 +159,7 @@ ArgoCD from [TheDataEngineX/infradex](https://github.com/TheDataEngineX/infradex
 - Session auth + config system
 - CI pipeline
 
-### Phase 1 — Data & ML ← current
+### Phase 1 — Data & ML ← implemented
 
 - Data domain: sources, pipelines, warehouse, quality, lineage
 - ML domain: models, experiments, predictions, drift

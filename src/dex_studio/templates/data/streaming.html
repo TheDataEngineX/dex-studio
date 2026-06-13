@@ -2,7 +2,7 @@
 
 {% block title %}Streaming — Data — DEX Studio{% endblock %}
 {% block page_title %}Streaming{% endblock %}
-{% block page_subtitle %}
+{% block page_sub %}
   {% if topics %}
     {{ topics | length }} topic{{ 's' if topics | length != 1 else '' }} configured
   {% else %}
@@ -10,8 +10,12 @@
   {% endif %}
 {% endblock %}
 {% block page_actions %}
-<button class="btn"><i data-lucide="book" style="width:13px;height:13px"></i> Schema registry</button>
-<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New topic</button>
+<button class="btn" x-data @click="$store.schemaReg.open=true">
+  <i data-lucide="book" style="width:13px;height:13px"></i> Schema registry
+</button>
+<button class="btn primary" x-data @click="$store.newTopic.open=true">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> New topic
+</button>
 {% endblock %}
 
 {% block content %}
@@ -146,4 +150,69 @@
 </div>
 
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('schemaReg', { open: false });
+    Alpine.store('newTopic',  { open: false });
+  });
+</script>
+{# ── Schema registry modal ── #}
+<div x-data x-show="$store.schemaReg.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.schemaReg.open=false">
+  <div class="card" style="width:480px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Schema registry</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.schemaReg.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    {% if topics %}
+    <table class="tbl" style="width:100%">
+      <thead><tr><th>Topic</th><th>Format</th><th>Fields</th></tr></thead>
+      <tbody>
+        {% for t in topics %}
+        <tr><td class="mono">{{ t.name }}</td><td class="mono dim">{{ t.format or 'json' }}</td><td class="dim">—</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="muted" style="font-size:13px;text-align:center;padding:24px 0;line-height:1.6">
+      No schemas registered yet. Add a streaming source to <code class="mono">dex.yaml</code>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{# ── New topic modal ── #}
+<div x-data x-show="$store.newTopic.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.newTopic.open=false">
+  <div class="card" style="width:520px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:12px">
+      <span style="font-weight:700;font-size:14px">Add a streaming source</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.newTopic.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">
+      Add under <code class="mono">data.sources</code> in <code class="mono">dex.yaml</code> and restart.
+    </div>
+    <pre style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:var(--r-2);padding:12px 14px;font-size:12px;font-family:var(--font-mono);line-height:1.6;overflow:auto;margin:0">data:
+  sources:
+    my_stream:
+      type: kafka
+      broker: localhost:9092
+      topic: events.page_view
+      group_id: dex-bronze-writer
+      auto_offset_reset: latest
+      format: json</pre>
+    <div class="row" style="gap:8px;margin-top:14px">
+      <a href="/data/sources" class="btn ghost" style="text-decoration:none">View sources</a>
+      <button class="btn primary" style="margin-left:auto" @click="$store.newTopic.open=false">Got it</button>
+    </div>
+  </div>
+</div>
 {% endblock %}

@@ -3,27 +3,52 @@
 
 {% block title %}Predictions — DEX Studio{% endblock %}
 {% block page_title %}Predictions{% endblock %}
+{% block page_sub %}Run a model on your own inputs and get an instant prediction{% endblock %}
 
 {% block content %}
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:flex-start">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+
   <!-- Input panel -->
-  <div class="rt-Card" style="padding:20px">
-    <h3 style="font-size:13px;font-weight:700;margin:0 0 14px">Run Prediction</h3>
+  <div class="rt-Card" style="padding:20px" x-data="predictForm()">
+    <h3 style="font-size:13px;font-weight:700;margin:0 0 4px">Run a prediction</h3>
     {% if model_names %}
-    <form hx-post="/ml/predictions/run" hx-target="#prediction-result" hx-swap="innerHTML">
-      <div class="dex-form-group" style="margin-bottom:10px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model</label>
-        <select name="model" style="width:100%;padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12)">
-          {% for m in model_names %}<option value="{{ m }}" {{ 'selected' if m == selected_model else '' }}>{{ m }}</option>{% endfor %}
-        </select>
+    <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">Pick a model, adjust the inputs (pre-filled with a sensible example), and hit Predict.</p>
+
+    <div class="dex-form-group" style="margin-bottom:10px">
+      <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model</label>
+      <select id="pred-model" x-model="model" @change="reset()" class="input" style="height:34px">
+        {% for m in model_names %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="card compact" style="display:flex;gap:9px;align-items:flex-start;margin-bottom:16px;padding:10px 12px;
+         background:color-mix(in oklch,var(--accent-9) 6%,transparent);border-color:color-mix(in oklch,var(--accent-9) 20%,transparent)">
+      <i data-lucide="info" style="width:13px;height:13px;color:var(--accent-11);margin-top:1px;flex-shrink:0"></i>
+      <span style="font-size:12px;color:var(--text-2);line-height:1.5" x-text="meta[model] ? meta[model].description : 'This model makes a prediction from the inputs below.'"></span>
+    </div>
+
+    <form hx-post="/ml/predictions/run" hx-target="#prediction-result" hx-swap="innerHTML"
+          hx-on::after-settle="document.getElementById('prediction-result').scrollIntoView({behavior:'smooth',block:'nearest'})">
+      <input type="hidden" name="model" :value="model">
+      <input type="hidden" name="input_json" :value="JSON.stringify(values)">
+      <div class="row" style="margin-bottom:7px">
+        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Input features</label>
+        <span class="muted" style="font-size:11px;margin-left:auto" x-text="(meta[model] ? meta[model].features.length : 0) + ' features'"></span>
       </div>
-      <div class="dex-form-group" style="margin-bottom:12px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Input (JSON)</label>
-        <textarea name="input_json" rows="10" style="width:100%;font-family:'Fira Code',monospace;font-size:12px;padding:8px 10px;border:1px solid var(--gray-6);border-radius:5px;background:var(--gray-1);color:var(--gray-12);resize:vertical;line-height:1.5">{{ input_json }}</textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;max-height:300px;overflow:auto;padding:2px;margin-bottom:16px">
+        <template x-for="f in (meta[model] ? meta[model].features : [])" :key="f">
+          <label style="display:flex;flex-direction:column;gap:2px">
+            <span class="mono" style="font-size:10px;color:var(--text-3)" x-text="f"></span>
+            <input type="number" step="0.1" class="input" style="height:30px;font-size:12px" x-model.number="values[f]">
+          </label>
+        </template>
       </div>
-      <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2" style="width:100%">
-        <i data-lucide="zap" style="width:13px;height:13px"></i> Predict
-      </button>
+      <div class="row" style="gap:8px">
+        <button type="button" class="btn" @click="reset()" style="height:34px"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i> Reset</button>
+        <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2" style="flex:1;height:34px">
+          <i data-lucide="zap" style="width:13px;height:13px"></i> Predict
+        </button>
+      </div>
     </form>
     {% else %}
     {{ empty_state("brain", "No models available", "Register a model first to run predictions.") }}
@@ -33,9 +58,20 @@
   <!-- Result panel -->
   <div class="rt-Card" style="padding:20px">
     <h3 style="font-size:13px;font-weight:700;margin:0 0 14px">Result</h3>
-    <div id="prediction-result">
-      {% include "ml/prediction_result.html" %}
-    </div>
+    <div id="prediction-result">{% include "ml/prediction_result.html" %}</div>
   </div>
 </div>
+
+<script>
+  function predictForm() {
+    const META = {{ model_meta_json | default('{}') | safe }};
+    return {
+      meta: META,
+      model: {{ selected_model | tojson }},
+      values: {},
+      init() { this.reset(); },
+      reset() { const m = this.meta[this.model]; this.values = m ? Object.assign({}, m.defaults) : {}; },
+    };
+  }
+</script>
 {% endblock %}

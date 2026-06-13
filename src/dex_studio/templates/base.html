@@ -125,7 +125,7 @@
 <div class="app" id="shell" data-sidebar="labeled" x-data="dexApp()">
 
   {# ── Sidebar ────────────────────────────────────────────────────────────── #}
-  <aside class="side" aria-label="Main navigation">
+  <aside class="side" :class="{'side--open': Alpine.store('shell').sidebarOpen}" aria-label="Main navigation">
 
     {# Logo #}
     <a href="/" class="logo-row" style="text-decoration:none;color:inherit">
@@ -411,6 +411,20 @@
       </div>
       {% endif %}
 
+      {% if next_steps %}
+      <div class="card" style="margin:0 16px 16px;padding:11px 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+           background:color-mix(in oklch,var(--accent-9) 5%,transparent);border-color:color-mix(in oklch,var(--accent-9) 20%,transparent)">
+        <span style="font-weight:600;font-size:12px;color:var(--accent-11);display:flex;align-items:center;gap:6px">
+          <i data-lucide="sparkles" style="width:13px;height:13px"></i> Next steps
+        </span>
+        {% for s in next_steps %}
+        <a href="{{ s.href }}" class="row" style="gap:5px;text-decoration:none;color:var(--text);font-size:12px">
+          <i data-lucide="{{ s.icon }}" style="width:12px;height:12px;color:var(--accent-11)"></i> {{ s.label }}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
     </div>
   </div>{# .main #}
 
@@ -490,6 +504,9 @@
   });
 </script>
 {% endif %}
+
+{# Top page loader — thin accent bar driven by HTMX and form submit events #}
+<div id="top-loader"></div>
 
 {# Lucide #}
 <script src="/static/vendor/lucide.min.js"></script>
@@ -595,6 +612,25 @@ function cmdPalette() {
   };
 }
 
+// ── Top page loader ───────────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('top-loader');
+  if (!el) return;
+  function start() { el.classList.remove('done'); el.classList.add('active'); }
+  function done()  { el.classList.remove('active'); el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 500); }
+  document.addEventListener('htmx:beforeRequest', start);
+  document.addEventListener('htmx:afterRequest',  done);
+  // Non-HTMX form submits
+  document.addEventListener('submit', (e) => {
+    start();
+    const btn = e.submitter || e.target.querySelector('[type="submit"]');
+    if (btn && !btn.dataset.noLoading) {
+      btn.classList.add('loading');
+      btn.setAttribute('aria-busy', 'true');
+    }
+  });
+})();
+
 // ── HTMX → toast bridge ──────────────────────────────────────────────────────
 document.addEventListener('htmx:afterRequest', (e) => {
   const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
@@ -605,32 +641,111 @@ document.addEventListener('htmx:afterRequest', (e) => {
   } catch {}
 });
 
-// ── Sortable tables ───────────────────────────────────────────────────────────
+// ── Sortable + paginated tables (global utility) ──────────────────────────────
 (function () {
   function initSortable(table) {
-    table.querySelectorAll('th.sortable').forEach((th, ci) => {
-      th.style.cursor = 'default';
-      th.addEventListener('click', () => {
+    if (table.dataset.sortInit) return;
+    table.dataset.sortInit = '1';
+    table.querySelectorAll('th.sortable').forEach((th) => {
+      th.style.cursor = 'pointer';
+      if (!th.getAttribute('tabindex')) th.setAttribute('tabindex', '0');
+      function doSort() {
         const asc = !th.classList.contains('sort-asc');
         table.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
         th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        const col = th.cellIndex;
         const tbody = table.querySelector('tbody');
         const rows = Array.from(tbody.querySelectorAll('tr'));
         rows.sort((a, b) => {
-          const av = a.cells[ci]?.textContent.trim() ?? '';
-          const bv = b.cells[ci]?.textContent.trim() ?? '';
-          const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
-          const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
-          const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+          const av = (a.cells[col]?.textContent ?? '').trim();
+          const bv = (b.cells[col]?.textContent ?? '').trim();
+          const an = Number.parseFloat(av.replace(/[^0-9.-]/g, ''));
+          const bn = Number.parseFloat(bv.replace(/[^0-9.-]/g, ''));
+          const cmp = (!Number.isNaN(an) && !Number.isNaN(bn)) ? an - bn : av.localeCompare(bv);
           return asc ? cmp : -cmp;
         });
         rows.forEach(r => tbody.appendChild(r));
-      });
+        if (table._pgRender) table._pgRender();
+      }
+      th.addEventListener('click', doSort);
+      th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); } });
     });
   }
-  function boot() { document.querySelectorAll('table.tbl').forEach(initSortable); }
-  document.addEventListener('DOMContentLoaded', boot);
-  document.addEventListener('htmx:afterSwap', boot);
+
+  function initPagination(table, pageSize) {
+    if (table.dataset.pgInit) return;
+    table.dataset.pgInit = '1';
+    let page = 1;
+    function render() {
+      const all = Array.from(table.querySelectorAll('tbody tr'));
+      const visible = all.filter(r => !r.dataset.filterHide);
+      const total = visible.length;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > pages) page = pages;
+      all.forEach(r => { if (!r.dataset.filterHide) r.style.display = 'none'; });
+      visible.slice((page - 1) * pageSize, page * pageSize).forEach(r => { r.style.display = ''; });
+      let pg = table._pgEl;
+      if (!pg) {
+        pg = document.createElement('div');
+        pg.className = 'table-pagination';
+        pg.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)';
+        (table.closest('.card') || table.parentElement).appendChild(pg);
+        table._pgEl = pg;
+      }
+      if (pages <= 1) { pg.style.display = 'none'; return; }
+      pg.style.display = 'flex';
+      const start = (page - 1) * pageSize + 1;
+      const end   = Math.min(page * pageSize, total);
+      // Page number buttons (up to 5 around current)
+      let btnHtml = '';
+      const lo = Math.max(1, page - 2), hi = Math.min(pages, page + 2);
+      if (lo > 1) btnHtml += `<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="1">1</button>${lo > 2 ? '<span style="color:var(--text-4)">…</span>' : ''}`;
+      for (let i = lo; i <= hi; i++) {
+        btnHtml += `<button class="btn sm ${i===page?'primary':'ghost'}" style="min-width:28px;padding:0 6px" data-pg="${i}">${i}</button>`;
+      }
+      if (hi < pages) btnHtml += `${hi < pages - 1 ? '<span style="color:var(--text-4)">…</span>' : ''}<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="${pages}">${pages}</button>`;
+      pg.innerHTML =
+        `<span style="flex:1;color:var(--text-3)">${start}–${end} of ${total}</span>` +
+        `<button ${page===1?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-prev>‹ Prev</button>` +
+        btnHtml +
+        `<button ${page===pages?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-next>Next ›</button>`;
+      pg.querySelector('[data-pg-prev]')?.addEventListener('click', () => { if (page > 1) { page--; render(); } });
+      pg.querySelector('[data-pg-next]')?.addEventListener('click', () => { if (page < pages) { page++; render(); } });
+      pg.querySelectorAll('[data-pg]').forEach(b => {
+        b.addEventListener('click', () => { page = Number(b.dataset.pg); render(); });
+      });
+    }
+    table._pgRender = render;
+    render();
+  }
+
+  function initFilter(input) {
+    if (input.dataset.filterInit || !input.dataset.table) return;
+    input.dataset.filterInit = '1';
+    const table = document.getElementById(input.dataset.table);
+    if (!table) return;
+    input.addEventListener('input', () => {
+      const q = input.value.toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(r => {
+        r.dataset.filterHide = r.textContent.toLowerCase().includes(q) ? '' : '1';
+        r.style.display = r.dataset.filterHide ? 'none' : '';
+      });
+      if (table._pgRender) table._pgRender();
+    });
+  }
+
+  function boot(root) {
+    (root || document).querySelectorAll('table.tbl, table.dex-table').forEach(t => {
+      initSortable(t);
+      const rowCount  = t.querySelectorAll('tbody tr').length;
+      const pageSize  = parseInt(t.dataset.pageSize, 10) || 20;
+      const threshold = parseInt(t.dataset.pageThreshold, 10) || 10;
+      if (rowCount > threshold) initPagination(t, pageSize);
+    });
+    (root || document).querySelectorAll('.dex-table-filter').forEach(initFilter);
+  }
+  document.addEventListener('DOMContentLoaded', () => boot());
+  document.addEventListener('htmx:afterSwap', e => boot(e.target));
 })();
 </script>
 

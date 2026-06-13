@@ -36,16 +36,42 @@
   </h3>
 </div>
 
+{# ── Live host metrics strip ───────────────────────────────────────────── #}
+{% if mem_total_gb is defined %}
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+  <div class="card" style="padding:12px 16px">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">CPU</div>
+    <div style="font-size:22px;font-weight:700;color:var(--text)">{{ cpu_pct }}%</div>
+    <div style="margin-top:6px;height:4px;background:var(--bg-elev-2);border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:{{ cpu_pct }}%;background:{{ 'var(--red-9)' if cpu_pct > 80 else 'var(--green-9)' }};transition:width .6s"></div>
+    </div>
+  </div>
+  <div class="card" style="padding:12px 16px">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Memory</div>
+    <div style="font-size:22px;font-weight:700;color:var(--text)">{{ mem_used_gb }} GB <span style="font-size:13px;font-weight:400;color:var(--text-3)">/ {{ mem_total_gb }} GB</span></div>
+    <div style="margin-top:6px;height:4px;background:var(--bg-elev-2);border-radius:2px;overflow:hidden">
+      <div style="height:100%;width:{{ mem_pct }}%;background:{{ 'var(--red-9)' if mem_pct > 85 else 'var(--amber-9)' if mem_pct > 65 else 'var(--green-9)' }};transition:width .6s"></div>
+    </div>
+  </div>
+  <div class="card" style="padding:12px 16px">
+    <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Uptime</div>
+    <div style="font-size:22px;font-weight:700;color:var(--text)">{{ uptime_str }}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:6px">WSL2 host process</div>
+  </div>
+</div>
+{% endif %}
+
 {% if components %}
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:24px">
   {% for c in components %}
-  <div class="dex-component-card" style="border-left:3px solid {{ 'var(--green-6)' if c.available else 'var(--red-6)' }}">
+  {% set not_configured = not c.available and c.message == 'Not initialized' %}
+  <div class="dex-component-card" style="border-left:3px solid {{ 'var(--green-6)' if c.available else ('var(--gray-5)' if not_configured else 'var(--red-6)') }}">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
       <span style="font-size:12px;font-weight:600;color:var(--gray-12)">{{ c.name }}</span>
-      <span class="status-dot {{ 'ok' if c.available else 'error' }}"></span>
+      <span class="status-dot {{ 'ok' if c.available else ('neutral' if not_configured else 'error') }}"></span>
     </div>
-    <div style="font-size:11px;color:{{ 'var(--green-10)' if c.available else 'var(--red-10)' }};font-weight:500">
-      {{ "Online" if c.available else "Offline" }}
+    <div style="font-size:11px;color:{{ 'var(--green-10)' if c.available else ('var(--gray-10)' if not_configured else 'var(--red-10)') }};font-weight:500">
+      {{ "Online" if c.available else ("Not configured" if not_configured else "Offline") }}
     </div>
   </div>
   {% endfor %}

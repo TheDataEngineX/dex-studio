@@ -591,7 +591,7 @@ ai:
         Always cite: title, year, IMDB rating, vote count.
         Keep recommendations to 3–5 films with a one-sentence justification each.
         Use the query tool to fetch live data from gold_top_movies and silver_movies.
-      tools: [query, pipeline_status]
+      tools: [query]
       max_iterations: 12
       memory: short_term
 
