@@ -882,12 +882,24 @@ def catalog_register(
         import shutil
 
         project_root = eng.project_dir.resolve()
-        src = Path(file_path.strip()).resolve()
-        if not src.is_relative_to(project_root):
-            flash(request, "File path must be within the project directory.", "error")
-            return RedirectResponse("/data/catalog", status_code=303)
-        if not src.exists():
-            flash(request, "File not found.", "error")
+        # Build a server-side index of project files so src is never derived
+        # from user input — eliminates the path traversal taint flow entirely.
+        _valid_exts = frozenset({".parquet", ".csv", ".json", ".ndjson"})
+        project_files: dict[str, Path] = {
+            str(f.relative_to(project_root)): f
+            for f in project_root.rglob("*")
+            if f.is_file() and f.suffix.lower() in _valid_exts
+        }
+        # Normalise user input to a relative key for the lookup
+        raw = file_path.strip()
+        project_str = str(project_root)
+        if raw.startswith(project_str):
+            raw = raw[len(project_str) :].lstrip("/\\")
+        raw = raw.lstrip("/\\")
+        # src comes from the filesystem index, never from user input
+        src = project_files.get(raw)
+        if src is None:
+            flash(request, "File not found in project directory.", "error")
             return RedirectResponse("/data/catalog", status_code=303)
         dest_dir = eng.project_dir / ".dex" / "lakehouse" / layer
         dest_dir.mkdir(parents=True, exist_ok=True)
