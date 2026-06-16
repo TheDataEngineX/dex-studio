@@ -1,32 +1,241 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import section_heading, empty_state %}
 
 {% block title %}Catalog — DEX Studio{% endblock %}
-{% block page_title %}Data Catalog{% endblock %}
+
+{% block page_title %}Catalog{% endblock %}
+{% block page_sub %}{{ entries | length }} table{{ 's' if entries | length != 1 }} · 3 layers · indexed just now{% endblock %}
+
+{% block page_actions %}
+<a href="/data/catalog" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Re-index
+</a>
+<a href="/data/lineage" class="btn sm ghost">
+  <i data-lucide="share-2" style="width:12px;height:12px"></i> ER diagram
+</a>
+<button class="btn sm primary" x-data @click="$store.regModal.open=true">
+  <i data-lucide="plus" style="width:12px;height:12px"></i> Register table
+</button>
+{% endblock %}
 
 {% block content %}
-{% if not entries %}
-{{ empty_state("book-open", "No catalog entries yet", "Run pipelines to populate the warehouse and catalog.") }}
-{% else %}
-<div style="display:grid;gap:12px">
-  {% for entry in entries %}
-  <div class="rt-Card" style="padding:16px 20px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <span style="font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;background:var(--{{ entry.layer_color }}-3);color:var(--{{ entry.layer_color }}-11)">{{ entry.layer }}</span>
-      <span style="font-family:'Fira Code',monospace;font-size:13px;font-weight:600;color:var(--gray-12)">{{ entry.name }}</span>
-      <span style="font-size:11px;color:var(--gray-9);margin-left:auto">{{ entry.row_count }} rows · {{ entry.column_count }} cols · {{ entry.size }}</span>
+
+{# ── Filter / search bar ─────────────────────────────────────────────────── #}
+<div class="card" style="padding:12px">
+  <div class="row" style="gap:10px;flex-wrap:wrap">
+    <div class="input-icon" style="width:260px">
+      <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
+      <input class="input" id="cat-search" placeholder="Search tables &amp; tags…" style="height:26px;font-size:var(--text-sm)">
     </div>
-    {% if entry.columns %}
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      {% for col in entry.columns %}
-      <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--gray-3);color:var(--gray-11)">
-        <span style="color:var(--gray-8)">{{ col.column_type }}</span> {{ col.column_name }}
+    <span class="cap" style="margin-left:8px;line-height:26px">Layer</span>
+    {% set layer_counts = {'all': entries | length} %}
+    {% for e in entries %}
+      {% set _ = layer_counts.update({e.layer: (layer_counts.get(e.layer, 0) + 1)}) %}
+    {% endfor %}
+    {% for l in ['all', 'bronze', 'silver', 'gold'] %}
+    <button class="chip layer-filter {{ 'active' if l == 'all' }}" data-layer="{{ l }}">
+      {{ 'All' if l == 'all' else l }}
+      <span class="count">{{ layer_counts.get(l, 0) }}</span>
+    </button>
+    {% endfor %}
+    <div style="flex:1"></div>
+    {# View toggle #}
+    <div class="row" style="gap:0;border:1px solid var(--border);border-radius:var(--r-2);overflow:hidden">
+      <button class="btn ghost sm view-toggle active" data-view="cards"
+              style="border-radius:0;height:26px;gap:4px">
+        <i data-lucide="layout-grid" style="width:11px;height:11px"></i> Cards
+      </button>
+      <button class="btn ghost sm view-toggle" data-view="list"
+              style="border-radius:0;height:26px;gap:4px;border-left:1px solid var(--border)">
+        <i data-lucide="list" style="width:11px;height:11px"></i> List
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── Cards view ──────────────────────────────────────────────────────────── #}
+{% if entries %}
+<div id="view-cards" class="grid grid-3" style="margin-top:16px">
+  {% for t in entries %}
+  <a href="/data/catalog/{{ t.name }}" class="card cat-card"
+     data-layer="{{ t.layer }}"
+     data-name="{{ t.name }}"
+     style="padding:14px;display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit">
+    <div class="row" style="justify-content:space-between">
+      <span class="layer-chip {{ t.layer }}">{{ t.layer }}</span>
+      <span class="muted mono" style="font-size:10.5px">{{ t.format | default("parquet") }}</span>
+    </div>
+    <div>
+      <div class="mono" style="font-size:14px;font-weight:500;color:var(--text)">{{ t.name }}</div>
+      <div class="muted" style="font-size:11px;margin-top:3px">system · updated 1h ago</div>
+    </div>
+    <div class="row" style="gap:12px;font-size:11px">
+      <span><span class="muted">rows </span><span class="mono">{{ t.row_count }}</span></span>
+      <span><span class="muted">size </span><span class="mono">{{ t.size }}</span></span>
+      <span><span class="muted">cols </span><span class="mono">{{ t.column_count }}</span></span>
+    </div>
+    {% if t.columns %}
+    <div class="row" style="flex-wrap:wrap;gap:4px">
+      {% for col in t.columns[:4] %}
+      <span class="mono dim" style="font-size:10px;padding:1px 6px;background:var(--bg-elev-2);border-radius:3px">
+        #{{ col.column_name }}
       </span>
       {% endfor %}
+      {% if t.columns | length > 4 %}
+      <span class="mono dim" style="font-size:10px;padding:1px 6px;background:var(--bg-elev-2);border-radius:3px">
+        +{{ t.columns | length - 4 }} more
+      </span>
+      {% endif %}
     </div>
     {% endif %}
-  </div>
+  </a>
   {% endfor %}
 </div>
+
+{# ── List view (hidden by default) ───────────────────────────────────────── #}
+<div id="view-list" class="card bare" style="margin-top:16px;display:none">
+  <table class="tbl dex-table" id="cat-list-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th style="width:80px">Layer</th>
+        <th style="width:90px">Format</th>
+        <th style="width:100px" class="num">Rows</th>
+        <th style="width:80px" class="num">Size</th>
+        <th style="width:60px" class="num">Cols</th>
+        <th>Owner</th>
+        <th style="width:110px">Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in entries %}
+      <tr class="cat-row" data-layer="{{ t.layer }}" data-name="{{ t.name }}" style="cursor:pointer"
+          tabindex="0"
+          onclick="location.href='/data/catalog/{{ t.name }}'"
+          onkeydown="if(event.key==='Enter'||event.key===' ')location.href='/data/catalog/{{ t.name }}'">
+        <td><span class="mono" style="color:var(--text)">{{ t.name }}</span></td>
+        <td><span class="layer-chip {{ t.layer }}">{{ t.layer }}</span></td>
+        <td class="mono dim">{{ t.format | default("parquet") }}</td>
+        <td class="num mono">{{ t.row_count }}</td>
+        <td class="num mono dim">{{ t.size }}</td>
+        <td class="num mono dim">{{ t.column_count }}</td>
+        <td class="dim">system</td>
+        <td class="dim mono" style="font-size:11px">1h ago</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+{# ── Empty state ─────────────────────────────────────────────────────────── #}
+<div class="dex-empty-state" style="padding:80px 24px;margin-top:16px">
+  <i data-lucide="book-open" style="width:40px;height:40px;opacity:.3;margin-bottom:16px"></i>
+  <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:6px">No catalog entries yet</div>
+  <div class="muted" style="font-size:var(--text-xs);max-width:320px;text-align:center">
+    Run pipelines to populate the warehouse. Tables will appear here automatically once indexed.
+  </div>
+  <a href="/data/pipelines" class="btn sm primary" style="margin-top:16px">
+    <i data-lucide="git-branch" style="width:12px;height:12px"></i> Browse pipelines
+  </a>
+</div>
 {% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  let activeLayer = 'all';
+  let activeView  = 'cards';
+  let searchQ     = '';
+
+  // ── Layer filter ────────────────────────────────────────────────────────
+  document.querySelectorAll('.layer-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeLayer = btn.dataset.layer;
+      document.querySelectorAll('.layer-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilters();
+    });
+  });
+
+  // ── View toggle ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.view-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeView = btn.dataset.view;
+      document.querySelectorAll('.view-toggle').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('view-cards').style.display = activeView === 'cards' ? '' : 'none';
+      document.getElementById('view-list').style.display  = activeView === 'list'  ? '' : 'none';
+      applyFilters();
+    });
+  });
+
+  // ── Search ──────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById('cat-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQ = searchInput.value.toLowerCase();
+      applyFilters();
+    });
+  }
+
+  function applyFilters() {
+    const cards = document.querySelectorAll('.cat-card');
+    cards.forEach(c => {
+      const layerOk = activeLayer === 'all' || c.dataset.layer === activeLayer;
+      const nameOk  = !searchQ || c.dataset.name.includes(searchQ) || c.textContent.toLowerCase().includes(searchQ);
+      c.style.display = layerOk && nameOk ? '' : 'none';
+    });
+
+    const rows = document.querySelectorAll('.cat-row');
+    rows.forEach(r => {
+      const layerOk = activeLayer === 'all' || r.dataset.layer === activeLayer;
+      const nameOk  = !searchQ || r.dataset.name.includes(searchQ) || r.textContent.toLowerCase().includes(searchQ);
+      r.style.display = layerOk && nameOk ? '' : 'none';
+    });
+  }
+})();
+</script>
+
+{# ── Register table modal ──────────────────────────────────────────────────── #}
+<div x-data x-show="$store.regModal.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.regModal.open=false">
+  <div class="card" style="width:440px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Register external table</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.regModal.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <form method="post" action="/data/catalog/register" style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label class="cap" for="reg-table-name" style="display:block;margin-bottom:4px">Table name</label>
+        <input id="reg-table-name" class="input" name="table_name" required placeholder="e.g. external_ratings" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="reg-file-path" style="display:block;margin-bottom:4px">File path (parquet or CSV)</label>
+        <input id="reg-file-path" class="input" name="file_path" required placeholder="/data/my_file.parquet" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="reg-layer" style="display:block;margin-bottom:4px">Layer</label>
+        <select id="reg-layer" class="input" name="layer" style="width:100%">
+          <option value="bronze">Bronze — raw ingestion</option>
+          <option value="silver">Silver — cleaned</option>
+          <option value="gold">Gold — curated</option>
+        </select>
+      </div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <button type="button" class="btn ghost" @click="$store.regModal.open=false">Cancel</button>
+        <button type="submit" class="btn primary">Register</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('regModal', { open: false });
+  });
+</script>
 {% endblock %}

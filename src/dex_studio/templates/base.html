@@ -4,357 +4,778 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}DEX Studio{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/studio.css?v={{ css_v }}">
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-  <!-- Radix Themes CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@3.4.0/styles.css">
-
-  <!-- DEX Studio custom styles -->
-  <link rel="stylesheet" href="/static/studio.css">
-
-  <!-- Theme init — runs before body renders to prevent flash -->
+  <!-- Theme init — runs before body to prevent flash -->
   <script>
     (function () {
-      const saved = localStorage.getItem('dex-theme') || 'light';
+      const saved = localStorage.getItem('dex-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', saved);
-      if (saved === 'dark') document.documentElement.classList.add('dark');
     })();
   </script>
 
-  <!-- Alpine.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Vendored JS — no CDN dependency -->
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/vendor/htmx-sse.js"></script>
 
-  <!-- HTMX -->
-  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
-
-  <!-- HTMX SSE extension -->
-  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js"></script>
+  <!-- CSRF: token injected server-side, read by HTMX config below -->
+  {% if csrf_token is defined %}
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  {% endif %}
 
   {% block head %}{% endblock %}
 </head>
-<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium" data-scaling="100%"
-      x-data="dexApp()" @keydown.escape="closeSidebar()">
+<body>
+<script>
+  (function () {
+    // Send CSRF token as a header on every HTMX request.
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) {
+      document.body.setAttribute(
+        'hx-headers',
+        JSON.stringify({'X-CSRF-Token': meta.getAttribute('content')})
+      );
+    }
+    // For native form POSTs (browsers cannot set custom headers), append _csrf
+    // as a query param on submit so verify_csrf() can find it server-side.
+    document.addEventListener('DOMContentLoaded', function () {
+      var token = meta ? meta.getAttribute('content') : '';
+      if (!token) return;
+      document.querySelectorAll('form[method="post"],form[method="POST"]')
+        .forEach(function (form) {
+          form.addEventListener('submit', function () {
+            var action = form.action || '';
+            if (!action.includes('_csrf=')) {
+              form.action = action + (action.includes('?') ? '&' : '?') + '_csrf=' + encodeURIComponent(token);
+            }
+          });
+        });
+    });
+  })();
+</script>
 
-  <!-- Mobile header -->
-  <header class="dex-mobile-header">
-    <button @click="sidebarOpen = !sidebarOpen" style="background:none;border:none;cursor:pointer;padding:8px">
-      <i data-lucide="menu" style="width:20px;height:20px;color:var(--gray-11)"></i>
-    </button>
-    <a href="/" style="font-weight:600;font-size:15px;margin-left:8px;text-decoration:none;color:var(--gray-12)">DEX Studio</a>
-  </header>
+{# ── Breadcrumb derivation ──────────────────────────────────────────────── #}
+{% set ns = namespace(crumbs=[]) %}
+{% if current_path == '/' %}
+  {% set ns.crumbs = [['Home', '/']] %}
+{# INGEST #}
+{% elif current_path.startswith('/data/sources') %}
+  {% set ns.crumbs = [['Ingest', none], ['Sources', '/data/sources']] %}
+{% elif current_path.startswith('/data/streaming') %}
+  {% set ns.crumbs = [['Ingest', none], ['Streaming', '/data/streaming']] %}
+{# LAKEHOUSE #}
+{% elif current_path.startswith('/data/catalog') %}
+  {% set ns.crumbs = [['Lakehouse', none], ['Catalog', '/data/catalog']] %}
+{% elif current_path.startswith('/data/lineage') %}
+  {% set ns.crumbs = [['Lakehouse', none], ['Lineage', '/data/lineage']] %}
+{% elif current_path.startswith('/data/quality') %}
+  {% set ns.crumbs = [['Lakehouse', none], ['Quality', '/data/quality']] %}
+{% elif current_path.startswith('/data/lakehouse') %}
+  {% set ns.crumbs = [['Lakehouse', none], ['Browse', '/data/lakehouse']] %}
+{# COMPUTE #}
+{% elif current_path.startswith('/data/pipelines') %}
+  {% set ns.crumbs = [['Compute', none], ['Pipelines', '/data/pipelines']] %}
+{% elif current_path.startswith('/data/transforms') %}
+  {% set ns.crumbs = [['Compute', none], ['Transforms', '/data/transforms']] %}
+{% elif current_path.startswith('/data/sql') %}
+  {% set ns.crumbs = [['Compute', none], ['SQL Console', '/data/sql']] %}
+{# WAREHOUSE #}
+{% elif current_path.startswith('/data/warehouse') %}
+  {% set ns.crumbs = [['Warehouse', '/data/warehouse']] %}
+{# ML #}
+{% elif current_path.startswith('/ml/experiments') %}
+  {% set ns.crumbs = [['ML', none], ['Experiments', '/ml/experiments']] %}
+{% elif current_path.startswith('/ml/models') %}
+  {% set ns.crumbs = [['ML', none], ['Models', '/ml/models']] %}
+{% elif current_path.startswith('/ml/features') %}
+  {% set ns.crumbs = [['ML', none], ['Features', '/ml/features']] %}
+{% elif current_path.startswith('/ml/predictions') %}
+  {% set ns.crumbs = [['ML', none], ['Predictions', '/ml/predictions']] %}
+{# AI #}
+{% elif current_path.startswith('/ai/playground') %}
+  {% set ns.crumbs = [['AI', none], ['Playground', '/ai/playground']] %}
+{% elif current_path.startswith('/ai/agents') %}
+  {% set ns.crumbs = [['AI', none], ['Agents', '/ai/agents']] %}
+{% elif current_path.startswith('/ai/workflows') %}
+  {% set ns.crumbs = [['AI', none], ['Workflows', '/ai/workflows']] %}
+{% elif current_path.startswith('/ai/memory') %}
+  {% set ns.crumbs = [['AI', none], ['Memory', '/ai/memory']] %}
+{# SECOPS #}
+{% elif current_path.startswith('/secops/audit') %}
+  {% set ns.crumbs = [['SecOps', '/secops'], ['Audit log', '/secops/audit']] %}
+{% elif current_path.startswith('/secops/alerts') %}
+  {% set ns.crumbs = [['SecOps', '/secops'], ['Alerts', '/secops/alerts']] %}
+{% elif current_path.startswith('/secops') %}
+  {% set ns.crumbs = [['SecOps', '/secops']] %}
+{# SYSTEM #}
+{% elif current_path.startswith('/system/runs') %}
+  {% set ns.crumbs = [['System', none], ['Runs', '/system/runs']] %}
+{% elif current_path.startswith('/system/costs') %}
+  {% set ns.crumbs = [['System', none], ['Costs', '/system/costs']] %}
+{% elif current_path.startswith('/system/logs') %}
+  {% set ns.crumbs = [['System', none], ['Logs', '/system/logs']] %}
+{% elif current_path.startswith('/system/status') or current_path.startswith('/system/components') %}
+  {% set ns.crumbs = [['System', none], ['Components', '/system/status']] %}
+{% else %}
+  {% set ns.crumbs = [['Home', '/']] %}
+{% endif %}
 
-  <!-- Sidebar overlay (mobile) -->
-  <div x-show="sidebarOpen" @click="sidebarOpen=false"
-       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150"
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0"
-       x-transition:enter-end="opacity-100"></div>
+<div class="app" id="shell" data-sidebar="labeled" x-data="dexApp()">
 
-  <!-- Sidebar -->
-  <nav class="dex-sidebar" aria-label="Main navigation" :class="sidebarOpen ? 'dex-sidebar-open' : ''"
-       style="position:fixed;top:0;left:0;height:100vh;width:var(--sidebar-w);z-index:200;display:flex;flex-direction:column;">
+  {# ── Sidebar ────────────────────────────────────────────────────────────── #}
+  <aside class="side" :class="{'side--open': Alpine.store('shell').sidebarOpen}" aria-label="Main navigation">
 
-    <!-- Logo — click navigates home -->
-    <div style="padding:14px 16px 10px;flex-shrink:0">
-      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit"
-         title="Go to home">
-        <div style="background:var(--indigo-9);border-radius:7px;padding:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i data-lucide="zap" style="width:15px;height:15px;color:white"></i>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:14px;line-height:1.2;color:var(--gray-12)">DEX Studio</div>
-          <div style="font-size:10px;color:var(--gray-9)">DataEngineX</div>
-        </div>
-      </a>
-    </div>
+    {# Logo #}
+    <a href="/" class="logo-row" style="text-decoration:none;color:inherit">
+      <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true" style="flex-shrink:0;display:block">
+        <rect x="2"  y="18" width="18" height="6" rx="1.6" fill="var(--layer-bronze)" />
+        <rect x="4"  y="11" width="18" height="6" rx="1.6" fill="var(--layer-silver)" />
+        <rect x="6"  y="4"  width="18" height="6" rx="1.6" fill="var(--accent-9)" />
+        <rect x="20" y="11" width="2"  height="6" fill="var(--bg-elev)" opacity="0.18" />
+      </svg>
+      <span class="brandname">DEX <span style="color:var(--text-3);font-weight:400">Studio</span></span>
+      <span class="ver" style="font-size:9.5px;color:var(--text-4);letter-spacing:.06em;text-transform:uppercase;margin-left:auto;flex-shrink:0">v0.5</span>
+    </a>
 
-    <!-- Project switcher -->
-    <div style="padding:0 8px 8px;flex-shrink:0">
-      {% if all_projects and all_projects|length > 1 %}
-      <div x-data="{open:false, pos:{top:0,left:0,width:0}}">
-        <button @click="const r=$el.getBoundingClientRect(); pos={top:r.bottom+4,left:r.left,width:r.width}; open=!open"
-                style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5);cursor:pointer;width:100%;text-align:left"
-                :style="open ? 'background:var(--indigo-3);border-color:var(--indigo-6)' : ''">
-          <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
-          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--gray-8)"></i>
+    {# Project switcher #}
+    <div style="padding:0 8px 4px;flex-shrink:0">
+      {% if all_projects and all_projects | length > 1 %}
+      <div x-data="{open:false}">
+        <button @click="open=!open" class="project" style="width:100%;cursor:pointer;border:none;text-align:left"
+                :style="open ? 'background:var(--accent-3);border-color:var(--accent-6)' : ''">
+          <span class="glyph" style="width:24px;height:24px;border-radius:6px;background:var(--accent-3);color:var(--accent-11);border-color:var(--accent-4);flex-shrink:0">
+            <i data-lucide="box" style="width:13px;height:13px"></i>
+          </span>
+          <div style="flex:1;min-width:0">
+            <div class="name">{{ project_name }}</div>
+            <div class="env">local · {{ current_env | default('main') }}</div>
+          </div>
+          <i data-lucide="chevrons-up-down" class="chev" style="width:11px;height:11px;color:var(--text-4)"></i>
         </button>
         <div x-show="open" x-cloak @click.outside="open=false"
-             :style="`top:${pos.top}px;left:${pos.left}px;width:${pos.width}px`"
-             style="position:fixed;z-index:9000;border-radius:8px;overflow:hidden;
-                    box-shadow:0 8px 32px rgba(0,0,0,0.18),0 2px 8px rgba(0,0,0,0.12);
-                    border:1px solid var(--gray-5)">
-          <div class="dex-switcher-panel">
-            {% for p in all_projects %}
-            <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--gray-4)">
-              <form method="post" action="/projects/switch" @submit="open=false" style="flex:1;min-width:0">
-                <input type="hidden" name="config_path" value="{{ p.config_path }}">
-                <button type="submit"
-                        style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-size:12px;text-align:left;border:none;cursor:pointer;
-                               background:{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }};
-                               color:{{ 'var(--indigo-11)' if p.config_path == current_config else 'var(--gray-12)' }}"
-                        @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='{{ 'var(--indigo-3)' if p.config_path == current_config else 'transparent' }}'">
-                  <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
-                     style="width:12px;height:12px;flex-shrink:0;color:{{ 'var(--indigo-9)' if p.config_path == current_config else 'var(--gray-8)' }}"></i>
-                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:{{ '600' if p.config_path == current_config else '400' }}">{{ p.name }}</span>
-                </button>
-              </form>
-              <form method="post" action="/projects/set-default" @submit="open=false" title="Set as startup default" style="display:flex">
-                <input type="hidden" name="config_path" value="{{ p.config_path }}">
-                <button type="submit" style="padding:0 10px;border:none;background:transparent;cursor:pointer;color:var(--gray-7);border-left:1px solid var(--gray-4)"
-                        @mouseenter="$el.style.color='var(--amber-9)'" @mouseleave="$el.style.color='var(--gray-7)'"
-                        title="Set as default">
-                  <i data-lucide="star" style="width:11px;height:11px"></i>
-                </button>
-              </form>
-            </div>
-            {% endfor %}
-            <a href="/onboarding" @click="open=false"
-               style="display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:12px;text-decoration:none;color:var(--indigo-10)"
-               @mouseenter="$el.style.background='var(--indigo-2)'" @mouseleave="$el.style.background='transparent'">
-              <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
-            </a>
+             style="position:absolute;left:8px;right:8px;z-index:9000;border-radius:var(--r-3);
+                    overflow:hidden;box-shadow:var(--shadow-xl);border:1px solid var(--border);
+                    background:var(--bg-elev);margin-top:2px">
+          {% for p in all_projects %}
+          <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--border)">
+            <form method="post" action="/projects/switch" @submit="open=false" style="flex:1;min-width:0">
+              <input type="hidden" name="config_path" value="{{ p.config_path }}">
+              <button type="submit"
+                      class="proj-switch-btn {{ 'active' if p.config_path == current_config else '' }}">
+                <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
+                   style="width:12px;height:12px;flex-shrink:0"></i>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+              </button>
+            </form>
           </div>
+          {% endfor %}
+          <a href="/onboarding" @click="open=false" class="proj-new-link">
+            <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
+          </a>
         </div>
       </div>
       {% else %}
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;color:var(--gray-11);font-size:12px;background:var(--gray-3);border:1px solid var(--gray-5)">
-        <i data-lucide="folder-open" style="width:13px;height:13px;flex-shrink:0;color:var(--indigo-9)"></i>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--gray-12)">{{ project_name }}</span>
-        <a href="/onboarding" style="color:var(--gray-8);text-decoration:none" title="Switch project">
+      <div class="project">
+        <span class="glyph" style="width:24px;height:24px;border-radius:6px;background:var(--accent-3);color:var(--accent-11);border-color:var(--accent-4);flex-shrink:0">
+          <i data-lucide="box" style="width:13px;height:13px"></i>
+        </span>
+        <div style="flex:1;min-width:0">
+          <div class="name">{{ project_name }}</div>
+          <div class="env">local · {{ current_env | default('main') }}</div>
+        </div>
+        <a href="/onboarding" style="color:var(--text-4)" data-tip="Switch project">
           <i data-lucide="chevrons-up-down" style="width:11px;height:11px"></i>
         </a>
       </div>
       {% endif %}
     </div>
 
-    <div style="height:1px;background:var(--gray-4);margin:0 16px 6px;flex-shrink:0"></div>
+    {# Nav #}
+    <nav class="nav">
 
-    <!-- Scrollable nav area -->
-    <div style="flex:1;overflow-y:auto;padding:0 8px 8px">
-
-      <!-- Nav: Data -->
-      {% set data_active = current_path.startswith('/data') %}
-      <div style="padding-bottom:2px">
-        <a href="/data" class="dex-nav-item {{ 'active' if data_active else '' }}"
-           style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--indigo-11)' if data_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if data_active else '400' }};background:{{ 'var(--indigo-3)' if data_active else 'transparent' }}">
-          <i data-lucide="database" style="width:14px;height:14px;flex-shrink:0"></i>Data
-        </a>
-        {% if data_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--indigo-6);padding-left:10px">
-          {% for label, href in [('Pipelines','/data/pipelines'),('Sources','/data/sources'),('Lakehouse','/data/lakehouse'),('Warehouse','/data/warehouse'),('SQL Console','/data/sql'),('Lineage','/data/lineage'),('Quality','/data/quality'),('Catalog','/data/catalog')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--indigo-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--indigo-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-
-      <!-- Nav: ML -->
-      {% set ml_active = current_path.startswith('/ml') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/ml" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--violet-11)' if ml_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ml_active else '400' }};background:{{ 'var(--violet-3)' if ml_active else 'transparent' }}">
-          <i data-lucide="flask-conical" style="width:14px;height:14px;flex-shrink:0"></i>ML
-        </a>
-        {% if ml_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--violet-6);padding-left:10px">
-          {% for label, href in [('Models','/ml/models'),('Experiments','/ml/experiments'),('Predictions','/ml/predictions'),('Features','/ml/features'),('Drift','/ml/drift')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--violet-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--violet-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-
-      <!-- Nav: AI -->
-      {% set ai_active = current_path.startswith('/ai') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/ai" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--orange-11)' if ai_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if ai_active else '400' }};background:{{ 'var(--orange-3)' if ai_active else 'transparent' }}">
-          <i data-lucide="sparkles" style="width:14px;height:14px;flex-shrink:0"></i>AI
-        </a>
-        {% if ai_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--orange-6);padding-left:10px">
-          {% for label, href in [('Agents','/ai/agents'),('Playground','/ai/playground'),('Traces','/ai/traces'),('Tools','/ai/tools'),('Memory','/ai/memory')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--orange-11)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--orange-2)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-
-      <!-- Nav: System -->
-      {% set sys_active = current_path.startswith('/system') %}
-      <div style="padding-bottom:2px;margin-top:2px">
-        <a href="/system" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-decoration:none;color:{{ 'var(--gray-12)' if sys_active else 'var(--gray-11)' }};font-size:13px;font-weight:{{ '600' if sys_active else '400' }};background:{{ 'var(--gray-4)' if sys_active else 'transparent' }}">
-          <i data-lucide="settings-2" style="width:14px;height:14px;flex-shrink:0"></i>System
-        </a>
-        {% if sys_active %}
-        <div style="margin-left:12px;margin-top:2px;border-left:2px solid var(--gray-6);padding-left:10px">
-          {% for label, href in [('Status','/system/status'),('Logs','/system/logs'),('Metrics','/system/metrics'),('Components','/system/components'),('Settings','/system/settings')] %}
-          <a href="{{ href }}" style="display:block;padding:4px 6px;font-size:12px;text-decoration:none;border-radius:4px;color:{{ 'var(--gray-12)' if current_path == href else 'var(--gray-10)' }};font-weight:{{ '600' if current_path == href else '400' }};background:{{ 'var(--gray-3)' if current_path == href else 'transparent' }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-
-    </div><!-- end scrollable nav -->
-
-    <!-- Sidebar footer -->
-    <div style="flex-shrink:0;padding:10px 16px;border-top:1px solid var(--gray-4);display:flex;gap:10px;align-items:center;background:inherit">
-      <a href="https://thedataenginex.org/docs" target="_blank"
-         style="font-size:11px;color:var(--gray-9);text-decoration:none;display:flex;align-items:center;gap:4px"
-         title="Documentation">
-        <i data-lucide="book-open" style="width:12px;height:12px"></i>Docs
+      {# ── Home ───────────────────────────────────────────────────────── #}
+      <a href="/" class="nav-item {{ 'active' if current_path == '/' else '' }}" style="text-decoration:none;margin:0 4px 2px">
+        <i data-lucide="home" class="icon" style="width:15px;height:15px"></i>
+        <span class="label">Home</span>
       </a>
-      <span style="color:var(--gray-5)">·</span>
-      <button id="dex-theme-toggle" onclick="toggleTheme()"
-              style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--gray-9);display:flex;align-items:center;gap:4px;padding:0"
-              aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
-        <i id="dex-theme-icon" data-lucide="moon" style="width:12px;height:12px"></i>
-        <span id="dex-theme-label">Dark</span>
-      </button>
-    </div>
 
-  </nav>
-
-  <!-- Main content -->
-  <main class="dex-content" style="min-height:100vh;padding:24px 28px 40px">
-
-    {% block page_header %}
-    {% set _domain = 'ml' if current_path.startswith('/ml') else 'ai' if current_path.startswith('/ai') else 'system' if current_path.startswith('/system') else 'data' %}
-    <div class="dex-page-header" data-domain="{{ _domain }}" style="margin-bottom:20px;padding:14px 0;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
-      <h1 style="font-size:18px;font-weight:700;margin:0">{% block page_title %}{% endblock %}</h1>
-      <div>{% block page_actions %}{% endblock %}</div>
-    </div>
-    {% endblock %}
-
-    {% block content %}{% endblock %}
-  </main>
-
-  <!-- Toast container -->
-  <div id="toast-container" x-data="toastStore()"
-       @show-toast.window="add($event.detail.msg, $event.detail.kind)"
-       style="position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
-    <template x-for="t in toasts" :key="t.id">
-      <div class="rt-CalloutRoot"
-           :data-color="t.kind === 'success' ? 'green' : t.kind === 'error' ? 'red' : 'blue'"
-           data-size="1"
-           style="pointer-events:auto;min-width:260px;max-width:400px;animation:slideInRight .2s ease both;cursor:pointer"
-           @click="remove(t.id)"
-           x-transition:leave="transition-opacity duration-300"
-           x-transition:leave-end="opacity-0">
-        <p class="rt-CalloutText" x-text="t.msg"></p>
+      {# ── Ingest ──────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">Ingest</div>
+        {% for label, href, icon in [
+          ('Sources',   '/data/sources',   'link'),
+          ('Streaming', '/data/streaming', 'radio'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+        </a>
+        {% endfor %}
       </div>
-    </template>
+
+      {# ── Lakehouse ───────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">Lakehouse</div>
+        {% for label, href, icon, badge in [
+          ('Catalog', '/data/catalog',  'table',         table_count | default('')),
+          ('Lineage', '/data/lineage',  'share-2',       ''),
+          ('Quality', '/data/quality',  'check-circle',  ''),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+          {% if badge %}<span class="badge">{{ badge }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+
+      {# ── Compute ─────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">Compute</div>
+        {% for label, href, icon, badge in [
+          ('Pipelines',  '/data/pipelines',  'workflow', pipeline_count | default('')),
+          ('Transforms', '/data/transforms', 'code',     ''),
+          ('SQL',        '/data/sql',        'hash',     ''),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+          {% if badge %}<span class="badge">{{ badge }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+
+      {# ── Warehouse ───────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">Warehouse</div>
+        <a href="/data/warehouse" class="nav-item {{ 'active' if current_path.startswith('/data/warehouse') else '' }}" style="text-decoration:none">
+          <i data-lucide="database" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">BI Tables</span>
+        </a>
+      </div>
+
+      {# ── ML ──────────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">ML</div>
+        {% for label, href, icon in [
+          ('Experiments', '/ml/experiments', 'flask-conical'),
+          ('Models',      '/ml/models',      'box'),
+          ('Features',    '/ml/features',    'layers'),
+          ('Predictions', '/ml/predictions', 'zap'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+
+      {# ── AI ──────────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">AI</div>
+        {% for label, href, icon in [
+          ('Playground', '/ai/playground', 'message-square'),
+          ('Agents',     '/ai/agents',     'bot'),
+          ('Workflows',  '/ai/workflows',  'git-branch'),
+          ('Memory',     '/ai/memory',     'brain'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+          {% if label == 'Playground' %}<span class="badge" style="background:color-mix(in oklch,var(--green-9) 18%,transparent);color:var(--green-9)">live</span>{% endif %}
+          {% if label == 'Agents' and agent_count is defined and agent_count %}<span class="badge">{{ agent_count }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+
+      {# ── SecOps ──────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">SecOps</div>
+        {% for label, href, icon in [
+          ('Privacy',   '/secops',         'shield-check'),
+          ('Audit log', '/secops/audit',   'file-text'),
+          ('Alerts',    '/secops/alerts',  'bell'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+
+      {# ── System ──────────────────────────────────────────────────────── #}
+      <div class="nav-group">
+        <div class="cap">System</div>
+        {% for label, href, icon in [
+          ('Runs',       '/system/runs',   'list'),
+          ('Costs',      '/system/costs',  'bar-chart-2'),
+          ('Logs',       '/system/logs',   'scroll'),
+          ('Components', '/system/status', 'cpu'),
+        ] %}
+        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
+          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
+          <span class="label">{{ label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+
+    </nav>
+
+    {# Side-foot: engine status #}
+    <div class="side-foot">
+      <span class="dot" title="Engine connected"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Engine ready</span>
+      <span class="mono" style="font-size:10px;color:var(--text-4)">{{ engine_latency_ms | default('—') }} ms</span>
+      <a href="https://thedataenginex.org/docs" target="_blank"
+         style="color:var(--text-4);display:flex;align-items:center" data-tip="Docs">
+        <i data-lucide="book-open" style="width:12px;height:12px"></i>
+      </a>
+      <a href="/logout" style="color:var(--text-4);display:flex;align-items:center" data-tip="Sign out">
+        <i data-lucide="log-out" style="width:12px;height:12px"></i>
+      </a>
+    </div>
+
+  </aside>{# .side #}
+
+  {# ── Main column ──────────────────────────────────────────────────────────── #}
+  <div class="main">
+
+    {# ── Topbar ──────────────────────────────────────────────────────────────── #}
+    <div class="topbar">
+
+      {# Breadcrumb #}
+      <div class="pages-crumb crumb">
+        {% for crumb in ns.crumbs %}
+        {% if not loop.first %}
+          <span class="sep"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></span>
+        {% endif %}
+        {% if crumb[1] and not loop.last %}
+          <a href="{{ crumb[1] }}">{{ crumb[0] }}</a>
+        {% else %}
+          <span class="{{ 'leaf' if loop.last else '' }}">{{ crumb[0] }}</span>
+        {% endif %}
+        {% endfor %}
+      </div>
+
+      {# Global search — ⌘K opens command palette #}
+      <div class="global-search">
+        <div class="input-icon" style="width:100%">
+          <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
+          <input class="input" id="cmd-trigger" placeholder="Jump to…  tables, pipelines, runs"
+                 readonly style="cursor:pointer"
+                 @click.prevent="window.dispatchEvent(new CustomEvent('open-cmd'))"
+                 @focus="window.dispatchEvent(new CustomEvent('open-cmd'));$el.blur()">
+          <span class="kbd-hint"><kbd class="kbd">⌘K</kbd></span>
+        </div>
+      </div>
+
+      {# Right actions #}
+      <div class="row" style="gap:4px">
+        <button class="btn icon ghost" data-tip="Notifications">
+          <i data-lucide="bell" style="width:15px;height:15px"></i>
+        </button>
+        <button class="btn icon ghost" data-tip="Toggle theme" onclick="toggleTheme()">
+          <i id="dex-theme-icon" data-lucide="moon" style="width:15px;height:15px"></i>
+        </button>
+        <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
+        <a href="/logout" data-tip="Sign out" style="text-decoration:none">
+          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">
+            JM
+          </div>
+        </a>
+      </div>
+    </div>
+
+    {# ── Content ────────────────────────────────────────────────────────────── #}
+    <div class="content {% block content_class %}{% endblock %}" id="main-content">
+
+      {% if self.full_bleed() | trim %}
+        {# Full-bleed pages (SQL Console, Playground, Logs) fill height, no inner padding #}
+        {% block full_bleed %}{% endblock %}
+      {% else %}
+      <div class="content-inner">
+
+        {# Page header #}
+        {% block page_header %}
+        <div class="page-header">
+          <div>
+            <div class="row" style="gap:10px">
+              <h1>{% block page_title %}{% endblock %}</h1>
+              {% block page_badge %}{% endblock %}
+            </div>
+            {% block page_sub %}{% endblock %}
+          </div>
+          <div class="actions">{% block page_actions %}{% endblock %}</div>
+        </div>
+        {% endblock %}
+
+        {% block content %}{% endblock %}
+
+      </div>
+      {% endif %}
+
+      {% if next_steps %}
+      <div class="card" style="margin:0 16px 16px;padding:11px 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+           background:color-mix(in oklch,var(--accent-9) 5%,transparent);border-color:color-mix(in oklch,var(--accent-9) 20%,transparent)">
+        <span style="font-weight:600;font-size:12px;color:var(--accent-11);display:flex;align-items:center;gap:6px">
+          <i data-lucide="sparkles" style="width:13px;height:13px"></i> Next steps
+        </span>
+        {% for s in next_steps %}
+        <a href="{{ s.href }}" class="row" style="gap:5px;text-decoration:none;color:var(--text);font-size:12px">
+          <i data-lucide="{{ s.icon }}" style="width:12px;height:12px;color:var(--accent-11)"></i> {{ s.label }}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>{# .main #}
+
+</div>{# .app #}
+
+{# ── Command palette ──────────────────────────────────────────────────────── #}
+<div id="cmd-palette" style="display:none" x-data="cmdPalette()"
+     @open-cmd.window="open()" @keydown.window.meta.k.prevent="open()" @keydown.window.ctrl.k.prevent="open()">
+  <div class="cmd-overlay" @click="close()" x-show="isOpen">
+    <div class="cmd-modal fade-in" @click.stop>
+
+      <div class="cmd-input-row">
+        <i data-lucide="search" style="width:14px;height:14px;color:var(--text-4);flex-shrink:0"></i>
+        <input x-ref="input" x-model="q" @keydown.escape="close()" @keydown.enter="goFirst()"
+               @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)"
+               placeholder="Jump to a page, table, action…" style="width:100%" />
+        <span class="kbd">esc</span>
+      </div>
+
+      <div class="cmd-results">
+        <template x-for="(group, gi) in filteredGroups()" :key="gi">
+          <div>
+            <div class="cmd-group-label" x-text="group.label"></div>
+            <template x-for="(item, ii) in group.items" :key="ii">
+              <a :href="item.href" class="cmd-item" :class="item.focused ? 'focused' : ''"
+                 @click="close()" style="text-decoration:none;color:inherit">
+                <span class="ci-glyph">
+                  <i :data-lucide="item.icon" style="width:13px;height:13px"></i>
+                </span>
+                <div style="flex:1;min-width:0">
+                  <div class="ci-label" x-text="item.label"></div>
+                  <div class="ci-sub" x-text="item.sub || ''"></div>
+                </div>
+                <i data-lucide="arrow-right" style="width:12px;height:12px;color:var(--text-4)"></i>
+              </a>
+            </template>
+          </div>
+        </template>
+        <div x-show="filteredGroups().length === 0"
+             class="muted" style="padding:20px 14px;text-align:center;font-size:13px">
+          No results.
+        </div>
+      </div>
+
+      <div class="cmd-footer">
+        <div class="row"><span class="kbd">↑</span><span class="kbd">↓</span> navigate</div>
+        <div class="row"><span class="kbd">↵</span> open</div>
+        <div class="row"><span class="kbd">⌘</span><span class="kbd">K</span> toggle</div>
+        <span style="margin-left:auto">DEX Studio</span>
+      </div>
+    </div>
   </div>
+</div>
 
-  <!-- Flash message → auto-show as toast -->
-  {% if flash %}
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
-    });
-  </script>
-  {% endif %}
+{# ── Toast container ────────────────────────────────────────────────────────── #}
+<div id="toast-container" x-data="toastStore()"
+     @show-toast.window="add($event.detail.msg, $event.detail.kind)"
+     style="position:fixed;bottom:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="card"
+         style="pointer-events:auto;min-width:260px;max-width:400px;animation:slidedown .2s ease both;cursor:pointer;
+                display:flex;align-items:flex-start;gap:10px;padding:12px 14px"
+         :style="t.kind === 'success' ? 'border-color:var(--green-6)' : t.kind === 'error' ? 'border-color:var(--red-6)' : ''"
+         @click="remove(t.id)">
+      <i :data-lucide="t.kind === 'success' ? 'check-circle-2' : t.kind === 'error' ? 'x-circle' : 'info'"
+         :style="t.kind === 'success' ? 'color:var(--green-9)' : t.kind === 'error' ? 'color:var(--red-9)' : 'color:var(--blue-9)'"
+         style="width:15px;height:15px;flex-shrink:0;margin-top:1px"></i>
+      <span x-text="t.msg" style="font-size:var(--text-sm);line-height:1.5;flex:1"></span>
+    </div>
+  </template>
+</div>
 
-  <!-- Lucide icons -->
-  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script>
-    lucide.createIcons();
-    document.addEventListener('htmx:afterSwap', () => lucide.createIcons());
-    document.addEventListener('htmx:afterSettle', () => lucide.createIcons());
-  </script>
+{% if flash %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
+  });
+</script>
+{% endif %}
 
-  <script>
-    // ── Dark/light mode ───────────────────────────────────────────────────────
-    function applyTheme(mode) {
-      const isDark = mode === 'dark';
-      document.documentElement.setAttribute('data-theme', mode);
-      document.documentElement.classList.toggle('dark', isDark);
-      document.body.setAttribute('data-appearance', isDark ? 'dark' : 'light');
-      localStorage.setItem('dex-theme', mode);
-      const icon = document.getElementById('dex-theme-icon');
-      const label = document.getElementById('dex-theme-label');
-      if (icon) { icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon'); lucide.createIcons(); }
-      if (label) label.textContent = isDark ? 'Light' : 'Dark';
+{# Top page loader — thin accent bar driven by HTMX and form submit events #}
+<div id="top-loader"></div>
+
+{# Lucide #}
+<script src="/static/vendor/lucide.min.js"></script>
+<script>
+  lucide.createIcons();
+  document.addEventListener('htmx:afterSwap',   () => lucide.createIcons());
+  document.addEventListener('htmx:afterSettle', () => lucide.createIcons());
+</script>
+
+<script>
+// ── Theme ────────────────────────────────────────────────────────────────────
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('dex-theme', mode);
+  const icon = document.getElementById('dex-theme-icon');
+  if (icon) { icon.setAttribute('data-lucide', mode === 'dark' ? 'sun' : 'moon'); lucide.createIcons(); }
+}
+function toggleTheme() {
+  applyTheme(localStorage.getItem('dex-theme') === 'dark' ? 'light' : 'dark');
+}
+document.addEventListener('DOMContentLoaded', () => applyTheme(localStorage.getItem('dex-theme') || 'dark'));
+
+// ── Alpine stores & components ───────────────────────────────────────────────
+document.addEventListener('alpine:init', () => {
+  Alpine.store('shell', { sidebarOpen: false });
+});
+
+function dexApp() {
+  return {
+    get sidebarOpen() { return Alpine.store('shell').sidebarOpen; },
+    closeSidebar()    { Alpine.store('shell').sidebarOpen = false; },
+  };
+}
+
+function toastStore() {
+  return {
+    toasts: [],
+    add(msg, kind = 'info') {
+      const id = Date.now();
+      this.toasts.push({ id, msg, kind });
+      setTimeout(() => this.remove(id), 4500);
+    },
+    remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); },
+  };
+}
+
+// ── Command palette ──────────────────────────────────────────────────────────
+function cmdPalette() {
+  const ALL_PAGES = [
+    { g: 'Home',      icon: 'home',          label: 'Home',          sub: 'Project overview & recent runs', href: '/' },
+    { g: 'Ingest',    icon: 'link',          label: 'Sources',       sub: 'Connectors and ingest configs',  href: '/data/sources' },
+    { g: 'Ingest',    icon: 'radio',         label: 'Streaming',     sub: 'Kafka topics and consumer lag',  href: '/data/streaming' },
+    { g: 'Lakehouse', icon: 'table',         label: 'Catalog',       sub: 'Browse bronze/silver/gold',      href: '/data/catalog' },
+    { g: 'Lakehouse', icon: 'share-2',       label: 'Lineage',       sub: 'Trace data flow end-to-end',     href: '/data/lineage' },
+    { g: 'Lakehouse', icon: 'check-circle',  label: 'Quality',       sub: 'Data quality tests and scores',  href: '/data/quality' },
+    { g: 'Compute',   icon: 'workflow',      label: 'Pipelines',     sub: 'DAG runner — bronze → gold',     href: '/data/pipelines' },
+    { g: 'Compute',   icon: 'code',          label: 'Transforms',    sub: 'SQL + Python transforms',        href: '/data/transforms' },
+    { g: 'Compute',   icon: 'hash',          label: 'SQL Console',   sub: 'Ad-hoc query editor',            href: '/data/sql' },
+    { g: 'Warehouse', icon: 'database',      label: 'BI Tables',     sub: 'Gold layer — BI-ready data',     href: '/data/warehouse' },
+    { g: 'ML',        icon: 'flask-conical', label: 'Experiments',   sub: 'Track and compare ML runs',      href: '/ml/experiments' },
+    { g: 'ML',        icon: 'box',           label: 'Models',        sub: 'Model registry and deployment',  href: '/ml/models' },
+    { g: 'ML',        icon: 'layers',        label: 'Features',      sub: 'Feature store and groups',       href: '/ml/features' },
+    { g: 'ML',        icon: 'zap',           label: 'Predictions',   sub: 'Run inference against models',   href: '/ml/predictions' },
+    { g: 'AI',        icon: 'message-square',label: 'Playground',    sub: 'Chat over your data',            href: '/ai/playground' },
+    { g: 'AI',        icon: 'bot',           label: 'Agents',        sub: 'Autonomous AI agents',           href: '/ai/agents' },
+    { g: 'AI',        icon: 'git-branch',    label: 'Workflows',     sub: 'Multi-step agent chains',        href: '/ai/workflows' },
+    { g: 'AI',        icon: 'brain',         label: 'Memory',        sub: 'Vector + episodic memory',       href: '/ai/memory' },
+    { g: 'SecOps',    icon: 'shield-check',  label: 'Privacy',       sub: 'PrivacyGuard — PII protection',  href: '/secops' },
+    { g: 'SecOps',    icon: 'file-text',     label: 'Audit log',     sub: 'Immutable event record',         href: '/secops/audit' },
+    { g: 'SecOps',    icon: 'bell',          label: 'Alerts',        sub: 'Alert rules and firings',        href: '/secops/alerts' },
+    { g: 'System',    icon: 'list',          label: 'Runs',          sub: 'Unified run history',            href: '/system/runs' },
+    { g: 'System',    icon: 'bar-chart-2',   label: 'Costs',         sub: 'API spend tracking',             href: '/system/costs' },
+    { g: 'System',    icon: 'scroll',        label: 'Logs',          sub: 'Structured log viewer',          href: '/system/logs' },
+    { g: 'System',    icon: 'cpu',           label: 'Components',    sub: 'Engine component health',        href: '/system/status' },
+  ];
+
+  return {
+    isOpen: false,
+    q: '',
+    open() {
+      this.$el.style.display = 'block';
+      this.isOpen = true;
+      this.q = '';
+      this.$nextTick(() => { if (this.$refs.input) this.$refs.input.focus(); lucide.createIcons(); });
+    },
+    close() {
+      this.isOpen = false;
+      this.$el.style.display = 'none';
+    },
+    filteredGroups() {
+      const q = this.q.toLowerCase();
+      const filtered = q ? ALL_PAGES.filter(p =>
+        p.label.toLowerCase().includes(q) || (p.sub || '').toLowerCase().includes(q)
+      ) : ALL_PAGES;
+      const groups = {};
+      filtered.forEach(p => { (groups[p.g] = groups[p.g] || []).push(p); });
+      return Object.entries(groups).map(([label, items]) => ({ label, items }));
+    },
+    goFirst() {
+      const groups = this.filteredGroups();
+      if (groups.length && groups[0].items.length) {
+        window.location.href = groups[0].items[0].href;
+        this.close();
+      }
+    },
+    move(dir) { /* keyboard navigation — future enhancement */ },
+  };
+}
+
+// ── Top page loader ───────────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('top-loader');
+  if (!el) return;
+  function start() { el.classList.remove('done'); el.classList.add('active'); }
+  function done()  { el.classList.remove('active'); el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 500); }
+  document.addEventListener('htmx:beforeRequest', start);
+  document.addEventListener('htmx:afterRequest',  done);
+  // Non-HTMX form submits
+  document.addEventListener('submit', (e) => {
+    start();
+    const btn = e.submitter || e.target.querySelector('[type="submit"]');
+    if (btn && !btn.dataset.noLoading) {
+      btn.classList.add('loading');
+      btn.setAttribute('aria-busy', 'true');
     }
-    function toggleTheme() {
-      applyTheme(localStorage.getItem('dex-theme') === 'dark' ? 'light' : 'dark');
-    }
-    // Apply on load (theme was set before body by inline script — sync icons)
-    document.addEventListener('DOMContentLoaded', () => {
-      applyTheme(localStorage.getItem('dex-theme') || 'light');
-    });
+  });
+})();
 
-    // ── Alpine app ────────────────────────────────────────────────────────────
-    function dexApp() {
-      return { sidebarOpen: false, closeSidebar() { this.sidebarOpen = false; } };
-    }
-    function toastStore() {
-      return {
-        toasts: [],
-        add(msg, kind = 'info') {
-          const id = Date.now();
-          this.toasts.push({ id, msg, kind });
-          setTimeout(() => this.remove(id), 4500);
-        },
-        remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); }
-      };
-    }
-    document.addEventListener('htmx:afterRequest', (e) => {
-      const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
-      if (!trigger) return;
-      try {
-        const t = JSON.parse(trigger)['show-toast'];
-        if (t) window.dispatchEvent(new CustomEvent('show-toast', { detail: t }));
-      } catch {}
-    });
-  </script>
+// ── HTMX → toast bridge ──────────────────────────────────────────────────────
+document.addEventListener('htmx:afterRequest', (e) => {
+  const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
+  if (!trigger) return;
+  try {
+    const t = JSON.parse(trigger)['show-toast'];
+    if (t) window.dispatchEvent(new CustomEvent('show-toast', { detail: t }));
+  } catch {}
+});
 
-  <!-- Sortable + filterable tables -->
-  <script>
-  (function () {
-    function initSortable(table) {
-      const ths = table.querySelectorAll('th.sortable');
-      ths.forEach((th, ci) => {
-        th.addEventListener('click', () => {
-          const asc = !th.classList.contains('sort-asc');
-          ths.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-          const tbody = table.querySelector('tbody');
-          const rows = Array.from(tbody.querySelectorAll('tr'));
-          rows.sort((a, b) => {
-            const av = a.cells[ci]?.textContent.trim() ?? '';
-            const bv = b.cells[ci]?.textContent.trim() ?? '';
-            const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
-            const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
-            const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
-            return asc ? cmp : -cmp;
-          });
-          rows.forEach(r => tbody.appendChild(r));
+// ── Sortable + paginated tables (global utility) ──────────────────────────────
+(function () {
+  function initSortable(table) {
+    if (table.dataset.sortInit) return;
+    table.dataset.sortInit = '1';
+    table.querySelectorAll('th.sortable').forEach((th) => {
+      th.style.cursor = 'pointer';
+      if (!th.getAttribute('tabindex')) th.setAttribute('tabindex', '0');
+      function doSort() {
+        const asc = !th.classList.contains('sort-asc');
+        table.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        const col = th.cellIndex;
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const av = (a.cells[col]?.textContent ?? '').trim();
+          const bv = (b.cells[col]?.textContent ?? '').trim();
+          const an = Number.parseFloat(av.replace(/[^0-9.-]/g, ''));
+          const bn = Number.parseFloat(bv.replace(/[^0-9.-]/g, ''));
+          const cmp = (!Number.isNaN(an) && !Number.isNaN(bn)) ? an - bn : av.localeCompare(bv);
+          return asc ? cmp : -cmp;
         });
+        rows.forEach(r => tbody.appendChild(r));
+        if (table._pgRender) table._pgRender();
+      }
+      th.addEventListener('click', doSort);
+      th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); } });
+    });
+  }
+
+  function initPagination(table, pageSize) {
+    if (table.dataset.pgInit) return;
+    table.dataset.pgInit = '1';
+    let page = 1;
+    function render() {
+      const all = Array.from(table.querySelectorAll('tbody tr'));
+      const visible = all.filter(r => !r.dataset.filterHide);
+      const total = visible.length;
+      const pages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > pages) page = pages;
+      all.forEach(r => { if (!r.dataset.filterHide) r.style.display = 'none'; });
+      visible.slice((page - 1) * pageSize, page * pageSize).forEach(r => { r.style.display = ''; });
+      let pg = table._pgEl;
+      if (!pg) {
+        pg = document.createElement('div');
+        pg.className = 'table-pagination';
+        pg.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)';
+        (table.closest('.card') || table.parentElement).appendChild(pg);
+        table._pgEl = pg;
+      }
+      if (pages <= 1) { pg.style.display = 'none'; return; }
+      pg.style.display = 'flex';
+      const start = (page - 1) * pageSize + 1;
+      const end   = Math.min(page * pageSize, total);
+      // Page number buttons (up to 5 around current)
+      let btnHtml = '';
+      const lo = Math.max(1, page - 2), hi = Math.min(pages, page + 2);
+      if (lo > 1) btnHtml += `<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="1">1</button>${lo > 2 ? '<span style="color:var(--text-4)">…</span>' : ''}`;
+      for (let i = lo; i <= hi; i++) {
+        btnHtml += `<button class="btn sm ${i===page?'primary':'ghost'}" style="min-width:28px;padding:0 6px" data-pg="${i}">${i}</button>`;
+      }
+      if (hi < pages) btnHtml += `${hi < pages - 1 ? '<span style="color:var(--text-4)">…</span>' : ''}<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="${pages}">${pages}</button>`;
+      pg.innerHTML =
+        `<span style="flex:1;color:var(--text-3)">${start}–${end} of ${total}</span>` +
+        `<button ${page===1?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-prev>‹ Prev</button>` +
+        btnHtml +
+        `<button ${page===pages?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-next>Next ›</button>`;
+      pg.querySelector('[data-pg-prev]')?.addEventListener('click', () => { if (page > 1) { page--; render(); } });
+      pg.querySelector('[data-pg-next]')?.addEventListener('click', () => { if (page < pages) { page++; render(); } });
+      pg.querySelectorAll('[data-pg]').forEach(b => {
+        b.addEventListener('click', () => { page = Number(b.dataset.pg); render(); });
       });
     }
-    function initFilter(input) {
-      const tableId = input.dataset.table;
-      const table = tableId ? document.getElementById(tableId) : input.closest('.rt-Card')?.querySelector('table');
-      if (!table) return;
-      input.addEventListener('input', () => {
-        const q = input.value.toLowerCase();
-        table.querySelectorAll('tbody tr').forEach(row => {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
-      });
-    }
-    function boot() {
-      document.querySelectorAll('table.dex-table').forEach(initSortable);
-      document.querySelectorAll('.dex-table-filter').forEach(initFilter);
-    }
-    document.addEventListener('DOMContentLoaded', boot);
-    document.addEventListener('htmx:afterSwap', boot);
-  })();
-  </script>
+    table._pgRender = render;
+    render();
+  }
 
-  {% block scripts %}{% endblock %}
+  function initFilter(input) {
+    if (input.dataset.filterInit || !input.dataset.table) return;
+    input.dataset.filterInit = '1';
+    const table = document.getElementById(input.dataset.table);
+    if (!table) return;
+    input.addEventListener('input', () => {
+      const q = input.value.toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(r => {
+        r.dataset.filterHide = r.textContent.toLowerCase().includes(q) ? '' : '1';
+        r.style.display = r.dataset.filterHide ? 'none' : '';
+      });
+      if (table._pgRender) table._pgRender();
+    });
+  }
+
+  function boot(root) {
+    (root || document).querySelectorAll('table.tbl, table.dex-table').forEach(t => {
+      initSortable(t);
+      const rowCount  = t.querySelectorAll('tbody tr').length;
+      const pageSize  = parseInt(t.dataset.pageSize, 10) || 20;
+      const threshold = parseInt(t.dataset.pageThreshold, 10) || 10;
+      if (rowCount > threshold) initPagination(t, pageSize);
+    });
+    (root || document).querySelectorAll('.dex-table-filter').forEach(initFilter);
+  }
+  document.addEventListener('DOMContentLoaded', () => boot());
+  document.addEventListener('htmx:afterSwap', e => boot(e.target));
+})();
+</script>
+
+{# Mobile sidebar overlay #}
+<style>
+  @media (max-width: 767px) {
+    .app { grid-template-columns: 0 1fr; }
+    .side { position: fixed; top:0; left:0; height:100vh; z-index:200; width:var(--sidebar-w);
+            transform: translateX(-100%); transition: transform var(--d-normal) var(--ease-out-expo); }
+    .side--open { transform: translateX(0); }
+    #mobile-menu-btn { display: flex !important; }
+  }
+</style>
+<button onclick="Alpine.store('shell').sidebarOpen = !Alpine.store('shell').sidebarOpen"
+        id="mobile-menu-btn"
+        style="display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--bg-elev);
+               border:1px solid var(--border);border-radius:var(--r-2);padding:6px;cursor:pointer;
+               box-shadow:var(--shadow-md)" aria-label="Open navigation">
+  <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-2)"></i>
+</button>
+
+{% block scripts %}{% endblock %}
 </body>
 </html>

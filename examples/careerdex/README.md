@@ -2,7 +2,7 @@
 
 AI-powered career intelligence — job search, application tracking, resume building, interview prep, networking, progress analytics.
 
-This is the **folded-back v0 implementation** of CareerDEX. Originally a standalone repo (`TheDataEngineX/careerdex`), it was archived and merged back into `dex-studio/examples/` per [ADR-0007](https://github.com/TheDataEngineX/docs/blob/main/adr/0007-local-first-scope-reset.md): CareerDEX is a **domain example** of an app you can build on top of [`dataenginex`](https://github.com/TheDataEngineX/dex), not a separate product.
+This is the **folded-back v0 implementation** of CareerDEX. Originally a standalone repo (`TheDataEngineX/careerdex`), it was archived and merged back into `dex-studio/examples/` per [ADR-0007](https://github.com/TheDataEngineX/docs/blob/main/adr/0007-local-first-scope-reset.md): CareerDEX is a **domain example** of an app you can build on top of [`dataenginex`](https://github.com/TheDataEngineX/dataenginex), not a separate product.
 
 ______________________________________________________________________
 

@@ -1,110 +1,196 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
 
-{% block title %}Models — DEX Studio{% endblock %}
-{% block page_title %}Model Registry{% endblock %}
+{% block title %}Models — ML — DEX Studio{% endblock %}
+{% block page_title %}Models{% endblock %}
+{% block page_sub %}
+  {{ models | length }} model{{ 's' if models | length != 1 else '' }} registered
+  {% if models %} · {{ stages | length }} stages{% endif %}
+{% endblock %}
 {% block page_actions %}
-<button onclick="document.getElementById('register-model-dialog').setAttribute('data-open','true')"
-        class="rt-Button" data-variant="solid" data-color="violet" data-size="2">
-  <i data-lucide="plus" style="width:13px;height:13px"></i> Register Model
+<button class="btn" onclick="document.getElementById('register-dialog').showModal()">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Register model
 </button>
 {% endblock %}
 
 {% block content %}
-{% if models %}
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter models…" data-table="models-table">
+
+{# ── flash ── #}
+{% if flash %}
+<div class="card" style="margin-bottom:12px;padding:10px 14px;border-color:{{ 'var(--green-6)' if flash.kind == 'success' else 'var(--red-6)' }};
+                          background:color-mix(in oklch,{{ 'var(--green-9)' if flash.kind == 'success' else 'var(--red-9)' }} 8%,transparent)">
+  <span style="font-size:13px;color:{{ 'var(--green-11)' if flash.kind == 'success' else 'var(--red-11)' }}">{{ flash.msg }}</span>
 </div>
-<div class="rt-Card" style="overflow:hidden">
-  <table id="models-table" class="rt-TableRoot dex-table" style="width:100%">
+{% endif %}
+
+{# ── metric strip ── #}
+<div class="grid grid-4">
+  <div class="stat card" data-spark-color="var(--accent-9)">
+    <div class="stat-label">Models registered</div>
+    <div class="stat-value">{{ models | length }}</div>
+    <div class="stat-delta">{{ 'in registry' if models else 'none yet' }}</div>
+  </div>
+  {% set prod_count = models | selectattr('stage', 'equalto', 'production') | list | length %}
+  <div class="stat card">
+    <div class="stat-label">In production</div>
+    <div class="stat-value">{{ prod_count }}</div>
+    <div class="stat-delta {{ 'up' if prod_count > 0 else '' }}">{{ 'serving' if prod_count > 0 else 'none promoted' }}</div>
+  </div>
+  {% set staging_count = models | selectattr('stage', 'equalto', 'staging') | list | length %}
+  <div class="stat card" data-spark-color="var(--blue-9)">
+    <div class="stat-label">In staging</div>
+    <div class="stat-value">{{ staging_count }}</div>
+    <div class="stat-delta">validation</div>
+  </div>
+  {% set dev_count = models | selectattr('stage', 'equalto', 'development') | list | length %}
+  <div class="stat card" data-spark-color="var(--amber-9)">
+    <div class="stat-label">Development</div>
+    <div class="stat-value">{{ dev_count }}</div>
+    <div class="stat-delta">in progress</div>
+  </div>
+</div>
+
+{# ── model registry table ── #}
+<div class="section-h">
+  <h2>Registry</h2>
+  {% if models %}
+  <div class="row" style="gap:6px">
+    {% for s in ['all'] + stages %}
+    <button class="chip {{ 'active' if loop.first else '' }}" onclick="filterStage('{{ s }}', this)">
+      {{ s | capitalize }}
+      {% if s == 'all' %}
+        <span class="count">{{ models | length }}</span>
+      {% elif s == 'production' %}
+        <span class="count">{{ prod_count }}</span>
+      {% elif s == 'staging' %}
+        <span class="count">{{ staging_count }}</span>
+      {% elif s == 'development' %}
+        <span class="count">{{ dev_count }}</span>
+      {% endif %}
+    </button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% if models %}
+<div class="card bare">
+  <table class="tbl" id="models-tbl">
     <thead>
       <tr>
-        <th class="rt-TableColumnHeaderCell sortable">Name</th>
-        <th class="rt-TableColumnHeaderCell sortable">Version</th>
-        <th class="rt-TableColumnHeaderCell sortable">Stage</th>
-        <th class="rt-TableColumnHeaderCell sortable">Framework</th>
-        <th class="rt-TableColumnHeaderCell">Actions</th>
+        <th class="sortable">Model</th>
+        <th class="sortable" style="width:80px">Version</th>
+        <th class="sortable">Framework</th>
+        <th class="sortable">Stage</th>
+        <th style="width:140px">Promote to</th>
+        <th style="width:40px"></th>
       </tr>
     </thead>
     <tbody>
       {% for m in models %}
-      <tr>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;font-weight:600;color:var(--violet-11)">{{ m.name }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ m.version }}</td>
-        <td class="rt-TableCell">{{ status_badge(m.stage) }}</td>
-        <td class="rt-TableCell">
-          {% if m.framework and m.framework != "—" %}
-          <span class="rt-Badge" data-accent-color="gray" data-variant="soft" data-size="1">{{ m.framework }}</span>
-          {% else %}—{% endif %}
-        </td>
-        <td class="rt-TableCell">
-          <div style="display:flex;gap:4px;align-items:center" x-data="{promoteOpen:false}">
-            <button @click="promoteOpen=true" class="rt-Button" data-variant="soft" data-color="violet" data-size="1">Promote</button>
-            <form method="post" action="/ml/models/delete/{{ m.name }}" style="display:inline"
-                  onsubmit="return confirm('Delete model {{ m.name }}?')">
-              <button type="submit" class="rt-Button" data-variant="ghost" data-color="red" data-size="1">
-                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
-              </button>
-            </form>
-            <!-- Promote sub-dialog -->
-            <div x-show="promoteOpen" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center"
-                 @click.self="promoteOpen=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-              <div class="rt-Card" style="width:320px;padding:20px;background:var(--color-background)" @click.stop>
-                <h3 style="font-size:14px;font-weight:700;margin:0 0 12px">Promote {{ m.name }}</h3>
-                <form method="post" action="/ml/models/promote/{{ m.name }}">
-                  <select name="stage" style="width:100%;padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);margin-bottom:12px">
-                    {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
-                  </select>
-                  <div style="display:flex;gap:8px;justify-content:flex-end">
-                    <button type="button" @click="promoteOpen=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
-                    <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2">Promote</button>
-                  </div>
-                </form>
-              </div>
-            </div>
+      <tr data-stage="{{ m.stage }}">
+        <td>
+          <div class="row" style="gap:8px">
+            <span class="glyph" style="width:22px;height:22px;background:color-mix(in oklch,var(--accent-9) 14%,transparent);
+                                       color:var(--accent-9);border-color:color-mix(in oklch,var(--accent-9) 28%,transparent)">
+              <i data-lucide="box" style="width:11px;height:11px"></i>
+            </span>
+            <span class="mono" style="font-weight:500;font-size:12px">{{ m.name }}</span>
           </div>
+        </td>
+        <td class="mono dim" style="font-size:12px">{{ m.version }}</td>
+        <td class="muted" style="font-size:12px">{{ m.framework or '—' }}</td>
+        <td>
+          {% if m.stage == 'production' %}
+            <span class="pill success" style="height:18px;font-size:10px">production</span>
+          {% elif m.stage == 'staging' %}
+            <span class="pill" style="height:18px;font-size:10px;color:var(--blue-9);border-color:var(--blue-6)">staging</span>
+          {% else %}
+            <span class="pill" style="height:18px;font-size:10px">development</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/ml/models/promote/{{ m.name }}" style="display:flex;gap:4px">
+            <select name="stage" class="input sm" style="height:24px;font-size:11px;flex:1">
+              {% for s in stages %}
+              <option value="{{ s }}" {{ 'selected' if s == m.stage else '' }}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn sm">Move</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/ml/models/delete/{{ m.name }}"
+                onsubmit="return confirm('Delete model {{ m.name }}?')">
+            <button type="submit" class="btn icon ghost sm" title="Delete"
+                    style="color:var(--red-9)">
+              <i data-lucide="trash-2" style="width:11px;height:11px"></i>
+            </button>
+          </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
 {% else %}
-{{ empty_state("brain", "No models registered", "Register a model to get started.") }}
+{# ── empty state ── #}
+<div class="card" style="padding:48px 24px;text-align:center">
+  <i data-lucide="box" style="width:28px;height:28px;color:var(--text-4);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto"></i>
+  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No models registered</div>
+  <div class="muted" style="font-size:12px;margin-top:6px;line-height:1.6">
+    Register a trained model artifact to track versions,<br>promote through stages, and serve predictions.
+  </div>
+  <button class="btn primary" style="margin-top:16px"
+          onclick="document.getElementById('register-dialog').showModal()">
+    <i data-lucide="plus" style="width:13px;height:13px"></i> Register first model
+  </button>
+</div>
 {% endif %}
 
-<!-- Register Model Dialog -->
-<div id="register-model-dialog" x-data="{open:false}" x-init="$watch('$el.dataset.open', v => { if(v==='true') open=true })"
-     x-show="open" x-cloak class="dex-modal-overlay"
-     @click.self="open=false;$el.removeAttribute('data-open')" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-  <div class="rt-Card" style="width:420px;padding:24px;background:var(--color-background)" @click.stop>
-    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Register Model</h3>
-    <form method="post" action="/ml/models/register">
-      <div class="dex-form-row" style="margin-bottom:10px">
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
-          <input type="text" name="name" placeholder="my_model" required class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
-        </div>
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Version</label>
-          <input type="text" name="version" value="1.0.0" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
-        </div>
-      </div>
-      <div class="dex-form-row" style="margin-bottom:10px">
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Framework</label>
-          <input type="text" name="framework" placeholder="sklearn" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-size:12px">
-        </div>
-        <div class="dex-form-group">
-          <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Artifact Path</label>
-          <input type="text" name="artifact_path" placeholder="/models/my_model" class="rt-TextFieldInput" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
-        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
-        <button type="submit" class="rt-Button" data-variant="solid" data-color="violet" data-size="2">Register</button>
-      </div>
-    </form>
+{# ── register dialog ── #}
+<dialog class="dex-dialog" id="register-dialog">
+  <div class="dlg-header">
+    <span style="font-weight:600;font-size:14px">Register model</span>
+    <button class="btn icon ghost sm" onclick="document.getElementById('register-dialog').close()">
+      <i data-lucide="x" style="width:14px;height:14px"></i>
+    </button>
   </div>
-</div>
+  <form method="post" action="/ml/models/register" class="dlg-body col" style="gap:14px">
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-name">Name</label>
+      <input class="input" id="reg-name" name="name" required placeholder="e.g. churn-predictor" autofocus>
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-version">Version</label>
+      <input class="input" id="reg-version" name="version" value="1.0.0" placeholder="1.0.0">
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-framework">Framework</label>
+      <input class="input" id="reg-framework" name="framework" placeholder="e.g. xgboost, sklearn, pytorch">
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-artifact">Artifact path</label>
+      <input class="input" id="reg-artifact" name="artifact_path" placeholder="/models/churn/v1.pkl">
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:4px">
+      <button type="button" class="btn ghost" onclick="document.getElementById('register-dialog').close()">Cancel</button>
+      <button type="submit" class="btn primary">Register</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  'use strict';
+  globalThis.filterStage = function (stage, btn) {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('#models-tbl tbody tr').forEach(row => {
+      row.style.display = (stage === 'all' || row.dataset.stage === stage) ? '' : 'none';
+    });
+  };
+}());
+</script>
+
 {% endblock %}

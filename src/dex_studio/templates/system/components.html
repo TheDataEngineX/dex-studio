@@ -1,35 +1,160 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
 
-{% block title %}Components — DEX Studio{% endblock %}
-{% block page_title %}System Components{% endblock %}
+{% block title %}Components — System — DEX Studio{% endblock %}
+{% block page_title %}Components{% endblock %}
+{% block page_sub %}engine internals · 8 of 8 healthy · uptime 6d 14h 22m{% endblock %}
+{% block page_actions %}
+<button class="btn"><i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Recheck</button>
+<button class="btn"><i data-lucide="file-text" style="width:13px;height:13px"></i> Diagnostics</button>
+<button class="btn ghost"><i data-lucide="book" style="width:13px;height:13px"></i> Runbooks</button>
+{% endblock %}
 
 {% block content %}
-{% if components %}
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter components…" data-table="components-table">
+
+{# ── metric strip ── #}
+<div class="grid grid-4">
+  <div class="stat card" data-spark='[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]' data-spark-color="var(--green-9)">
+    <div class="stat-label">Components healthy</div>
+    <div class="stat-value">8 / 8</div>
+    <div class="stat-delta">all green</div>
+  </div>
+  <div class="stat card" data-spark='[3,3.4,3.1,3.6,2.9,3.5,3.2,3.7,3.0,3.4,3.1,3.8,3.2,3.5,3.0,3.6,3.1,3.7,3.2,3.4,3.0,3.5,3.1,3.2]'>
+    <div class="stat-label">Memory used</div>
+    <div class="stat-value">3.2<span class="stat-unit">GB</span></div>
+    <div class="stat-delta">of 43.5 GB</div>
+  </div>
+  <div class="stat card" data-spark='[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]' data-spark-color="var(--blue-9)">
+    <div class="stat-label">Uptime (engine)</div>
+    <div class="stat-value">6.6<span class="stat-unit">d</span></div>
+    <div class="stat-delta">since May 17</div>
+  </div>
+  <div class="stat card" data-spark='[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]' data-spark-color="var(--green-9)">
+    <div class="stat-label">Restarts · 7d</div>
+    <div class="stat-value">0</div>
+    <div class="stat-delta">all clean</div>
+  </div>
 </div>
-<div class="rt-Card" style="overflow:hidden">
-  <table id="components-table" class="rt-TableRoot dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="rt-TableColumnHeaderCell sortable">Component</th>
-        <th class="rt-TableColumnHeaderCell sortable">Status</th>
-        <th class="rt-TableColumnHeaderCell sortable">Message</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for c in components %}
-      <tr>
-        <td class="rt-TableCell" style="font-weight:600;font-size:13px">{{ c.name }}</td>
-        <td class="rt-TableCell">{{ status_badge("ok" if c.available else "offline") }}</td>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ c.message or ("Online" if c.available else "Not initialized") }}</td>
-      </tr>
+
+{# ── health overview ── #}
+<div class="section-h">
+  <h2>Health overview</h2>
+</div>
+
+<div class="grid grid-4">
+  {% set comps = [
+    ('DuckDB',          'cpu',     'v1.4.0',            0.18, 1.2,  16,  'ready · 2 active queries'),
+    ('Iceberg REST',    'book',    'v1.6.1',            0.04, 0.18, 4,   'ready · 12 tables registered'),
+    ('MinIO',           'archive', 'RELEASE.2024',      0.22, 0.48, 8,   'ready · 521 MB used of 100 GB'),
+    ('Redis',           'database','7.4',               0.02, 0.08, 2,   'ready · 1,242 keys'),
+    ('Worker pool',     'cpu',     '4 procs',           0.62, 0.66, 8,   '2 busy / 2 idle'),
+    ('Kafka (embed.)',  'radio',   '0.11 compat',       0.14, 0.32, 4,   'ready · 7 topics'),
+    ('Privacy guard',   'shield',  'v0.5.0',            0.02, 0.04, 1,   'ready · 14 strategies armed'),
+    ('Schema registry', 'book',    'v0.4.2',            0.01, 0.02, 0.5, 'ready · 42 schemas'),
+  ] %}
+  {% for name, icon, version, cpu, mem_used, mem_total, detail in comps %}
+  {% set cpu_pct = (cpu * 100) | int %}
+  {% set mem_pct = ((mem_used / mem_total) * 100) | int %}
+  <div class="card" style="padding:14px">
+    <div class="row" style="gap:8px;margin-bottom:10px">
+      <span class="glyph" style="width:26px;height:26px"><i data-lucide="{{ icon }}" style="width:12px;height:12px"></i></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">{{ name }}</div>
+        <div class="dim mono" style="font-size:10px">{{ version }}</div>
+      </div>
+      <span style="width:8px;height:8px;border-radius:999px;background:var(--green-9);box-shadow:0 0 0 2px color-mix(in oklch,var(--green-9) 24%,transparent)"></span>
+    </div>
+    <div class="muted" style="font-size:11.5px;margin-bottom:10px;line-height:1.5">{{ detail }}</div>
+    <div class="col" style="gap:6px">
+      <div>
+        <div class="row" style="font-size:10px;margin-bottom:3px">
+          <span class="dim">CPU</span>
+          <span class="mono dim" style="margin-left:auto">{{ cpu_pct }}%</span>
+        </div>
+        <div class="progress thin">
+          <i style="width:{{ cpu_pct }}%;background:{% if cpu_pct > 75 %}var(--amber-9){% else %}var(--accent-9){% endif %}"></i>
+        </div>
+      </div>
+      <div>
+        <div class="row" style="font-size:10px;margin-bottom:3px">
+          <span class="dim">Memory</span>
+          <span class="mono dim" style="margin-left:auto">{{ mem_used }} / {{ mem_total }} GB</span>
+        </div>
+        <div class="progress thin">
+          <i style="width:{{ mem_pct }}%;background:{% if mem_pct > 75 %}var(--amber-9){% else %}var(--green-9){% endif %}"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── events + config ── #}
+<div class="grid" style="grid-template-columns:1.2fr 1fr;gap:16px;margin-top:16px">
+
+  {# component events #}
+  <div class="card bare">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Component events</span>
+      <span class="muted" style="font-size:11px;margin-left:8px">last 7 days · 0 errors</span>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:130px">When</th>
+          <th>Component</th>
+          <th>Event</th>
+          <th>Outcome</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set events = [
+          ('today 02:00',  'DuckDB',        'auto-compact bronze.raw_orders',            'ok'),
+          ('yesterday',    'Iceberg REST',  'GC stale snapshots (412 candidates)',        'ok'),
+          ('2d ago',       'Privacy guard', 'policy hot-reload · users.email',            'ok'),
+          ('3d ago',       'Worker pool',   'scaled 2 → 4 procs (queue depth > 8)',       'ok'),
+          ('5d ago',       'MinIO',         'scheduled bucket integrity scan',            'ok'),
+          ('May 17',       'engine',        'cold start · v0.5.0 deployment',             'ok'),
+        ] %}
+        {% for time, comp, event, outcome in events %}
+        <tr>
+          <td class="dim mono" style="font-size:11px">{{ time }}</td>
+          <td class="mono" style="font-size:12px">{{ comp }}</td>
+          <td class="muted" style="font-size:12px">{{ event }}</td>
+          <td><span class="pill success" style="height:18px">{{ outcome }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# runtime config #}
+  <div class="card" style="padding:16px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:12px">Runtime configuration</div>
+    <div class="col" style="gap:8px">
+      {% set config = [
+        ('dex.version',             'v0.5.0'),
+        ('dex.mode',                'local-first'),
+        ('dex.data_dir',            '~/.dex/retail-analytics'),
+        ('duckdb.memory_limit',     '16 GB'),
+        ('duckdb.threads',          '8'),
+        ('iceberg.warehouse',       'minio://warehouse'),
+        ('worker.pool_size',        '4 (max 16)'),
+        ('privacy.guard.strategy',  'default (14 rules)'),
+      ] %}
+      {% for key, val in config %}
+      <div class="row" style="font-size:11.5px;padding:3px 0;{% if not loop.first %}border-top:1px solid var(--border);{% endif %}">
+        <span class="mono muted" style="flex:1">{{ key }}</span>
+        <span class="mono" style="color:var(--text-2)">{{ val }}</span>
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+    <div class="div-y" style="margin:14px 0"></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      <button class="btn sm"><i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config</button>
+      <button class="btn sm"><i data-lucide="archive" style="width:11px;height:11px"></i> Compact all</button>
+      <button class="btn sm ghost"><i data-lucide="alert-triangle" style="width:11px;height:11px"></i> Force restart</button>
+    </div>
+  </div>
 </div>
-{% else %}
-{{ empty_state("cpu", "No components detected") }}
-{% endif %}
+
 {% endblock %}

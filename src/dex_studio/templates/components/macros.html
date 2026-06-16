@@ -1,42 +1,50 @@
 {% macro metric_card(label, value, icon, color="indigo", sub="") %}
-<div class="rt-Card dex-metric-card dex-metric-{{ color }}" style="padding:16px 20px;flex:1;min-width:140px">
+<div class="card dex-metric-card dex-metric-{{ color }}" style="padding:16px 20px;flex:1;min-width:140px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--gray-10)">{{ label }}</span>
+    <span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)">{{ label }}</span>
     <div style="background:var(--{{ color }}-3);border-radius:6px;padding:5px;display:flex">
       <i data-lucide="{{ icon }}" style="width:13px;height:13px;color:var(--{{ color }}-9)"></i>
     </div>
   </div>
-  <div style="font-size:26px;font-weight:700;color:var(--gray-12);line-height:1">{{ value }}</div>
+  <div style="font-size:26px;font-weight:700;color:var(--text);line-height:1">{{ value }}</div>
   {% if sub %}<div style="font-size:11px;color:var(--{{ color }}-10);margin-top:4px">{{ sub }}</div>{% endif %}
 </div>
 {% endmacro %}
 
 {% macro status_badge(status, size="1") %}
-{% set color = {"ok":"green","healthy":"green","success":"green","active":"green","available":"green","passed":"green","error":"red","failed":"red","offline":"red","warning":"orange","warn":"orange","degraded":"orange","debug":"gray","info":"blue","never":"gray","development":"violet","staging":"orange","production":"green"}.get(status|lower, "gray") %}
-<span class="rt-Badge" data-accent-color="{{ color }}" data-variant="soft" data-size="{{ size }}">{{ status }}</span>
+{% set _map = {
+  "ok":"success","healthy":"success","success":"success","active":"success",
+  "available":"success","passed":"success","green":"success","production":"success",
+  "error":"error","failed":"error","offline":"error","red":"error",
+  "warning":"warn","warn":"warn","degraded":"warn","orange":"warn","staging":"warn",
+  "info":"info","blue":"info","debug":"info",
+  "never":"","gray":"","development":""
+} %}
+{% set cls = _map.get(status|lower, "") %}
+<span class="pill {{ cls }}" style="font-size:11px">{{ status }}</span>
 {% endmacro %}
 
 {% macro section_heading(title, subtitle="") %}
 <div style="margin-bottom:16px">
-  <h2 style="font-size:15px;font-weight:700;margin:0;color:var(--gray-12)">{{ title }}</h2>
-  {% if subtitle %}<p style="font-size:12px;color:var(--gray-10);margin:2px 0 0">{{ subtitle }}</p>{% endif %}
+  <h2 style="font-size:15px;font-weight:700;margin:0;color:var(--text)">{{ title }}</h2>
+  {% if subtitle %}<p style="font-size:12px;color:var(--text-3);margin:2px 0 0">{{ subtitle }}</p>{% endif %}
 </div>
 {% endmacro %}
 
 {% macro empty_state(icon, title, subtitle="") %}
-<div style="text-align:center;padding:48px 24px;color:var(--gray-9)">
+<div style="text-align:center;padding:48px 24px;color:var(--text-3)">
   <i data-lucide="{{ icon }}" style="width:32px;height:32px;margin:0 auto 12px;display:block;opacity:.4"></i>
-  <div style="font-size:14px;font-weight:500;color:var(--gray-11);margin-bottom:4px">{{ title }}</div>
+  <div style="font-size:14px;font-weight:500;color:var(--text-2);margin-bottom:4px">{{ title }}</div>
   {% if subtitle %}<div style="font-size:12px">{{ subtitle }}</div>{% endif %}
 </div>
 {% endmacro %}
 
 {% macro skeleton_table(cols=4, rows=5) %}
-<table class="rt-TableRoot dex-table" style="width:100%">
-  <thead><tr>{% for _ in range(cols) %}<th class="rt-TableColumnHeaderCell"><div style="height:10px;background:var(--gray-4);border-radius:3px;width:80%"></div></th>{% endfor %}</tr></thead>
+<table class="dex-table" style="width:100%">
+  <thead><tr>{% for _ in range(cols) %}<th><div style="height:10px;background:var(--bg-elev-2);border-radius:3px;width:80%"></div></th>{% endfor %}</tr></thead>
   <tbody>
     {% for _ in range(rows) %}
-    <tr>{% for _ in range(cols) %}<td class="rt-TableCell"><div style="height:12px;background:var(--gray-3);border-radius:3px;width:{{ range(40,90)|random }}%"></div></td>{% endfor %}</tr>
+    <tr>{% for _ in range(cols) %}<td><div style="height:12px;background:var(--bg-elev);border-radius:3px;width:{{ range(40,90)|random }}%"></div></td>{% endfor %}</tr>
     {% endfor %}
   </tbody>
 </table>
@@ -47,13 +55,13 @@
   <slot></slot>
   <div x-show="open" x-cloak class="dex-modal-overlay"
        @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-    <div class="rt-Card" style="width:380px;padding:24px;background:var(--color-background)">
+    <div class="card" style="width:380px;padding:24px">
       <h3 style="font-size:15px;font-weight:700;margin:0 0 8px">{{ title }}</h3>
-      <p style="font-size:13px;color:var(--gray-11);margin:0 0 20px">{{ body }}</p>
+      <p style="font-size:13px;color:var(--text-2);margin:0 0 20px">{{ body }}</p>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button type="button" @click="open=false" class="rt-Button" data-variant="soft" data-color="gray" data-size="2">Cancel</button>
+        <button type="button" @click="open=false" class="btn ghost">Cancel</button>
         <form method="post" action="{{ action_url }}" style="display:inline">
-          <button type="submit" class="rt-Button" data-variant="solid" data-color="{{ color }}" data-size="2">{{ action_label }}</button>
+          <button type="submit" class="btn {{ 'danger' if color == 'red' else 'primary' }}">{{ action_label }}</button>
         </form>
       </div>
     </div>

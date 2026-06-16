@@ -2,7 +2,7 @@
 
 Usage::
 
-    dex-studio                          # serve on 0.0.0.0:7860
+    dex-studio                          # serve on 127.0.0.1:7860
     dex-studio --port 8080              # custom port
     dex-studio --host 127.0.0.1        # localhost only
     dex-studio --reload                 # dev mode with auto-reload
@@ -20,7 +20,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="dex-studio",
         description="DEX Studio — web UI for DataEngineX",
     )
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=7860, help="Bind port (default: 7860)")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload (dev mode)")
     parser.add_argument("--version", action="store_true", help="Print version and exit")
