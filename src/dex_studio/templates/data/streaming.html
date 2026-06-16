@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Streaming — Data — DEX Studio{% endblock %}
+{% block page_title %}Streaming{% endblock %}
+{% block page_sub %}
+  {% if topics %}
+    {{ topics | length }} topic{{ 's' if topics | length != 1 else '' }} configured
+  {% else %}
+    no streaming sources configured
+  {% endif %}
+{% endblock %}
+{% block page_actions %}
+<button class="btn" x-data @click="$store.schemaReg.open=true">
+  <i data-lucide="book" style="width:13px;height:13px"></i> Schema registry
+</button>
+<button class="btn primary" x-data @click="$store.newTopic.open=true">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> New topic
+</button>
+{% endblock %}
+
+{% block content %}
+
+{% if topics %}
+
+{# ── real streaming sources ── #}
+<div class="grid grid-4" style="margin-bottom:16px">
+  <div class="stat card">
+    <div class="stat-label">Topics</div>
+    <div class="stat-value">{{ topics | length }}</div>
+    <div class="stat-delta">configured</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Active</div>
+    <div class="stat-value">{{ topics | selectattr('status', 'equalto', 'active') | list | length }}</div>
+    <div class="stat-delta">consumers</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Events/sec</div>
+    <div class="stat-value">—</div>
+    <div class="stat-delta">awaiting data</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Total lag</div>
+    <div class="stat-value">—</div>
+    <div class="stat-delta">ms</div>
+  </div>
+</div>
+
+<div class="card bare">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Topic</th>
+        <th>Type</th>
+        <th>Path / Broker</th>
+        <th>Status</th>
+        <th style="width:80px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in topics %}
+      <tr>
+        <td class="mono" style="font-size:12px;font-weight:500">{{ t.name }}</td>
+        <td><span class="chip" style="font-size:11px">{{ t.type }}</span></td>
+        <td class="mono muted" style="font-size:11.5px">{{ t.path or '—' }}</td>
+        <td><span class="pill {{ 'success' if t.status == 'active' else '' }}" style="height:18px;font-size:10px">{{ t.status }}</span></td>
+        <td>
+          <div class="row" style="gap:4px;justify-content:flex-end">
+            <button class="btn icon ghost sm" title="View schema"><i data-lucide="eye" style="width:11px;height:11px"></i></button>
+            <button class="btn icon ghost sm" title="Tail events"><i data-lucide="activity" style="width:11px;height:11px"></i></button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+
+{# ── empty state: batch-only project ── #}
+<div class="card" style="padding:56px 24px;text-align:center;margin-bottom:24px">
+  <span class="glyph lg" style="width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 16px">
+    <i data-lucide="radio-tower" style="width:24px;height:24px"></i>
+  </span>
+  <div style="font-weight:600;font-size:15px;color:var(--text-2)">No streaming sources configured</div>
+  <div class="muted" style="font-size:12.5px;margin-top:8px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.65">
+    This project ingests data from batch sources (Parquet, CSV, SQL databases).
+    Add a Kafka, Kinesis, or Pub/Sub source to <code>dex.yaml</code> to enable streaming.
+  </div>
+  <div class="row" style="gap:10px;margin-top:20px;justify-content:center">
+    <a href="/data/sources" class="btn" style="text-decoration:none">
+      <i data-lucide="database" style="width:12px;height:12px"></i> View sources
+    </a>
+    <a href="/data/pipelines" class="btn" style="text-decoration:none">
+      <i data-lucide="git-branch" style="width:12px;height:12px"></i> Batch pipelines
+    </a>
+  </div>
+</div>
+
+{# ── what streaming enables ── #}
+<div class="section-h">
+  <h2>What streaming unlocks</h2>
+  <span class="muted" style="font-size:12px">add a streaming source to dex.yaml to activate</span>
+</div>
+<div class="grid grid-3">
+  {% for icon, title, desc in [
+    ('zap',         'Sub-second latency',  'Consume events as they arrive — no poll delay. Bronze tables update continuously.'),
+    ('git-branch',  'Real-time lineage',   'DEX traces every event from source topic through bronze → silver → gold in real time.'),
+    ('activity',    'Live drift alerts',   'Detect schema drift, late data, or consumer lag the moment it happens.'),
+  ] %}
+  <div class="card" style="padding:18px;display:flex;flex-direction:column;gap:10px">
+    <span class="glyph accent"><i data-lucide="{{ icon }}" style="width:14px;height:14px"></i></span>
+    <div>
+      <div style="font-weight:500;font-size:13px">{{ title }}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.55">{{ desc }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── config example ── #}
+<div class="section-h" style="margin-top:24px">
+  <h2>Add a streaming source</h2>
+</div>
+<div class="editor" style="max-width:560px">
+  <div class="ed-toolbar">
+    <span class="dot"></span>
+    <span class="filename">dex.yaml</span>
+    <span class="lang">YAML</span>
+  </div>
+  <div class="ed-body">
+    <div class="gutter">
+      {% for i in range(1, 12) %}<div>{{ i }}</div>{% endfor %}
+    </div>
+    <div class="code">
+      <div><span class="cmt"># dex.yaml — add under data.sources</span></div>
+      <div>&nbsp;</div>
+      <div><span class="tok-col">data</span><span class="op">:</span></div>
+      <div>&nbsp;&nbsp;<span class="tok-col">sources</span><span class="op">:</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tok-col">events_stream</span><span class="op">:</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">type</span><span class="op">:</span> <span class="str">kafka</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">broker</span><span class="op">:</span> <span class="str">localhost:9092</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">topic</span><span class="op">:</span> <span class="str">events.page_view</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">group_id</span><span class="op">:</span> <span class="str">dex-bronze-writer</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">auto_offset_reset</span><span class="op">:</span> <span class="str">latest</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">format</span><span class="op">:</span> <span class="str">json</span></div>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('schemaReg', { open: false });
+    Alpine.store('newTopic',  { open: false });
+  });
+</script>
+{# ── Schema registry modal ── #}
+<div x-data x-show="$store.schemaReg.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.schemaReg.open=false">
+  <div class="card" style="width:480px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">Schema registry</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.schemaReg.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    {% if topics %}
+    <table class="tbl" style="width:100%">
+      <thead><tr><th>Topic</th><th>Format</th><th>Fields</th></tr></thead>
+      <tbody>
+        {% for t in topics %}
+        <tr><td class="mono">{{ t.name }}</td><td class="mono dim">{{ t.format or 'json' }}</td><td class="dim">—</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="muted" style="font-size:13px;text-align:center;padding:24px 0;line-height:1.6">
+      No schemas registered yet. Add a streaming source to <code class="mono">dex.yaml</code>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{# ── New topic modal ── #}
+<div x-data x-show="$store.newTopic.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.newTopic.open=false">
+  <div class="card" style="width:520px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:12px">
+      <span style="font-weight:700;font-size:14px">Add a streaming source</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.newTopic.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">
+      Add under <code class="mono">data.sources</code> in <code class="mono">dex.yaml</code> and restart.
+    </div>
+    <pre style="background:var(--bg-elev-2);border:1px solid var(--border);border-radius:var(--r-2);padding:12px 14px;font-size:12px;font-family:var(--font-mono);line-height:1.6;overflow:auto;margin:0">data:
+  sources:
+    my_stream:
+      type: kafka
+      broker: localhost:9092
+      topic: events.page_view
+      group_id: dex-bronze-writer
+      auto_offset_reset: latest
+      format: json</pre>
+    <div class="row" style="gap:8px;margin-top:14px">
+      <a href="/data/sources" class="btn ghost" style="text-decoration:none">View sources</a>
+      <button class="btn primary" style="margin-left:auto" @click="$store.newTopic.open=false">Got it</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

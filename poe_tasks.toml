@@ -16,12 +16,12 @@ help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash s
 
 # ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
-cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --reload"
+cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --reload --loop uvloop"
 env = { PYTHONPATH = "src" }
 help = "Launch DEX Studio dev server (port 7860, hot-reload)"
 
 [tool.poe.tasks.serve]
-cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860"
+cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --loop uvloop"
 env = { PYTHONPATH = "src" }
 help = "Launch DEX Studio production server (port 7860)"
 
@@ -36,11 +36,11 @@ help = "Run tests with coverage report (HTML + XML + terminal)"
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
 [tool.poe.tasks.lint]
-cmd = "ruff check src/ tests/"
+cmd = "ruff check src/ tests/ examples/"
 help = "Run ruff linter"
 
 [tool.poe.tasks.lint-fix]
-cmd = "ruff check --fix src/ tests/"
+cmd = "ruff check --fix src/ tests/ examples/"
 help = "Run ruff linter with auto-fix"
 
 [tool.poe.tasks.typecheck]
@@ -89,7 +89,7 @@ help = "Show current version"
 
 # ── Code Quality (additional) ─────────────────────────────────────────────────
 [tool.poe.tasks.format]
-shell = "ruff format src/ tests/"
+shell = "ruff format src/ tests/ examples/"
 help = "Format code with ruff"
 
 [tool.poe.tasks.security]
@@ -114,3 +114,14 @@ help = "Build Docker image"
 [tool.poe.tasks.docker-serve]
 shell = "docker run --rm -p 7860:7860 -e DEX_STUDIO_API_URL=http://host.docker.internal:17000 dex-studio"
 help = "Run dex-studio in Docker (connects to local DEX API on host)"
+
+# ── Demo & Screenshots ────────────────────────────────────────────────────────
+[tool.poe.tasks.demo]
+cmd  = "python scripts/demo/record.py"
+env  = { PYTHONPATH = "src" }
+help = "Generate full demo video + screenshots (requires ffmpeg, agg)"
+
+[tool.poe.tasks.screenshots]
+cmd  = "python scripts/demo/browser_segments.py --screenshots-only"
+env  = { PYTHONPATH = "src" }
+help = "Refresh static screenshots only (~60s, no video/audio)"

@@ -74,14 +74,22 @@ def real_engine(csv_source: Path, tmp_path_factory: pytest.TempPathFactory):
     return DexEngine(cfg)
 
 
+_TEST_API_KEY = "integration-test-key-abc123"  # gitleaks:allow
+
+
 @pytest.fixture(scope="module")
 def client(real_engine) -> Generator[TestClient]:
-    """TestClient with real DexEngine injected, scheduler lifespan disabled."""
+    """TestClient with real DexEngine injected, scheduler lifespan disabled.
+
+    Auth is always enabled now, so we set a known test key and login once
+    before yielding so all tests run in an authenticated session.
+    """
     import dex_studio._engine as _mod
 
     orig = _mod._ENGINE
     _mod._ENGINE = real_engine
-    os.environ.pop("DEX_STUDIO_API_KEY", None)
+    os.environ["DEX_STUDIO_API_KEY"] = _TEST_API_KEY
+    os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
 
     from dex_studio.app import create_app
 
@@ -93,9 +101,24 @@ def client(real_engine) -> Generator[TestClient]:
     app.router.lifespan_context = _noop_lifespan  # type: ignore[assignment]
 
     with TestClient(app, raise_server_exceptions=False) as tc:
+        # Authenticate once — the TestClient persists the session cookie.
+        login = tc.post("/login", data={"api_key": _TEST_API_KEY})
+        assert login.status_code in (200, 303), f"Login failed: {login.status_code}"
         yield tc
 
     _mod._ENGINE = orig
+    os.environ.pop("DEX_STUDIO_API_KEY", None)
+
+
+@pytest.fixture(scope="module")
+def csrf_headers(client: TestClient) -> dict[str, str]:
+    """Extract the CSRF token from a GET page and return it as a header dict."""
+    import re
+
+    r = client.get("/data/sources")
+    match = re.search(rb'<meta name="csrf-token" content="([^"]+)"', r.content)
+    assert match, "CSRF meta tag not found — is base.html injecting it?"
+    return {"X-CSRF-Token": match.group(1).decode()}
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -137,15 +160,14 @@ def test_pipelines_page(client: TestClient) -> None:
     assert r.status_code == 200
 
 
-def test_pipeline_run(client: TestClient) -> None:
-    # POST /data/pipelines/run/{name}
-    r = client.post("/data/pipelines/run/clean_users")
+def test_pipeline_run(client: TestClient, csrf_headers: dict[str, str]) -> None:
+    r = client.post("/data/pipelines/run/clean_users", headers=csrf_headers)
     assert r.status_code in (200, 303)
 
 
-def test_pipeline_run_unknown(client: TestClient) -> None:
-    r = client.post("/data/pipelines/run/nonexistent")
-    assert r.status_code in (200, 404, 422, 500)
+def test_pipeline_run_unknown(client: TestClient, csrf_headers: dict[str, str]) -> None:
+    r = client.post("/data/pipelines/run/nonexistent", headers=csrf_headers)
+    assert r.status_code in (200, 303, 404, 422, 500)
 
 
 # ── Data — warehouse ──────────────────────────────────────────────────────────
@@ -177,8 +199,8 @@ def test_sql_page(client: TestClient) -> None:
     assert r.status_code == 200
 
 
-def test_sql_execute(client: TestClient) -> None:
-    r = client.post("/data/sql/execute", data={"query": "SELECT 1 AS n"})
+def test_sql_execute(client: TestClient, csrf_headers: dict[str, str]) -> None:
+    r = client.post("/data/sql/execute", data={"query": "SELECT 1 AS n"}, headers=csrf_headers)
     assert r.status_code == 200
     assert b"1" in r.content
 

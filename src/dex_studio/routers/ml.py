@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import contextlib
-import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from dex_studio.routers._deps import base_ctx, get_eng, render, require_auth, require_engine
+from dex_studio import _json
+from dex_studio.routers._deps import (
+    ReadDep,
+    WriteDep,
+    base_ctx,
+    flash,
+    render,
+    stub_page,
+)
 from dex_studio.utils import fmt_ts
 
 router = APIRouter()
@@ -17,28 +24,25 @@ router = APIRouter()
 _STAGES = ["development", "staging", "production"]
 
 
-def _guard(request: Request) -> RedirectResponse | None:
-    return require_auth(request) or require_engine(request)
-
-
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def ml_dashboard(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def ml_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
     models = eng.model_registry.list_models()
     exps: list[Any] = []
     if eng.tracker:
         with contextlib.suppress(Exception):
             exps = eng.tracker.list_experiments() or []
+    feature_group_count = 0
+    if eng.feature_store is not None:
+        with contextlib.suppress(Exception):
+            feature_group_count = len(_feature_group_names(eng.feature_store))
     ctx = base_ctx(request) | {
         "model_count": len(models),
         "experiment_count": len(exps),
-        "feature_group_count": 0,
+        "feature_group_count": feature_group_count,
     }
     return render(request, "ml/dashboard.html", ctx)
 
@@ -62,29 +66,23 @@ def _model_rows(eng: Any) -> list[dict[str, str]]:
 
 
 @router.get("/models", response_class=HTMLResponse)
-async def models(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
-    flash = request.session.pop("flash", None)
-    ctx = base_ctx(request) | {"models": _model_rows(eng), "stages": _STAGES, "flash": flash}
+def models(request: Request, eng: ReadDep) -> HTMLResponse:
+    ctx = base_ctx(request) | {"models": _model_rows(eng), "stages": _STAGES}
     return render(request, "ml/models.html", ctx)
 
 
 @router.post("/models/register")
-async def register_model(
+def register_model(
     request: Request,
+    eng: WriteDep,
     name: Annotated[str, Form()],
     version: Annotated[str, Form()] = "1.0.0",
     framework: Annotated[str, Form()] = "",
     artifact_path: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
     try:
         from dataenginex.ml.registry import ModelArtifact, ModelStage
 
-        eng = get_eng()
         artifact = ModelArtifact(
             name=name.strip(),
             version=version.strip() or "1.0.0",
@@ -93,39 +91,35 @@ async def register_model(
             parameters={"framework": framework.strip()} if framework.strip() else {},
         )
         eng.model_registry.register(artifact)
-        request.session["flash"] = {"msg": f"Model '{name}' registered.", "kind": "success"}
+        flash(request, f"Model '{name}' registered.")
     except Exception as exc:
-        request.session["flash"] = {"msg": str(exc), "kind": "error"}
+        flash(request, str(exc), "error")
     return RedirectResponse("/ml/models", status_code=303)
 
 
 @router.post("/models/promote/{name}")
-async def promote_model(
+def promote_model(
     request: Request,
+    eng: WriteDep,
     name: str,
     stage: Annotated[str, Form()],
 ) -> RedirectResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
     try:
         from dataenginex.ml.registry import ModelStage
 
-        eng = get_eng()
         latest = eng.model_registry.get_latest(name)
         if latest:
             eng.model_registry.promote(name, latest.version, ModelStage(stage))
-            request.session["flash"] = {"msg": f"'{name}' promoted to {stage}.", "kind": "success"}
+            flash(request, f"'{name}' promoted to {stage}.")
     except Exception as exc:
-        request.session["flash"] = {"msg": str(exc), "kind": "error"}
+        flash(request, str(exc), "error")
     return RedirectResponse("/ml/models", status_code=303)
 
 
 @router.post("/models/delete/{name}")
-async def delete_model(request: Request, name: str) -> RedirectResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    get_eng().delete_model(name)
-    request.session["flash"] = {"msg": f"Model '{name}' deleted.", "kind": "success"}
+def delete_model(request: Request, eng: WriteDep, name: str) -> RedirectResponse:
+    eng.delete_model(name)
+    flash(request, f"Model '{name}' deleted.")
     return RedirectResponse("/ml/models", status_code=303)
 
 
@@ -133,10 +127,7 @@ async def delete_model(request: Request, name: str) -> RedirectResponse:
 
 
 @router.get("/experiments", response_class=HTMLResponse)
-async def experiments(request: Request, exp: str = "") -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def experiments(request: Request, eng: ReadDep, exp: str = "") -> HTMLResponse:
     exp_list: list[dict[str, Any]] = []
     runs: list[dict[str, Any]] = []
     if eng.tracker:
@@ -187,52 +178,166 @@ async def experiments(request: Request, exp: str = "") -> HTMLResponse:
     return render(request, "ml/experiments.html", ctx)
 
 
+@router.post("/experiments/new")
+def new_experiment(
+    request: Request,
+    eng: WriteDep,
+    exp_name: Annotated[str, Form()],
+) -> RedirectResponse:
+    try:
+        name = exp_name.strip()
+        if not name:
+            flash(request, "Experiment name is required.", "error")
+            return RedirectResponse("/ml/experiments", status_code=303)
+        if eng.tracker:
+            eng.tracker.create_experiment(name)
+            flash(request, f"Experiment '{name}' created.")
+        else:
+            flash(request, "Tracker not available — check engine config.", "error")
+    except Exception as exc:
+        flash(request, str(exc), "error")
+    return RedirectResponse("/ml/experiments", status_code=303)
+
+
 # ── Predictions ───────────────────────────────────────────────────────────────
 
 
+def _feature_default(name: str) -> float:
+    """A sensible non-zero default per feature so the example prediction is meaningful."""
+    n = name.lower()
+    if "rating" in n:
+        return 7.0
+    if "count" in n:
+        return 10.0
+    if n.startswith("g_"):
+        return 0.0
+    if "norm" in n:
+        return 0.5
+    return 0.0
+
+
+def _prediction_meta(eng: Any, model_names: list[str]) -> dict[str, dict[str, Any]]:
+    """Per-model metadata for the predictions form: purpose, feature names, defaults."""
+    meta: dict[str, dict[str, Any]] = {}
+    for name in model_names:
+        with contextlib.suppress(Exception):
+            art = eng.model_registry.get_latest(name)
+            params = getattr(art, "parameters", {}) or {}
+            feats = [str(f) for f in (params.get("feature_names") or [])]
+            meta[name] = {
+                "description": str(getattr(art, "description", "") or ""),
+                "features": feats,
+                "defaults": {f: _feature_default(f) for f in feats},
+            }
+    return meta
+
+
 @router.get("/predictions", response_class=HTMLResponse)
-async def predictions(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def predictions(request: Request, eng: ReadDep) -> HTMLResponse:
     model_names = eng.model_registry.list_models()
+    meta = _prediction_meta(eng, model_names)
+    default_model = model_names[0] if model_names else ""
+    out_meta = _output_meta(default_model)
     ctx = base_ctx(request) | {
         "model_names": model_names,
+        "selected_model": default_model,
+        "model_meta_json": _json.dumps(meta),
+        "prediction": None,
+        "model_desc": "",
+        "prediction_label": out_meta["label"],
+        "prediction_unit": out_meta["unit"],
+        "prediction_context": out_meta["context"],
         "output": "",
         "error": "",
-        "input_json": "{}",
     }
     return render(request, "ml/predictions.html", ctx)
 
 
+def _parse_prediction(output: str) -> float | None:
+    """Pull the first numeric prediction out of the serving engine's JSON output."""
+    with contextlib.suppress(Exception):
+        parsed = _json.loads(output)
+        if isinstance(parsed, list) and parsed and isinstance(parsed[0], int | float):
+            return round(float(parsed[0]), 3)
+    return None
+
+
+_MODEL_OUTPUT_META: dict[str, dict[str, str]] = {
+    "rating_predictor": {
+        "label": "Predicted IMDB rating",
+        "unit": "/ 10",
+        "context": (
+            "Higher = better rated. 7+ is well-received; 8+ is acclaimed. "
+            "Based on structural features like runtime, vote count, and director history."
+        ),
+    },
+    "movie_recommender": {
+        "label": "Recommendation score",
+        "unit": "/ 10",
+        "context": (
+            "This is a content-quality score, not a movie name. "
+            "Higher = stronger match based on genre mix and director signals. "
+            "Use the AI Playground → movie_recommender agent to get actual movie titles."
+        ),
+    },
+    "genre_classifier": {
+        "label": "Predicted decade",
+        "unit": "s",
+        "context": (
+            "The model predicts which decade the movie is from based on genre and rating. "
+            "e.g. 1990 → 1990s, 2010 → 2010s."
+        ),
+    },
+}
+
+
+def _output_meta(model: str) -> dict[str, str]:
+    """Return display metadata for the model's output value."""
+    return _MODEL_OUTPUT_META.get(model, {"label": "Predicted value", "unit": "", "context": ""})
+
+
 @router.post("/predictions/run", response_class=HTMLResponse)
-async def run_prediction(
+def run_prediction(
     request: Request,
+    eng: WriteDep,
     model: Annotated[str, Form()],
     input_json: Annotated[str, Form()],
 ) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
     output = ""
     error = ""
     try:
-        features = json.loads(input_json)
+        features = _json.loads(input_json)
         if eng.serving_engine is None:
             error = "Serving engine not available."
         else:
             result = eng.serving_engine.predict(model, features)
-            output = json.dumps(result, indent=2, default=str)
-    except json.JSONDecodeError as exc:
+            output = _json.dumps(result, indent=2, default=str)
+    except ValueError as exc:
         error = f"Invalid JSON: {exc}"
+    except FileNotFoundError:
+        error = (
+            f"Model artifact not found for '{model}'. "
+            "Train and save the model first, or register a valid artifact path."
+        )
     except Exception as exc:
         error = str(exc)
+    prediction = _parse_prediction(output) if (not error and output) else None
+    model_desc = ""
+    with contextlib.suppress(Exception):
+        art = eng.model_registry.get_latest(model)
+        model_desc = str(getattr(art, "description", "") or "")
+    out_meta = _output_meta(model)
     ctx = base_ctx(request) | {
         "model_names": eng.model_registry.list_models(),
         "selected_model": model,
+        "model_meta_json": _json.dumps(_prediction_meta(eng, eng.model_registry.list_models())),
+        "prediction": prediction,
+        "model_desc": model_desc,
+        "prediction_label": out_meta["label"],
+        "prediction_unit": out_meta["unit"],
+        "prediction_context": out_meta["context"],
         "output": output,
         "error": error,
-        "input_json": input_json,
     }
     if request.headers.get("HX-Request"):
         return render(request, "ml/prediction_result.html", ctx)
@@ -242,27 +347,21 @@ async def run_prediction(
 # ── Features ──────────────────────────────────────────────────────────────────
 
 
+def _feature_group_names(fs: Any) -> list[str]:
+    if hasattr(fs, "list_feature_groups"):
+        return fs.list_feature_groups() or []
+    if hasattr(fs, "list_groups"):
+        raw = fs.list_groups() or []
+        return [g if isinstance(g, str) else str(g.get("name", g)) for g in raw]
+    return []
+
+
 @router.get("/features", response_class=HTMLResponse)
-async def features(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def features(request: Request, eng: ReadDep) -> HTMLResponse:
     groups: list[dict[str, str]] = []
-    if eng.feature_store and hasattr(eng.feature_store, "list_groups"):
-        try:
-            raw = eng.feature_store.list_groups() or []
-            for g in raw:
-                groups.append(
-                    {
-                        "name": str(g.get("name", "") if isinstance(g, dict) else g),
-                        "entity": str(g.get("entity", "") if isinstance(g, dict) else ""),
-                        "feature_count": str(
-                            g.get("feature_count", "") if isinstance(g, dict) else ""
-                        ),
-                    }
-                )
-        except Exception:
-            pass
+    if eng.feature_store is not None:
+        with contextlib.suppress(Exception):
+            groups = eng.feature_store.feature_group_info()
     ctx = base_ctx(request) | {"feature_groups": groups}
     return render(request, "ml/features.html", ctx)
 
@@ -271,10 +370,7 @@ async def features(request: Request) -> HTMLResponse:
 
 
 @router.get("/drift", response_class=HTMLResponse)
-async def drift(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
+def drift(request: Request, eng: ReadDep) -> HTMLResponse:
     features_list: list[dict[str, str]] = []
     drift_score = "—"
     silver = eng.project_dir / ".dex" / "lakehouse" / "silver"
@@ -304,14 +400,12 @@ _DRIFT_URL = "/ml/drift"
 
 
 @router.post("/drift/run")
-async def run_drift(  # noqa: C901
+def run_drift(  # noqa: C901
     request: Request,
+    eng: WriteDep,
     table: Annotated[str, Form()] = "",
     feature: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    eng = get_eng()
     try:
         import duckdb
         from dataenginex.ml.drift import DriftDetector
@@ -327,8 +421,9 @@ async def run_drift(  # noqa: C901
             request.session["drift_error"] = f"Table '{table}' not found in silver layer."
             return RedirectResponse(_DRIFT_URL, status_code=303)
 
+        abs_path = str(parquet_path.resolve())
         with duckdb.connect(":memory:") as conn:
-            row = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{parquet_path}')").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM read_parquet($1)", [abs_path]).fetchone()
             total = row[0] if row else 0
             if total < 10:
                 request.session["drift_error"] = "Not enough rows for drift detection."
@@ -336,19 +431,20 @@ async def run_drift(  # noqa: C901
             mid = total // 2
             if not feature:
                 cols = conn.execute(
-                    f"DESCRIBE SELECT * FROM read_parquet('{parquet_path}') LIMIT 1"
+                    "DESCRIBE SELECT * FROM read_parquet($1) LIMIT 1", [abs_path]
                 ).fetchall()
                 numeric = [c[0] for c in cols if c[1] in ("DOUBLE", "FLOAT", "BIGINT", "INTEGER")]
                 feature = numeric[0] if numeric else ""
             if not feature:
                 request.session["drift_error"] = "No numeric feature found."
                 return RedirectResponse(_DRIFT_URL, status_code=303)
+            safe_col = feature.replace('"', '""')
             ref_rows = conn.execute(
-                f"SELECT {feature} FROM read_parquet('{parquet_path}') LIMIT {mid}"
+                f'SELECT "{safe_col}" FROM read_parquet($1) LIMIT {mid}', [abs_path]
             ).fetchall()
             cur_rows = conn.execute(
-                f"SELECT {feature} FROM read_parquet('{parquet_path}')"
-                f" LIMIT {total - mid} OFFSET {mid}"
+                f'SELECT "{safe_col}" FROM read_parquet($1) LIMIT {total - mid} OFFSET {mid}',
+                [abs_path],
             ).fetchall()
         reference = [float(r[0]) for r in ref_rows if r[0] is not None]
         current = [float(r[0]) for r in cur_rows if r[0] is not None]
@@ -368,19 +464,17 @@ async def run_drift(  # noqa: C901
 
 # ── Stubs ─────────────────────────────────────────────────────────────────────
 
+_ML_STUB_TITLES = {
+    "/ml/hyperopt": "Hyperparameter Optimization",
+    "/ml/ab-test": "A/B Testing",
+    "/ml/model-card": "Model Cards",
+    "/ml/promotions": "Promotion Workflow",
+}
+
 
 @router.get("/hyperopt", response_class=HTMLResponse)
 @router.get("/ab-test", response_class=HTMLResponse)
 @router.get("/model-card", response_class=HTMLResponse)
 @router.get("/promotions", response_class=HTMLResponse)
-async def ml_stub(request: Request) -> HTMLResponse:
-    if redir := _guard(request):
-        return redir  # type: ignore[return-value]
-    titles = {
-        "/ml/hyperopt": "Hyperparameter Optimization",
-        "/ml/ab-test": "A/B Testing",
-        "/ml/model-card": "Model Cards",
-        "/ml/promotions": "Promotion Workflow",
-    }
-    ctx = base_ctx(request) | {"page_title": titles.get(request.url.path, "Coming Soon")}
-    return render(request, "stub.html", ctx)
+def ml_stub(request: Request, _: ReadDep) -> HTMLResponse:
+    return stub_page(request, _ML_STUB_TITLES)

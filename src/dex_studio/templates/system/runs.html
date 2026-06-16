@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block title %}Runs — DEX Studio{% endblock %}
+
+{% block page_title %}Runs{% endblock %}
+{% block page_sub %}unified history across pipelines, transforms, workflows, agents and streams{% endblock %}
+
+{% block page_actions %}
+<a href="/system/runs" class="btn sm ghost">
+  <i data-lucide="download" style="width:12px;height:12px"></i> Export CSV
+</a>
+<a href="/system/runs" class="btn sm primary">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Auto-refresh · 5 s
+</a>
+{% endblock %}
+
+{% block content %}
+
+{# ── Filter bar ──────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:10px">
+
+  {# Type row with counts #}
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="cap" style="width:38px;line-height:26px">Type</span>
+    {% set type_counts = {} %}
+    {% for r in runs %}
+      {% set _ = type_counts.update({r.type: (type_counts.get(r.type, 0) + 1)}) %}
+    {% endfor %}
+    {% for t in type_options %}
+    <a href="?type={{ t }}&status={{ filter_status }}"
+       class="chip {{ 'active' if filter_type == t }}"
+       style="text-decoration:none">
+      {{ 'All' if t == 'all' else t }}
+      <span class="count">{{ runs | length if t == 'all' else type_counts.get(t, 0) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="div-y"></div>
+
+  {# Status row with counts #}
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="cap" style="width:38px;line-height:26px">Status</span>
+    {% set status_counts = {} %}
+    {% for r in runs %}
+      {% set _ = status_counts.update({r.status: (status_counts.get(r.status, 0) + 1)}) %}
+    {% endfor %}
+    {% for s in status_options %}
+    <a href="?type={{ filter_type }}&status={{ s }}"
+       class="chip {{ 'active' if filter_status == s }}"
+       style="text-decoration:none">
+      {{ 'All' if s == 'all' else s }}
+      <span class="count">{{ runs | length if s == 'all' else status_counts.get(s, 0) }}</span>
+    </a>
+    {% endfor %}
+    <div style="flex:1"></div>
+    <div class="input-icon" style="width:240px">
+      <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
+      <input class="input" id="run-search" placeholder="name contains…" style="height:26px;font-size:var(--text-sm)">
+    </div>
+  </div>
+</div>
+
+{# ── Runs table ──────────────────────────────────────────────────────────── #}
+<div class="card bare" style="margin-top:16px">
+  <table class="tbl dex-table" id="runs-table">
+    <thead>
+      <tr>
+        <th style="width:96px" class="sortable">Started</th>
+        <th style="width:110px" class="sortable">Type</th>
+        <th class="sortable">Name</th>
+        <th style="width:120px" class="sortable">Status</th>
+        <th style="width:100px" class="num sortable">Duration</th>
+        <th>I/O</th>
+        <th>Trigger</th>
+        <th style="width:40px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if runs %}
+        {% for r in runs %}
+        {# Map type to lucide icon #}
+        {% if r.type == 'pipeline' %}{% set ricon = 'git-branch' %}
+        {% elif r.type == 'transform' %}{% set ricon = 'zap' %}
+        {% elif r.type == 'workflow' %}{% set ricon = 'workflow' %}
+        {% elif r.type == 'agent' %}{% set ricon = 'bot' %}
+        {% elif r.type == 'stream' %}{% set ricon = 'radio' %}
+        {% else %}{% set ricon = 'play' %}{% endif %}
+
+        <tr class="run-row" data-run-id="{{ loop.index }}"
+            data-run-name="{{ r.name }}"
+            data-run-type="{{ r.type }}"
+            data-run-status="{{ r.status }}"
+            data-run-started="{{ r.started }}"
+            data-run-duration="{{ r.duration }}"
+            data-run-trigger="{{ r.trigger }}"
+            data-run-io="{{ r.io }}"
+            style="cursor:pointer">
+          <td class="mono" style="font-size:11px;color:var(--text-3)">{{ r.started }}</td>
+          <td>
+            <span class="run-type-tag run-type-{{ r.type }}">
+              <i data-lucide="{{ ricon }}" style="width:11px;height:11px;flex-shrink:0"></i>
+              {{ r.type }}
+            </span>
+          </td>
+          <td><span class="mono" style="color:var(--text);font-size:var(--text-sm)">{{ r.name }}</span></td>
+          <td>
+            {% if r.status in ('success', 'succeeded') %}<span class="pill success">succeeded</span>
+            {% elif r.status in ('error', 'failed') %}<span class="pill error">failed</span>
+            {% elif r.status == 'running' %}<span class="pill running">running</span>
+            {% elif r.status in ('cancelled', 'queued') %}<span class="pill warn">{{ r.status }}</span>
+            {% else %}<span class="pill">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td class="num mono dim">{{ r.duration }}</td>
+          <td class="muted" style="font-size:12px">{{ r.io }}</td>
+          <td class="muted" style="font-size:12px">{{ r.trigger }}</td>
+          <td>
+            <i data-lucide="more-horizontal" style="width:14px;height:14px;opacity:.4"></i>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8">
+            <div class="dex-empty-state" style="padding:48px 24px">
+              <i data-lucide="list" style="width:32px;height:32px;opacity:.3;margin-bottom:12px"></i>
+              <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No runs recorded yet</div>
+              <div class="muted" style="font-size:var(--text-xs)">
+                Run history will appear here once pipelines, agents or workflows execute.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="spread" style="padding:10px 4px;font-size:12px;color:var(--text-3)">
+  <span>Showing {{ runs | length }} of {{ total_count }}</span>
+  {% if runs | length >= 50 %}
+  <div class="row" style="gap:6px">
+    <button class="btn sm ghost" disabled>
+      <i data-lucide="arrow-left" style="width:11px;height:11px"></i> Prev
+    </button>
+    <button class="btn sm ghost">
+      Next 50 <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Run Drawer (slide-in detail panel) ──────────────────────────────────── #}
+<button class="drawer-mask" id="run-drawer-mask" aria-label="Close run detail"
+        onclick="closeRunDrawer()"></button>
+<dialog class="drawer" id="run-drawer" aria-label="Run detail">
+
+  <div class="drawer-hd">
+    <div class="col" style="gap:2px;flex:1;min-width:0">
+      <div class="row" style="gap:8px;align-items:center">
+        <span class="run-type-tag run-type-pipeline" id="dr-type-tag" style="font-size:12px">
+          <i data-lucide="git-branch" style="width:11px;height:11px"></i>
+          <span id="dr-type-label">pipeline</span>
+        </span>
+        <span id="dr-status-pill" class="pill success" style="height:18px;font-size:10px">succeeded</span>
+      </div>
+      <div class="mono" id="dr-name" style="font-size:14px;font-weight:600;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">run-name</div>
+    </div>
+    <button class="btn sm ghost" onclick="closeRunDrawer()" style="flex-shrink:0">
+      <i data-lucide="x" style="width:14px;height:14px"></i>
+    </button>
+  </div>
+
+  <div class="drawer-meta">
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Started</span>
+      <span class="mono" id="dr-started" style="font-size:12px">—</span>
+    </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Duration</span>
+      <span class="mono" id="dr-duration" style="font-size:12px">—</span>
+    </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Trigger</span>
+      <span class="mono" id="dr-trigger" style="font-size:12px">—</span>
+    </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">I/O</span>
+      <span class="mono" id="dr-io" style="font-size:12px">—</span>
+    </div>
+  </div>
+
+  {# Tabs #}
+  <div class="tabs" style="padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+    <button class="tab active" onclick="switchDrawerTab('logs', this)">Logs</button>
+    <button class="tab" onclick="switchDrawerTab('params', this)">Params</button>
+    <button class="tab" onclick="switchDrawerTab('lineage', this)">Lineage</button>
+  </div>
+
+  {# Logs pane #}
+  <div id="dr-pane-logs" class="drawer-logs">
+    <div class="muted" style="font-size:12px;padding:16px;text-align:center">Select a run to view logs</div>
+  </div>
+
+  {# Params pane #}
+  <div id="dr-pane-params" class="drawer-logs" style="display:none">
+    <div class="muted" style="font-size:12px;padding:16px;text-align:center">Select a run to view params</div>
+  </div>
+
+  {# Lineage pane #}
+  <div id="dr-pane-lineage" class="drawer-logs" style="display:none">
+    <div class="muted" style="font-size:12px;padding:16px;text-align:center">Select a run to view lineage</div>
+  </div>
+
+  <div class="drawer-foot">
+    <button class="btn sm ghost">
+      <i data-lucide="external-link" style="width:12px;height:12px"></i> Open full detail
+    </button>
+    <button class="btn sm ghost" onclick="closeRunDrawer()">Close</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ── Name search filter ──────────────────────────────────────────────────
+  const input = document.getElementById('run-search');
+  const table = document.getElementById('runs-table');
+  if (input && table) {
+    input.addEventListener('input', () => {
+      const q = input.value.toLowerCase();
+      table.querySelectorAll('tbody tr.run-row').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  // ── Run Drawer ──────────────────────────────────────────────────────────
+  const TYPE_ICONS = {
+    pipeline:  'git-branch',
+    transform: 'zap',
+    workflow:  'workflow',
+    agent:     'bot',
+    stream:    'radio',
+  };
+
+  function openRunDrawer(row) {
+    const type     = row.dataset.runType || 'pipeline';
+    const name     = row.dataset.runName || '—';
+    const status   = row.dataset.runStatus || '—';
+    const started  = row.dataset.runStarted || '—';
+    const duration = row.dataset.runDuration || '—';
+    const trigger  = row.dataset.runTrigger || '—';
+    const io       = row.dataset.runIo || '—';
+
+    // type tag
+    const tagEl = document.getElementById('dr-type-tag');
+    tagEl.className = 'run-type-tag run-type-' + type;
+    const ico = tagEl.querySelector('[data-lucide]');
+    if (ico) { ico.dataset.lucide = TYPE_ICONS[type] || 'play'; }
+    document.getElementById('dr-type-label').textContent = type;
+
+    // status pill
+    const pill = document.getElementById('dr-status-pill');
+    const statusMap = {
+      success: ['success', 'succeeded'], succeeded: ['success', 'succeeded'],
+      error: ['error', 'failed'], failed: ['error', 'failed'],
+      running: ['running', 'running'],
+    };
+    const [cls, label] = statusMap[status] || ['', status];
+    pill.className = 'pill ' + cls;
+    pill.style.height = '18px'; pill.style.fontSize = '10px';
+    pill.textContent = label;
+
+    document.getElementById('dr-name').textContent = name;
+    document.getElementById('dr-started').textContent = started;
+    document.getElementById('dr-duration').textContent = duration;
+    document.getElementById('dr-trigger').textContent = trigger;
+    document.getElementById('dr-io').textContent = io;
+    document.getElementById('dr-lineage-name').textContent = name;
+
+    // re-init Lucide icons inside drawer
+    if (globalThis.lucide) lucide.createIcons({ el: document.getElementById('run-drawer') });
+
+    document.getElementById('run-drawer-mask').classList.add('open');
+    document.getElementById('run-drawer').classList.add('open');
+
+    // mark active row
+    table && table.querySelectorAll('tbody tr').forEach(r => r.classList.remove('active'));
+    row.classList.add('active');
+  }
+
+  globalThis.closeRunDrawer = function () {
+    document.getElementById('run-drawer-mask').classList.remove('open');
+    document.getElementById('run-drawer').classList.remove('open');
+    table && table.querySelectorAll('tbody tr').forEach(r => r.classList.remove('active'));
+  };
+
+  globalThis.switchDrawerTab = function (pane, btn) {
+    document.querySelectorAll('#run-drawer .tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    ['logs', 'params', 'lineage'].forEach(p => {
+      const el = document.getElementById('dr-pane-' + p);
+      if (el) el.style.display = p === pane ? '' : 'none';
+    });
+  };
+
+  // attach row click
+  document.querySelectorAll('tr.run-row').forEach(row => {
+    row.addEventListener('click', () => openRunDrawer(row));
+  });
+
+  // Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeRunDrawer();
+  });
+})();
+</script>
+{% endblock %}

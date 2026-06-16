@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,24 +17,45 @@ from dex_studio._engine import (
     init_engine,
     validate_config_file,
 )
-from dex_studio.auth import logout, validate_and_login
-from dex_studio.routers._deps import base_ctx, render, require_auth, require_engine
+from dex_studio.auth import is_authenticated, logout, validate_and_login
+from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render
 
 router = APIRouter()
 
 
-# ── Project Hub (/") ─────────────────────────────────────────────────────────
+def _hub_recent_runs(eng: Any) -> list[dict[str, Any]]:
+    runs: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        for r in reversed(eng.store.get_pipeline_runs()[-7:]):
+            dur_ms = r.duration_ms
+            dur_str = f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
+            runs.append(
+                {
+                    "type": "pipeline",
+                    "name": r.pipeline_name,
+                    "status": "success" if r.success else "error",
+                    "started": str(r.timestamp)[:19].replace("T", " "),
+                    "duration": dur_str,
+                }
+            )
+    return runs
+
+
+# ── Privacy alias — canonical home is /secops ─────────────────────────────────
+
+
+@router.get("/privacy")
+@router.get("/privacy/")
+def privacy_redirect() -> RedirectResponse:
+    """Redirect /privacy* → /secops (Governance nav maps here)."""
+    return RedirectResponse(url="/secops", status_code=301)
+
+
+# ── Project Hub ("/") ────────────────────────────────────────────────────────
 
 
 @router.get("/", response_class=HTMLResponse)
-async def hub(request: Request) -> HTMLResponse:
-    if redir := require_auth(request):
-        return redir  # type: ignore[return-value]
-    if redir := require_engine(request):
-        return redir  # type: ignore[return-value]
-    from dex_studio.routers._deps import get_eng
-
-    eng = get_eng()
+def hub(request: Request, eng: ReadDep) -> HTMLResponse:
     stats = eng.pipeline_stats()
     models = eng.model_registry.list_models()
     health = eng.health()
@@ -41,13 +63,55 @@ async def hub(request: Request) -> HTMLResponse:
     source_count = len(eng.config.data.sources or {})
     pipeline_count = stats.get("total", 0)
 
+    # ── Layer stats (best-effort — lakehouse may be None) ─────────────────────
+    lakehouse = getattr(eng, "lakehouse", None)
+    layer_stats: list[dict[str, Any]] = []
+    table_count = source_count
+    if lakehouse is not None:
+        try:
+            for layer in ("bronze", "silver", "gold"):
+                tables = getattr(lakehouse, f"{layer}_tables", None) or []
+                layer_stats.append(
+                    {
+                        "layer": layer,
+                        "count": len(tables),
+                        "rows": "—",
+                        "size": "—",
+                        "desc": {
+                            "bronze": "raw ingest — sources, files, streams",
+                            "silver": "cleaned, joined, masked",
+                            "gold": "modeled features, dashboards",
+                        }[layer],
+                    }
+                )
+                table_count += len(tables)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ── Engine components ─────────────────────────────────────────────────────
+    components: list[dict[str, Any]] = []
+    for name, val in health.get("components", {}).items():
+        available = bool(val) if not isinstance(val, bool) else val
+        components.append(
+            {
+                "name": name.replace("_", " ").title(),
+                "ok": available,
+            }
+        )
+
+    recent_runs = _hub_recent_runs(eng)
+
     ctx = base_ctx(request) | {
         "stats": stats,
         "pipeline_count": pipeline_count,
         "source_count": source_count,
         "model_count": len(models),
         "agent_count": agents_count,
+        "table_count": table_count,
         "health_status": health.get("status", "unknown"),
+        "layer_stats": layer_stats,
+        "components": components,
+        "recent_runs": recent_runs,
         "user_projects": [{"name": n, "path": str(p)} for n, p in find_user_projects()],
     }
     return render(request, "root/hub.html", ctx)
@@ -57,7 +121,7 @@ async def hub(request: Request) -> HTMLResponse:
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
-async def onboarding_page(request: Request) -> HTMLResponse:
+def onboarding_page(request: Request) -> HTMLResponse:
     user_projects = [{"name": n, "path": str(p), "source": "user"} for n, p in find_user_projects()]
     example_projects = [
         {"name": n, "path": str(p), "source": "example"} for n, p in find_starter_configs()
@@ -76,11 +140,13 @@ async def onboarding_page(request: Request) -> HTMLResponse:
 
 
 @router.post("/onboarding/open")
-async def onboarding_open(
+def onboarding_open(
     request: Request,
     config_path: Annotated[str, Form()],
     is_example: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
     path = config_path.strip()
     if not path:
         request.session["onboarding_error"] = "Enter or select a path to a dex.yaml file."
@@ -102,11 +168,13 @@ async def onboarding_open(
 
 
 @router.post("/onboarding/create")
-async def onboarding_create(
+def onboarding_create(
     request: Request,
     project_name: Annotated[str, Form()] = "",
     project_path: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
     name = project_name.strip() or "my-project"
     slug = name.lower().replace(" ", "-")
     dest = (
@@ -141,8 +209,9 @@ async def onboarding_create(
 
 
 @router.post("/projects/switch")
-async def switch_project(
+def switch_project(
     request: Request,
+    _: WriteDep,
     config_path: Annotated[str, Form()],
 ) -> RedirectResponse:
     path = config_path.strip()
@@ -156,8 +225,9 @@ async def switch_project(
 
 
 @router.post("/projects/set-default")
-async def set_default_project(
+def set_default_project(
     request: Request,
+    _: WriteDep,
     config_path: Annotated[str, Form()],
 ) -> RedirectResponse:
     path = config_path.strip()
@@ -192,7 +262,7 @@ def _save_default(config_path: str) -> None:
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request) -> HTMLResponse:
+def login_page(request: Request) -> HTMLResponse:
     ctx = {
         "request": request,
         "current_path": "/login",
@@ -204,17 +274,18 @@ async def login_page(request: Request) -> HTMLResponse:
 
 
 @router.post("/login")
-async def login_submit(
+def login_submit(
     request: Request,
     api_key: Annotated[str, Form()],
 ) -> RedirectResponse:
     if validate_and_login(request, api_key):
+        _get_csrf_token(request)  # seed CSRF token at login so all POSTs are protected immediately
         return RedirectResponse("/", status_code=303)
     request.session["login_error"] = "Invalid API key."
     return RedirectResponse("/login", status_code=303)
 
 
 @router.get("/logout")
-async def logout_route(request: Request) -> RedirectResponse:
+def logout_route(request: Request) -> RedirectResponse:
     logout(request)
     return RedirectResponse("/login", status_code=303)

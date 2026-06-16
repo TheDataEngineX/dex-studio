@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Costs — DEX Studio{% endblock %}
+
+{% block page_title %}Cost{% endblock %}
+{% block page_sub %}all external API spend · current month: {{ month_label }}{% endblock %}
+
+{% block page_actions %}
+<a href="/system/costs" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+</a>
+<select class="input" style="width:140px;height:26px;font-size:var(--text-sm)">
+  <option value="current" selected>{{ month_label }}</option>
+</select>
+<a href="/system/costs" class="btn sm ghost">
+  <i data-lucide="download" style="width:12px;height:12px"></i> Export
+</a>
+{% endblock %}
+
+{% block content %}
+
+{# ── Budget + by-provider ────────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1.4fr 1fr;gap:var(--space-3)">
+
+  {# Budget card #}
+  <div class="card" style="padding:20px">
+    <div class="muted cap">Spent this month</div>
+    <div class="row" style="align-items:baseline;gap:12px;margin-top:6px">
+      <div style="font-size:40px;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">
+        ${{ "%.2f"|format(spend_total) }}
+      </div>
+      {% if budget %}
+      <div class="muted">of ${{ "%.2f"|format(budget) }} budget</div>
+      {% endif %}
+      {% if spend_total == 0 %}
+      <span class="pill info">no spend yet</span>
+      {% elif budget_pct < 50 %}
+      <span class="pill success">on track</span>
+      {% elif budget_pct < 85 %}
+      <span class="pill warn">watch budget</span>
+      {% else %}
+      <span class="pill error">near limit</span>
+      {% endif %}
+    </div>
+    {% if budget %}
+    <div class="progress" style="margin-top:14px">
+      <i style="width:{{ budget_pct }}%"></i>
+    </div>
+    <div class="spread" style="margin-top:6px;font-size:11px;color:var(--text-3)">
+      <span>day {{ month_day }} of {{ month_days }}  ·  {{ ((month_day / month_days) * 100) | round(0) | int }}% of month elapsed</span>
+      <span>projected EOM <span class="mono" style="color:var(--text-2)">${{ "%.2f"|format(spend_total * 1.38) }}</span></span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# By-provider card #}
+  <div class="card" style="padding:20px">
+    <div class="muted cap" style="margin-bottom:10px">By provider</div>
+    {% if providers %}
+      {% set provider_colors = {
+        'anthropic': 'var(--accent-9)',
+        'openai':    'var(--green-9)',
+        'local':     'var(--gray-7)',
+        'cohere':    'var(--violet-9)',
+        'google':    'var(--amber-9)',
+      } %}
+      {% for p in providers %}
+      {% set col = provider_colors.get(p.name | lower, 'var(--blue-9)') %}
+      <div class="col" style="gap:4px;margin-bottom:10px">
+        <div class="row">
+          <span style="width:8px;height:8px;border-radius:2px;background:{{ col }};margin-right:8px;flex-shrink:0"></span>
+          <span style="flex:1;font-size:var(--text-sm)">{{ p.name }}</span>
+          <span class="mono tnum">${{ "%.2f"|format(p.spend) }}</span>
+        </div>
+        <div class="progress thin">
+          <i style="width:{{ (p.share * 100) | round(1) }}%;background:{{ col }}"></i>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="muted" style="font-size:12px;padding:8px 0">No spend recorded yet</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Daily spend stacked bar chart ───────────────────────────────────────── #}
+<div class="card" style="padding:18px;margin-top:var(--space-3)">
+  <div class="spread" style="margin-bottom:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px">Daily spend, stacked by provider</div>
+      <div class="muted" style="font-size:12px">last 30 days · USD</div>
+    </div>
+    <div class="row" style="gap:12px">
+      {% for leg in [
+        {'name': 'OpenAI',    'col': 'var(--green-9)'},
+        {'name': 'Anthropic', 'col': 'var(--accent-9)'},
+        {'name': 'Local',     'col': 'var(--gray-7)'},
+      ] %}
+      <div class="row" style="gap:5px;font-size:11px;color:var(--text-3)">
+        <span style="width:8px;height:8px;border-radius:2px;background:{{ leg.col }};flex-shrink:0"></span>
+        {{ leg.name }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if spend_total > 0 %}
+  <div id="cost-chart" style="width:100%;height:200px">
+    <div class="dex-empty-state" style="padding:40px 0">
+      <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+      <div class="muted" style="font-size:var(--text-xs)">Loading chart…</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="dex-empty-state" style="padding:40px 0">
+    <i data-lucide="bar-chart-2" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+    <div class="muted" style="font-size:var(--text-xs)">No spend yet this period</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Breakdown by model ──────────────────────────────────────────────────── #}
+<div class="section-h">
+  <h2>Breakdown by model</h2>
+  <span class="muted" style="font-size:var(--text-xs)">populated from outbound audit log</span>
+</div>
+
+<div class="card bare">
+  <table class="tbl dex-table">
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Model</th>
+        <th class="num sortable">Calls</th>
+        <th class="num">Tokens in</th>
+        <th class="num">Tokens out</th>
+        <th class="num sortable">Cost</th>
+        <th class="num" style="width:110px">Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if breakdown %}
+        {% for r in breakdown %}
+        <tr>
+          <td>
+            <span class="pill" style="background:transparent;border-color:var(--border);color:var(--text-2)">
+              {{ r.provider }}
+            </span>
+          </td>
+          <td class="mono" style="font-size:var(--text-sm)">{{ r.model }}</td>
+          <td class="num mono dim">{{ r.calls }}</td>
+          <td class="num mono dim">{{ r.tokens_in }}</td>
+          <td class="num mono dim">{{ r.tokens_out }}</td>
+          <td class="num mono" style="font-weight:500">${{ "%.4f"|format(r.cost) }}</td>
+          <td class="num">
+            <div class="row" style="justify-content:flex-end;gap:8px">
+              <div style="width:60px;height:4px;background:var(--bg-elev-2);border-radius:999px;overflow:hidden">
+                <div style="width:{{ (r.share * 100) | round(1) }}%;height:100%;background:var(--accent-9)"></div>
+              </div>
+              <span class="mono dim" style="width:36px">{{ "%.1f"|format(r.share * 100) }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+      <tr>
+        <td colspan="7" style="text-align:center;padding:24px;color:var(--text-4)">
+          No model usage recorded — spend tracking activates once outbound LLM calls are made
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const el = document.getElementById('cost-chart');
+  if (!el) return;
+
+  const anthropic = JSON.parse(el.dataset.anthropic || '[]');
+  const openai    = JSON.parse(el.dataset.openai    || '[]');
+  const local     = JSON.parse(el.dataset.local     || '[]');
+  const n = anthropic.length;
+  if (!n) return;
+
+  // hide fallback
+  const empty = document.getElementById('cost-chart-empty');
+  if (empty) empty.style.display = 'none';
+
+  const H = 200, padTop = 10, padBot = 24, padL = 38, padR = 8;
+  const innerH = H - padTop - padBot;
+  const innerW = el.clientWidth - padL - padR || 600;
+  const barW = Math.floor((innerW / n) * 0.65);
+  const barGap = Math.floor((innerW / n) * 0.35);
+
+  const maxTotal = Math.max(...anthropic.map((v, i) => v + openai[i] + local[i]));
+
+  const COLORS = {
+    openai:    'var(--green-9)',
+    anthropic: 'var(--accent-9)',
+    local:     'var(--gray-7)',
+  };
+
+  // build SVG
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${el.clientWidth || 600} ${H}`);
+  svg.style.width = '100%';
+  svg.style.height = H + 'px';
+
+  // gridlines
+  [0.25, 0.5, 0.75, 1].forEach(g => {
+    const y = padTop + innerH - g * innerH;
+    const line = document.createElementNS(svgNS, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', el.clientWidth || 600);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'var(--border)');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '2 3');
+    svg.appendChild(line);
+
+    // Y label
+    const label = document.createElementNS(svgNS, 'text');
+    label.setAttribute('x', padL - 4); label.setAttribute('y', y + 3);
+    label.setAttribute('text-anchor', 'end');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('fill', 'var(--text-4)');
+    label.setAttribute('font-family', 'var(--font-mono)');
+    label.textContent = '$' + (maxTotal * g).toFixed(2);
+    svg.appendChild(label);
+  });
+
+  // bars
+  anthropic.forEach((aVal, i) => {
+    const oVal = openai[i] || 0;
+    const lVal = local[i] || 0;
+    const x = padL + i * (barW + barGap);
+    const stacks = [
+      { val: lVal, color: COLORS.local },
+      { val: aVal, color: COLORS.anthropic },
+      { val: oVal, color: COLORS.openai },
+    ];
+
+    let yAcc = padTop + innerH; // start at bottom
+    stacks.forEach(s => {
+      if (s.val <= 0) return;
+      const barH = (s.val / maxTotal) * innerH;
+      yAcc -= barH;
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', yAcc);
+      rect.setAttribute('width', barW);
+      rect.setAttribute('height', barH);
+      rect.setAttribute('fill', s.color);
+      rect.setAttribute('rx', '1.5');
+      rect.setAttribute('opacity', i === n - 1 ? '1' : '0.85');
+      const title = document.createElementNS(svgNS, 'title');
+      title.textContent = '$' + s.val.toFixed(3);
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+
+    // X label every 5 days
+    if (i % 5 === 0 || i === n - 1) {
+      const lbl = document.createElementNS(svgNS, 'text');
+      lbl.setAttribute('x', x + barW / 2);
+      lbl.setAttribute('y', H - 4);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.setAttribute('font-size', '9');
+      lbl.setAttribute('fill', 'var(--text-4)');
+      lbl.setAttribute('font-family', 'var(--font-mono)');
+      lbl.textContent = 'd' + (i + 1);
+      svg.appendChild(lbl);
+    }
+  });
+
+  el.appendChild(svg);
+})();
+</script>
+{% endblock %}

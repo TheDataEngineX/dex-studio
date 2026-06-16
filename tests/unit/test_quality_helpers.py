@@ -7,7 +7,7 @@ from dataenginex.engine import DexEngine
 
 def test_duckdb_context_manager_creates_connection(engine: DexEngine) -> None:
     """_duckdb() context manager yields a DuckDB connection."""
-    with engine._duckdb() as conn:
+    with engine._duckdb_ro() as conn:
         assert conn is not None
         result = conn.execute("SELECT 1 as n").fetchone()
         assert result is not None

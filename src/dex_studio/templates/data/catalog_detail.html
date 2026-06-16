@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}{{ table_name }} — Catalog — DEX Studio{% endblock %}
+
+{% block page_title %}
+<span class="layer-chip {{ layer }}" style="font-size:11px;vertical-align:2px;margin-right:6px">{{ layer }}</span>
+{{ table_name }}
+{% endblock %}
+{% block page_sub %}{{ column_count }} columns · {{ row_count | string | replace('None', '—') }} rows · {{ size }}{% endblock %}
+
+{% block page_actions %}
+<a href="/data/catalog" class="btn sm ghost">
+  <i data-lucide="arrow-left" style="width:12px;height:12px"></i> Catalog
+</a>
+<a href="/data/lineage" class="btn sm ghost">
+  <i data-lucide="share-2" style="width:12px;height:12px"></i> Lineage
+</a>
+{% endblock %}
+
+{% block content %}
+
+{# ── Stats row ────────────────────────────────────────────────────────────── #}
+<div class="grid grid-4" style="margin-bottom:16px">
+  {% for stat in [
+    {'label': 'Layer',   'value': layer,                                           'mono': false},
+    {'label': 'Rows',    'value': row_count | string | replace('None', '—'),       'mono': true},
+    {'label': 'Columns', 'value': column_count | string,                           'mono': true},
+    {'label': 'Size',    'value': size,                                            'mono': true},
+  ] %}
+  <div class="card" style="padding:14px 16px">
+    <div class="muted" style="font-size:11px;margin-bottom:4px">{{ stat.label }}</div>
+    <div style="font-size:15px;font-weight:600{% if stat.mono %};font-family:var(--font-mono){% endif %}">
+      {% if stat.label == 'Layer' %}
+        <span class="layer-chip {{ layer }}" style="font-size:12px">{{ layer }}</span>
+      {% else %}
+        {{ stat.value }}
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+
+  {# ── Schema ───────────────────────────────────────────────────────────────── #}
+  <div class="card bare" style="overflow:hidden">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600">
+      Schema
+      <span class="badge" style="margin-left:6px;font-weight:400">{{ schema | length }}</span>
+    </div>
+    {% if schema %}
+    <table class="tbl dex-table" style="font-size:12px">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Column</th>
+          <th>Type</th>
+          <th style="width:60px;text-align:center">Nullable</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for col in schema %}
+        <tr>
+          <td class="mono dim" style="font-size:10.5px">{{ loop.index }}</td>
+          <td class="mono" style="color:var(--text)">{{ col.name if col.name else col.column_name }}</td>
+          <td class="mono dim" style="font-size:11px">{{ col.dtype if col.dtype else col.data_type }}</td>
+          <td style="text-align:center">
+            {% if col.nullable %}
+            <span class="muted" style="font-size:10px">yes</span>
+            {% else %}
+            <span style="font-size:10px;color:var(--text-3)">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="muted" style="padding:24px;text-align:center;font-size:12px">No schema available</div>
+    {% endif %}
+  </div>
+
+  {# ── Lineage panel ────────────────────────────────────────────────────────── #}
+  <div class="col" style="gap:16px">
+    <div class="card" style="padding:14px 16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">Upstream</div>
+      {% if upstream %}
+      <div class="col" style="gap:6px">
+        {% for u in upstream %}
+        <a href="/data/catalog/{{ u.name }}" class="row" style="gap:8px;text-decoration:none;color:inherit">
+          <span class="layer-chip {{ u.layer }}" style="font-size:9px;height:14px;padding:0 5px">{{ u.layer[:2] | upper }}</span>
+          <span class="mono" style="font-size:12px;color:var(--text)">{{ u.name }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <span class="muted" style="font-size:12px">Source table — no upstream</span>
+      {% endif %}
+    </div>
+
+    <div class="card" style="padding:14px 16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">Downstream</div>
+      {% if downstream %}
+      <div class="col" style="gap:6px">
+        {% for d in downstream %}
+        <a href="/data/catalog/{{ d.name }}" class="row" style="gap:8px;text-decoration:none;color:inherit">
+          <span class="layer-chip {{ d.layer }}" style="font-size:9px;height:14px;padding:0 5px">{{ d.layer[:2] | upper }}</span>
+          <span class="mono" style="font-size:12px;color:var(--text)">{{ d.name }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <span class="muted" style="font-size:12px">No downstream recorded yet</span>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{# ── Preview ───────────────────────────────────────────────────────────────── #}
+{% if preview_cols %}
+<div class="card bare" style="margin-top:16px;overflow:hidden">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600">
+    Preview
+    <span class="muted" style="font-weight:400;margin-left:6px">first {{ preview_rows | length }} rows</span>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl dex-table" style="font-size:11px;white-space:nowrap">
+      <thead>
+        <tr>
+          {% for col in preview_cols %}
+          <th>{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview_rows %}
+        <tr>
+          {% for val in row %}
+          <td class="mono {% if val is none %}dim{% endif %}">
+            {{ val if val is not none else 'NULL' }}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
