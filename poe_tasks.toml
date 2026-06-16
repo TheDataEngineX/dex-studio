@@ -36,11 +36,11 @@ help = "Run tests with coverage report (HTML + XML + terminal)"
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
 [tool.poe.tasks.lint]
-cmd = "ruff check src/ tests/"
+cmd = "ruff check src/ tests/ examples/"
 help = "Run ruff linter"
 
 [tool.poe.tasks.lint-fix]
-cmd = "ruff check --fix src/ tests/"
+cmd = "ruff check --fix src/ tests/ examples/"
 help = "Run ruff linter with auto-fix"
 
 [tool.poe.tasks.typecheck]
@@ -89,7 +89,7 @@ help = "Show current version"
 
 # ── Code Quality (additional) ─────────────────────────────────────────────────
 [tool.poe.tasks.format]
-shell = "ruff format src/ tests/"
+shell = "ruff format src/ tests/ examples/"
 help = "Format code with ruff"
 
 [tool.poe.tasks.security]

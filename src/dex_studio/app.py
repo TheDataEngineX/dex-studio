@@ -158,7 +158,8 @@ def create_app() -> FastAPI:
             "Content-Security-Policy",
             (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
+                # Alpine.js v3 requires unsafe-eval (uses new Function() for expressions)
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: blob:; "
                 "connect-src 'self'; "

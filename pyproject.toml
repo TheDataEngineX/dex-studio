@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dataenginex>=0.4.0",
+    "dataenginex>=0.4.1",
     "fastapi[standard]>=0.115.0",
     "jinja2>=3.1.4",
     "itsdangerous>=2.2.0",
@@ -77,8 +77,17 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP", "SIM", "C90"]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/demo/*.py" = ["E501"]  # demo scripts embed JS/CSS strings that can't be wrapped
-"examples/**/*.py" = ["E402"]  # example scripts use sys.path manipulation before imports
+"scripts/demo/*.py" = [
+    "E501",
+] # demo scripts embed JS/CSS strings that can't be wrapped
+"examples/**/*.py" = [
+    "E402",  # sys.path manipulation before imports
+    "E501",  # tabular print output intentionally wide
+    "C901",  # exploratory scripts allow higher complexity
+    "T201",  # print() is expected in examples
+    "F841",  # unused vars common in exploratory scripts
+    "B007",  # loop vars sometimes unpacked for readability
+]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 8

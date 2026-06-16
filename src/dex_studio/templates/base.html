@@ -332,6 +332,9 @@
          style="color:var(--text-4);display:flex;align-items:center" data-tip="Docs">
         <i data-lucide="book-open" style="width:12px;height:12px"></i>
       </a>
+      <a href="/logout" style="color:var(--text-4);display:flex;align-items:center" data-tip="Sign out">
+        <i data-lucide="log-out" style="width:12px;height:12px"></i>
+      </a>
     </div>
 
   </aside>{# .side #}
@@ -377,9 +380,11 @@
           <i id="dex-theme-icon" data-lucide="moon" style="width:15px;height:15px"></i>
         </button>
         <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
-        <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">
-          JM
-        </div>
+        <a href="/logout" data-tip="Sign out" style="text-decoration:none">
+          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">
+            JM
+          </div>
+        </a>
       </div>
     </div>
 
@@ -433,7 +438,7 @@
 {# ── Command palette ──────────────────────────────────────────────────────── #}
 <div id="cmd-palette" style="display:none" x-data="cmdPalette()"
      @open-cmd.window="open()" @keydown.window.meta.k.prevent="open()" @keydown.window.ctrl.k.prevent="open()">
-  <div class="cmd-overlay" @click="close()" x-show="isOpen" x-cloak>
+  <div class="cmd-overlay" @click="close()" x-show="isOpen">
     <div class="cmd-modal fade-in" @click.stop>
 
       <div class="cmd-input-row">
@@ -587,11 +592,15 @@ function cmdPalette() {
     isOpen: false,
     q: '',
     open() {
+      this.$el.style.display = 'block';
       this.isOpen = true;
       this.q = '';
       this.$nextTick(() => { if (this.$refs.input) this.$refs.input.focus(); lucide.createIcons(); });
     },
-    close() { this.isOpen = false; },
+    close() {
+      this.isOpen = false;
+      this.$el.style.display = 'none';
+    },
     filteredGroups() {
       const q = this.q.toLowerCase();
       const filtered = q ? ALL_PAGES.filter(p =>
