@@ -716,7 +716,7 @@
     if (strip) strip.style.display = status === 'running' ? '' : 'none';
 
     const form = document.getElementById('run-form');
-    if (form) form.action = '/data/pipelines/run/' + name;
+    if (form) form.action = '/data/pipelines/run/' + encodeURIComponent(name);
 
     const triggerDetail = document.getElementById('trigger-detail');
     if (triggerDetail) triggerDetail.textContent = sched && sched !== '—' ? 'Schedule: ' + sched : 'No schedule — manual run only';

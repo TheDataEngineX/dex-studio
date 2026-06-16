@@ -883,11 +883,11 @@ def catalog_register(
 
         project_root = eng.project_dir.resolve()
         src = Path(file_path.strip()).resolve()
-        if not str(src).startswith(str(project_root) + "/"):
+        if not src.is_relative_to(project_root):
             flash(request, "File path must be within the project directory.", "error")
             return RedirectResponse("/data/catalog", status_code=303)
         if not src.exists():
-            flash(request, f"File not found: {file_path}", "error")
+            flash(request, "File not found.", "error")
             return RedirectResponse("/data/catalog", status_code=303)
         dest_dir = eng.project_dir / ".dex" / "lakehouse" / layer
         dest_dir.mkdir(parents=True, exist_ok=True)
