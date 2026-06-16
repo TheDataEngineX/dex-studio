@@ -25,7 +25,7 @@ uv run poe dev          # uvicorn dev server (port 7860)
 | Path | Purpose |
 |------|---------|
 | `src/dex_studio/app.py` | FastAPI app factory — mounts routers, templates, static |
-| `src/dex_studio/routers/` | Domain routers: root, data, ml, ai, system |
+| `src/dex_studio/routers/` | Domain routers: root, data, ml, ai, secops, system |
 | `src/dex_studio/routers/_deps.py` | Shared FastAPI deps (engine, auth, template render) |
 | `src/dex_studio/templates/` | Jinja2 HTML templates (base.html + domain pages) |
 | `src/dex_studio/static/` | Static assets (CSS, JS) |

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Transforms — Data — DEX Studio{% endblock %}
+{% block page_title %}Transforms{% endblock %}
+{% block page_sub %}
+  Build a pipeline — compose transformations and watch data flow through
+  {%- if selected_pipeline %} · <span class="mono">{{ selected_pipeline }}</span>{% endif %}
+{% endblock %}
+{% block page_actions %}
+{% if selected_pipeline %}
+<form method="post" action="/data/pipelines/run/{{ selected_pipeline }}" style="display:inline">
+  <button type="submit" class="btn primary"><i data-lucide="play" style="width:12px;height:12px"></i> Run flow</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not pipelines %}
+<div class="card" style="padding:56px 24px;text-align:center">
+  <i data-lucide="workflow" style="width:28px;height:28px;color:var(--text-4);display:block;margin:0 auto 12px"></i>
+  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No pipelines yet</div>
+  <div class="muted" style="font-size:12px;margin-top:6px">Add a pipeline on the Pipelines page, then compose its transformations here.</div>
+</div>
+{% else %}
+<div style="display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start">
+
+  {# ── pipeline list sidebar ── #}
+  <div class="card bare" style="overflow:hidden">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Pipelines</span>
+      <span class="muted" style="font-size:11px;margin-left:auto">{{ pipelines | length }}</span>
+    </div>
+    {% for p in pipelines %}
+    {% set layer = 'gold' if 'gold' in p.name else 'silver' if 'silver' in p.name else 'bronze' %}
+    {% set is_active = p.name == selected_pipeline %}
+    <a href="/data/transforms?pipeline={{ p.name }}"
+       style="display:flex;align-items:center;gap:10px;padding:11px 14px 11px 11px;text-decoration:none;
+              border-bottom:{% if not loop.last %}1px solid var(--border){% else %}none{% endif %};
+              background:{% if is_active %}color-mix(in oklch,var(--accent-9) 10%,transparent){% else %}transparent{% endif %};
+              border-left:3px solid {% if is_active %}var(--accent-9){% else %}transparent{% endif %}">
+      <span class="layer-chip {{ layer }}" style="flex-shrink:0;font-size:9.5px;padding:2px 6px">{{ layer[:2].upper() }}</span>
+      <div style="flex:1;min-width:0">
+        <div class="mono" style="font-size:12px;font-weight:{% if is_active %}600{% else %}400{% endif %};color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</div>
+        <div class="muted" style="font-size:10px;margin-top:1px">{{ p.schedule }}</div>
+      </div>
+      <span class="pill {{ p.status }}" style="height:16px;font-size:9px;flex-shrink:0">{{ p.status[:4] }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ── main: flow canvas + palette + next steps ── #}
+  <div>
+    <div class="card bare" style="margin-bottom:14px">
+      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;font-size:13px"><i data-lucide="git-fork" style="width:13px;height:13px;vertical-align:-2px"></i> Data flow</span>
+        <span class="muted mono" style="font-size:11px;margin-left:auto">{{ source }} → {{ destination }}</span>
+      </div>
+      {% with auto_load = True %}{% include "data/flow_canvas.html" %}{% endwith %}
+    </div>
+
+    {# ── add transformation ── #}
+    <div class="card bare" style="margin-bottom:14px">
+      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;font-size:13px"><i data-lucide="plus-circle" style="width:13px;height:13px;vertical-align:-2px"></i> Add transformation</span>
+      </div>
+      <form method="post" action="/data/transforms/{{ selected_pipeline }}/add" x-data="{ t: 'filter' }"
+            style="padding:12px 14px;display:grid;grid-template-columns:140px 1fr auto;gap:8px;align-items:start">
+        <select name="type" x-model="t" class="input" style="height:32px">
+          {% for tt in transform_types %}<option value="{{ tt }}">{{ tt }}</option>{% endfor %}
+        </select>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <input name="condition" class="input" placeholder="condition — e.g. vote_count > 1000" x-show="t === 'filter'">
+          <input name="name" class="input" placeholder="new column name — e.g. score_x2" x-show="t === 'derive'">
+          <input name="expression" class="input" placeholder="expression — e.g. target_rating * 2" x-show="t === 'derive'">
+          <input name="key" class="input" placeholder="key column(s), comma-separated — e.g. movie_id" x-show="t === 'deduplicate'">
+          <textarea name="sql" rows="2" class="input" placeholder="SELECT * FROM {{ source or 'source' }} WHERE ..." x-show="t === 'sql'" style="height:auto;font-family:var(--font-mono);padding:8px 10px"></textarea>
+          <span class="muted" style="font-size:10.5px" x-show="t === 'filter'">Keeps only rows where the condition is true — watch the row count drop in the flow.</span>
+          <span class="muted" style="font-size:10.5px" x-show="t === 'deduplicate'">Drops duplicate rows by the key column(s).</span>
+        </div>
+        <button type="submit" class="btn primary" style="height:32px"><i data-lucide="plus" style="width:12px;height:12px"></i> Add step</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endif %}
+{% endblock %}

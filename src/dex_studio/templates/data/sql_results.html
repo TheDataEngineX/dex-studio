@@ -1,22 +1,27 @@
 {% if error %}
-<div class="rt-CalloutRoot" data-color="red" data-size="1">
-  <p class="rt-CalloutText" style="font-family:'Fira Code',monospace;font-size:12px">{{ error }}</p>
+<div class="card" style="padding:12px 14px;border-color:var(--red-6);background:color-mix(in oklch,var(--red-9) 6%,transparent)">
+  <p style="font-family:var(--font-mono);font-size:12px;color:var(--red-11);margin:0">{{ error }}</p>
 </div>
-{% elif results %}
-<div class="rt-Card" style="overflow:auto">
-  <div style="padding:8px 12px;border-bottom:1px solid var(--gray-4);display:flex;align-items:center;justify-content:space-between">
-    <span style="font-size:12px;color:var(--gray-10)">{{ results|length }} row{{ "s" if results|length != 1 else "" }}</span>
-    {% if exec_ms is not none %}<span style="font-size:11px;color:var(--gray-9)">{{ "%.1f"|format(exec_ms) }}ms</span>{% endif %}
+{% elif sql_results %}
+<div class="card bare" style="overflow:auto">
+  <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:12px;color:var(--text-3)">{{ sql_results|length }} row{{ "s" if sql_results|length != 1 else "" }}</span>
+    {% if exec_ms is not none %}<span style="font-size:11px;color:var(--text-4)">{{ "%.1f"|format(exec_ms) }}ms</span>{% endif %}
   </div>
-  <table class="rt-TableRoot dex-table" style="width:100%;min-width:400px">
+  <table class="tbl dex-table" style="width:100%;min-width:400px">
     <thead>
-      <tr>{% for col in columns %}<th class="rt-TableColumnHeaderCell">{{ col }}</th>{% endfor %}</tr>
+      <tr>{% for col in sql_columns %}<th>{{ col }}</th>{% endfor %}</tr>
     </thead>
     <tbody>
-      {% for row in results %}
+      {% for row in sql_results %}
       <tr>
-        {% for col in columns %}
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.get(col,"") }}</td>
+        {% for col in sql_columns %}
+        {% set cv = row.get(col) %}
+        {% if cv is none %}
+        <td class="mono" style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-8);font-style:italic">NULL</td>
+        {% else %}
+        <td class="mono" style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
+        {% endif %}
         {% endfor %}
       </tr>
       {% endfor %}
@@ -24,7 +29,7 @@
   </table>
 </div>
 {% elif exec_ms is not none %}
-<div class="rt-CalloutRoot" data-color="green" data-size="1">
-  <p class="rt-CalloutText">Query executed — no rows returned ({{ "%.1f"|format(exec_ms) }}ms)</p>
+<div class="card" style="padding:12px 14px;border-color:var(--green-6)">
+  <p style="font-size:12px;color:var(--green-11);margin:0">Query executed — no rows returned ({{ "%.1f"|format(exec_ms) }}ms)</p>
 </div>
 {% endif %}

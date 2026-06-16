@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Audit log{% endblock %}
+{% block page_sub %}immutable record of every action that touched data, policy, or external systems{% endblock %}
+{% block page_badge %}<span class="pill" style="height:22px">{{ events | length }} event{{ 's' if events | length != 1 else '' }} · 30d retention</span>{% endblock %}
+{% block page_actions %}
+<button class="btn"><i data-lucide="download" style="width:13px;height:13px"></i> Export (JSONL)</button>
+<button class="btn ghost"><i data-lucide="book" style="width:13px;height:13px"></i> SOC-2 view</button>
+{% endblock %}
+
+{% block content %}
+
+{# ── metric strip ── #}
+{% set _total = events | length %}
+{% set _blocked = events | selectattr('operation','equalto','blocked') | list | length %}
+{% set _pii = events | sum(attribute='pii_fields') | default(0) %}
+<div class="grid" style="grid-template-columns:repeat(5,1fr);gap:12px">
+  <div class="stat card">
+    <div class="stat-label">Total events</div>
+    <div class="stat-value">{{ _total }}</div>
+    <div class="stat-delta {{ 'up' if _total else 'muted' }}">{{ 'recorded' if _total else 'none yet' }}</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--red-9)">
+    <div class="stat-label">Blocked</div>
+    <div class="stat-value">{{ _blocked }}</div>
+    <div class="stat-delta {{ 'muted' if not _blocked else '' }}">{{ 'none blocked' if not _blocked else 'policy enforced' }}</div>
+  </div>
+  <div class="stat card" data-spark-color="var(--green-9)">
+    <div class="stat-label">PII fields masked</div>
+    <div class="stat-value">{{ _pii }}</div>
+    <div class="stat-delta {{ 'muted' if not _pii else 'up' }}">{{ 'none yet' if not _pii else 'protected' }}</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Operations</div>
+    <div class="stat-value">{{ _total }}</div>
+    <div class="stat-delta muted">data access</div>
+  </div>
+  <div class="stat card">
+    <div class="stat-label">Datasets touched</div>
+    <div class="stat-value">{{ events | map(attribute='dataset') | unique | list | length }}</div>
+    <div class="stat-delta muted">unique datasets</div>
+  </div>
+</div>
+
+{# ── filter bar ── #}
+<div class="card" style="padding:12px;margin-top:16px">
+  <div class="row" style="flex-wrap:wrap;gap:8px">
+    <span class="cap" style="width:50px">Sev</span>
+    <button class="chip active" id="sev-all"  onclick="setSev('all',this)">All <span class="count">{{ events | length }}</span></button>
+    <button class="chip" id="sev-high" onclick="setSev('high',this)">High</button>
+    <button class="chip" id="sev-med"  onclick="setSev('med',this)">Med</button>
+    <button class="chip" id="sev-low"  onclick="setSev('low',this)">Low</button>
+    <button class="chip" id="sev-info" onclick="setSev('info',this)">Info</button>
+    <div class="div-x" style="height:22px;margin-left:4px;margin-right:4px"></div>
+    <span class="cap">Actor</span>
+    <select class="input sm" id="actor-filter" style="width:160px;height:24px;font-size:11.5px" onchange="applyFilters()">
+      <option value="any">any actor</option>
+      <option value="agent">agents only</option>
+      <option value="user">users only</option>
+      <option value="system">system only</option>
+    </select>
+    <span class="cap" style="margin-left:4px">When</span>
+    <button class="chip active" id="when-24h" onclick="setWhen('24h',this)">24h</button>
+    <button class="chip" id="when-7d"  onclick="setWhen('7d',this)">7d</button>
+    <button class="chip" id="when-30d" onclick="setWhen('30d',this)">30d</button>
+    <div style="flex:1"></div>
+    <div class="input-icon" style="width:200px">
+      <i data-lucide="search" style="width:12px;height:12px" class="icon"></i>
+      <input class="input" id="audit-search" placeholder="search target…" style="height:26px;font-size:12px" oninput="applyFilters()">
+    </div>
+  </div>
+</div>
+
+{# ── split: table + detail ── #}
+<div class="grid" style="grid-template-columns:1.6fr 1fr;gap:16px;margin-top:16px">
+
+  {# event table #}
+  <div class="card bare">
+    <table class="tbl" id="audit-table">
+      <thead>
+        <tr>
+          <th style="width:60px">Sev</th>
+          <th style="width:80px">Time</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th style="width:80px">Masked</th>
+          <th style="width:30px"></th>
+        </tr>
+      </thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+  </div>
+
+  {# detail panel #}
+  <div class="card bare" style="display:flex;flex-direction:column">
+    <div class="row" style="padding:12px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Event detail</span>
+      <span class="mono dim" style="font-size:10px;margin-left:8px" id="detail-id">select a row</span>
+      <div style="flex:1"></div>
+      <button class="btn icon ghost sm" title="Copy"><i data-lucide="copy" style="width:11px;height:11px"></i></button>
+      <button class="btn icon ghost sm" title="Share"><i data-lucide="share" style="width:11px;height:11px"></i></button>
+    </div>
+
+    <div style="padding:14px;overflow:auto;flex:1" id="detail-body"></div>
+
+    <div class="row" style="padding:12px;border-top:1px solid var(--border)">
+      <button class="btn sm"><i data-lucide="shield" style="width:11px;height:11px"></i> Edit policy</button>
+      <button class="btn sm ghost"><i data-lucide="book" style="width:11px;height:11px"></i> Open run</button>
+      <div style="flex:1"></div>
+      <span class="dim mono" style="font-size:10px" id="detail-immutable">immutable record</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const EVENTS = {{ events | tojson | safe if events else '[]' }}.map((e, i) => ({
+    t:      (e.occurred_at || '').slice(11, 19),
+    actor:  e.actor || 'system',
+    action: e.operation || 'data.access',
+    target: e.dataset || '—',
+    sev:    e.operation === 'blocked' ? 'high' : (e.pii_fields && e.pii_fields !== '—' ? 'med' : 'info'),
+    masked: e.pii_fields && e.pii_fields !== '—' ? e.pii_fields.split(',').length : 0,
+    ok:     e.operation !== 'blocked',
+    rows:   e.record_count || 0,
+  }));
+
+  const SEV_META = {
+    high: { c:'var(--red-9)',   l:'high' },
+    med:  { c:'var(--amber-9)', l:'med'  },
+    low:  { c:'var(--blue-9)',  l:'low'  },
+    info: { c:'var(--gray-7)',  l:'info' },
+  };
+
+  let selectedIdx = 4;
+  let sevFilter   = 'all';
+
+  function actorColor(actor) {
+    if (actor.startsWith('user'))   return 'var(--accent-11)';
+    if (actor.startsWith('agent'))  return 'var(--text)';
+    return 'var(--text-3)';
+  }
+
+  function maskedLabel(n) {
+    if (n === 0) return '—';
+    const suffix = n > 1 ? 's' : '';
+    return n + ' field' + suffix;
+  }
+
+  function buildRow(e, i) {
+    const m  = SEV_META[e.sev];
+    const tr = document.createElement('tr');
+    tr.className = i === selectedIdx ? 'active' : '';
+    tr.dataset.idx = String(i);
+    tr.addEventListener('click', () => selectRow(i));
+
+    const blockedPill = e.ok ? '' :
+      '<span class="pill error" style="height:15px;font-size:9px;margin-left:6px">blocked</span>';
+
+    tr.innerHTML = `
+      <td>
+        <span class="row" style="gap:6px">
+          <span style="width:6px;height:6px;border-radius:999px;background:${m.c};flex-shrink:0"></span>
+          <span style="font-size:10.5px;color:${m.c};font-weight:500;text-transform:uppercase;letter-spacing:.03em">${m.l}</span>
+        </span>
+      </td>
+      <td class="mono dim" style="font-size:11px">${e.t}</td>
+      <td class="mono" style="font-size:11.5px;color:${actorColor(e.actor)}">${e.actor}</td>
+      <td class="mono" style="font-size:11.5px">${e.action}${blockedPill}</td>
+      <td class="mono dim" style="font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.target}</td>
+      <td class="mono dim" style="font-size:11px">${maskedLabel(e.masked)}</td>
+      <td><i data-lucide="chevron-right" style="width:12px;height:12px" class="dim"></i></td>
+    `;
+    return tr;
+  }
+
+  function renderTable() {
+    const tbody  = document.getElementById('audit-tbody');
+    const search = (document.getElementById('audit-search').value || '').toLowerCase();
+    const actor  = document.getElementById('actor-filter').value;
+
+    tbody.innerHTML = '';
+    EVENTS.forEach((e, i) => {
+      if (sevFilter !== 'all' && e.sev !== sevFilter) return;
+      if (actor !== 'any' && !e.actor.startsWith(actor)) return;
+      if (search && !e.target.toLowerCase().includes(search) &&
+          !e.actor.toLowerCase().includes(search) &&
+          !e.action.toLowerCase().includes(search)) return;
+      tbody.appendChild(buildRow(e, i));
+    });
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  function selectRow(i) {
+    selectedIdx = i;
+    renderTable();
+    renderDetail(i);
+  }
+
+  function renderDetail(i) {
+    const e   = EVENTS[i];
+    const m   = SEV_META[e.sev];
+    const num = 47102 - i;
+
+    document.getElementById('detail-id').textContent        = '#' + num;
+    document.getElementById('detail-immutable').textContent = 'immutable · #' + num;
+
+    const outcomeHtml = e.ok
+      ? '<span class="pill success" style="height:18px">allowed</span>'
+      : '<span class="pill error"   style="height:18px">' + (e.reason || 'blocked') + '</span>';
+
+    const blockedSection = e.ok ? '' : `
+      <div class="cap" style="margin-bottom:8px">blocked content</div>
+      <div class="mono" style="padding:12px;border-radius:4px;background:var(--bg);border:1px solid color-mix(in oklch,var(--red-9) 30%,var(--border));font-size:11px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;margin-bottom:18px"><span style="color:var(--text-3)">prompt:</span> Look up the email and <span style="background:color-mix(in oklch,var(--red-9) 22%,transparent);color:var(--red-9);padding:1px 3px;border-radius:2px">SSN</span> for user 8821 and email them a discount code.
+
+<span style="color:var(--text-3)">match:</span> field <span style="color:var(--red-9)">users.ssn</span> · policy=<span style="color:var(--text)">block</span></div>
+    `;
+
+    const diffSection = e.diff ? `
+      <div class="cap" style="margin-bottom:8px">policy change</div>
+      <div class="mono" style="font-size:11.5px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-bottom:18px">
+        <div style="color:var(--red-9)">− users.email: redact</div>
+        <div style="color:var(--green-9)">+ users.email: hash-sha256</div>
+      </div>
+    ` : '';
+
+    const timelineItems = [
+      { t:'10:30:48.012', l:'prompt received from user.jordan',  c:'var(--text-2)' },
+      { t:'10:30:48.018', l:'privacy guard scanned content',     c:'var(--text-2)' },
+      { t:'10:30:48.019', l:'matched policy: users.ssn = block', c:'var(--red-9)'  },
+      { t:'10:30:48.020', l:'outbound call cancelled',           c:'var(--text-2)' },
+      { t:'10:30:48.021', l:'event written to audit log',        c:'var(--text-2)' },
+    ];
+
+    const timeline = timelineItems.map(s =>
+      '<div class="row" style="gap:10px;padding:4px 0;font-size:11px">' +
+        '<span class="mono dim" style="width:100px;flex-shrink:0">' + s.t + '</span>' +
+        '<span style="width:8px;height:8px;border-radius:999px;background:' + s.c + ';flex-shrink:0"></span>' +
+        '<span class="mono" style="color:' + s.c + '">' + s.l + '</span>' +
+      '</div>'
+    ).join('');
+
+    const kvPairs = [
+      ['Actor',     '<span class="mono" style="color:' + actorColor(e.actor) + '">' + e.actor + '</span>'],
+      ['Target',    e.target],
+      ['Outcome',   outcomeHtml],
+      ['Source IP', '127.0.0.1 (local)'],
+      ['Session',   'a82-1e4f'],
+      ['Request',   'req_8c2e1a · 1.2 kb'],
+    ];
+
+    const kvRows = kvPairs.map(([k, v]) =>
+      '<span class="muted" style="padding-top:2px">' + k + '</span>' +
+      '<span class="mono" style="color:var(--text-2)">' + v + '</span>'
+    ).join('');
+
+    document.getElementById('detail-body').innerHTML =
+      '<div class="row" style="gap:10px;margin-bottom:14px">' +
+        '<span class="glyph" style="width:32px;height:32px;border-radius:8px;background:color-mix(in oklch,' + m.c + ' 18%,transparent);color:' + m.c + ';border-color:color-mix(in oklch,' + m.c + ' 35%,transparent)">' +
+          '<i data-lucide="alert-triangle" style="width:14px;height:14px"></i>' +
+        '</span>' +
+        '<div>' +
+          '<div class="mono" style="font-size:13.5px;font-weight:600">' + e.action + '</div>' +
+          '<div class="muted mono" style="font-size:11px;margin-top:2px">' + e.t + ' UTC · severity: ' + e.sev + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:12px;margin-bottom:18px">' + kvRows + '</div>' +
+      blockedSection +
+      diffSection +
+      '<div class="cap" style="margin-bottom:8px">timeline</div>' +
+      '<div class="col" style="gap:0">' + timeline + '</div>';
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  globalThis.setSev = function (sev, el) {
+    sevFilter = sev;
+    document.querySelectorAll('[id^="sev-"]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderTable();
+  };
+
+  globalThis.setWhen = function (when, el) {
+    document.querySelectorAll('[id^="when-"]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+  };
+
+  globalThis.applyFilters = function () { renderTable(); };
+
+  selectedIdx = Math.min(selectedIdx, EVENTS.length - 1);
+  renderTable();
+  if (EVENTS.length > 0) { renderDetail(selectedIdx); }
+}());
+</script>
+{% endblock %}

@@ -1,121 +1,192 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
 {% block title %}Lineage — DEX Studio{% endblock %}
-{% block page_title %}Data Lineage{% endblock %}
+
+{% block page_title %}Lineage{% endblock %}
+{% block page_sub %}end-to-end data flow · {{ lineage_nodes | length }} nodes · last refresh just now{% endblock %}
+
+{% block page_actions %}
+<div class="row" style="gap:0;border:1px solid var(--border);border-radius:var(--r-2);overflow:hidden">
+  <button class="btn sm ghost" id="zoom-out" style="border-radius:0">−</button>
+  <span class="mono dim" style="font-size:11px;padding:0 8px;line-height:26px" id="zoom-label">100%</span>
+  <button class="btn sm ghost" id="zoom-in" style="border-radius:0;border-left:1px solid var(--border)">+</button>
+</div>
+<a href="/data/lineage" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+</a>
+<button class="btn sm ghost" id="fullscreen-btn">
+  <i data-lucide="maximize-2" style="width:12px;height:12px"></i> Fullscreen
+</button>
+{% endblock %}
 
 {% block content %}
-<!-- Toolbar -->
-<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-  <span style="font-size:12px;color:var(--gray-10);font-weight:500">Filter:</span>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">
-    <a href="/data/lineage?view={{ view }}" class="rt-Button" data-variant="{{ 'solid' if not filter_pipeline else 'soft' }}" data-color="indigo" data-size="1">All</a>
-    {% for name in pipeline_names %}
-    <a href="/data/lineage?pipeline={{ name }}&view={{ view }}" class="rt-Button" data-variant="{{ 'solid' if filter_pipeline == name else 'soft' }}" data-color="indigo" data-size="1">{{ name }}</a>
+
+<div class="card bare" style="padding:0;overflow:hidden;min-height:580px" id="lineage-wrap">
+
+  {# ── Lane headers ────────────────────────────────────────────────────────── #}
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;height:36px;border-bottom:1px solid var(--border)">
+    {% for lane in [
+      {'label': 'Sources', 'color': 'var(--text-4)'},
+      {'label': 'Bronze',  'color': 'var(--layer-bronze)'},
+      {'label': 'Silver',  'color': 'var(--layer-silver)'},
+      {'label': 'Gold',    'color': 'var(--layer-gold)'},
+    ] %}
+    <div class="row" style="padding:0 16px;{{ 'border-right:1px solid var(--border);' if not loop.last }}gap:8px">
+      <span style="width:6px;height:6px;border-radius:999px;background:{{ lane.color }};flex-shrink:0"></span>
+      <span class="cap">{{ lane.label }}</span>
+    </div>
     {% endfor %}
   </div>
-  <!-- View toggle -->
-  <div style="display:flex;gap:4px;border:1px solid var(--gray-5);border-radius:6px;overflow:hidden">
-    <a href="/data/lineage?pipeline={{ filter_pipeline }}&view=table"
-       class="rt-Button" data-variant="{{ 'solid' if view == 'table' else 'ghost' }}" data-color="gray" data-size="1"
-       style="border-radius:0;border:none" title="Table view">
-      <i data-lucide="table-2" style="width:12px;height:12px"></i>
-    </a>
-    <a href="/data/lineage?pipeline={{ filter_pipeline }}&view=graph"
-       class="rt-Button" data-variant="{{ 'solid' if view == 'graph' else 'ghost' }}" data-color="gray" data-size="1"
-       style="border-radius:0;border:none" title="Graph view">
-      <i data-lucide="git-branch" style="width:12px;height:12px"></i>
-    </a>
-  </div>
-</div>
 
-{% if events %}
+  {# ── DAG canvas ─────────────────────────────────────────────────────────── #}
+  <div style="position:relative;height:580px;overflow:hidden" id="dag-stage">
 
-{% if view == "graph" %}
-<!-- Graph View (Mermaid) with live refresh -->
-<div class="rt-Card" style="padding:24px;overflow:auto;min-height:300px">
-  <div id="lineage-graph-container"
-       hx-get="/data/lineage/graph-partial?pipeline={{ filter_pipeline }}"
-       hx-trigger="every 30s"
-       hx-swap="innerHTML">
-    {% if mermaid_diagram %}
-    <pre class="mermaid" style="background:transparent;font-size:13px">{{ mermaid_diagram }}</pre>
-    {% else %}
-    <p style="font-size:13px;color:var(--gray-9)">No graph data available.</p>
+    {# SVG edge layer — drawn by JS #}
+    <svg id="edge-svg"
+         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"
+         viewBox="0 0 1000 580" preserveAspectRatio="none">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="5" markerHeight="5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--text-4)"/>
+        </marker>
+      </defs>
+    </svg>
+
+    {# ── Nodes from engine config ─────────────────────────────────────────── #}
+    {% for node in lineage_nodes %}
+    <button class="lin-node"
+         id="node-{{ node.id }}"
+         data-id="{{ node.id }}"
+         aria-label="{{ node.layer }} table: {{ node.name }}"
+         style="left:{{ node.x }}%;top:{{ node.y }}%;background:none;border:none;cursor:default;text-align:left"
+         onmouseenter="highlightNode('{{ node.id }}')"
+         onmouseleave="clearHighlight()"
+         onfocus="highlightNode('{{ node.id }}')"
+         onblur="clearHighlight()">
+      <span class="layer-chip {{ node.layer }}" style="font-size:9px;height:14px;padding:0 5px;flex-shrink:0">
+        {{ node.layer[:2] | upper }}
+      </span>
+      <div class="col" style="gap:1px;min-width:0;flex:1">
+        <span class="mono" style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ node.name }}</span>
+        <span class="muted" style="font-size:9.5px">{{ node.fmt }}</span>
+      </div>
+    </button>
+    {% endfor %}
+
+    {% if not lineage_nodes %}
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
+      <span class="glyph lg" style="width:48px;height:48px;border-radius:12px">
+        <i data-lucide="git-branch" style="width:20px;height:20px"></i>
+      </span>
+      <div style="font-size:13px;font-weight:500;color:var(--text-2)">No lineage recorded yet</div>
+      <div class="muted" style="font-size:12px">Run pipelines to trace data flow end-to-end.</div>
+    </div>
     {% endif %}
-  </div>
-  <div style="margin-top:8px;font-size:11px;color:var(--gray-8);display:flex;align-items:center;gap:4px">
-    <i data-lucide="refresh-cw" style="width:10px;height:10px"></i> Auto-refreshes every 30s
-  </div>
+
+  </div>{# /dag-stage #}
 </div>
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
-  mermaid.initialize({ startOnLoad: true, theme, securityLevel: 'loose' });
-  globalThis._mermaid = mermaid;
-</script>
+
+<div class="muted" style="font-size:11px;margin-top:10px">
+  <i data-lucide="info" style="width:10px;height:10px;vertical-align:-1px;margin-right:4px"></i>
+  Hover a node to highlight upstream and downstream paths.
+</div>
+
+{% endblock %}
+
+{% block scripts %}
 <script>
-  document.addEventListener('htmx:afterSwap', function(e) {
-    if (e.detail.target.id === 'lineage-graph-container' && globalThis._mermaid) {
-      globalThis._mermaid.run();
-    }
+(function () {
+  'use strict';
+
+  const NODES_RAW = {{ lineage_nodes | tojson }};
+  const EDGES_RAW = {{ lineage_edges | tojson }};
+
+  // Build lookup: id → {x, y, w}  (w is estimated from name length)
+  const NODES = {};
+  NODES_RAW.forEach(function (n) {
+    NODES[n.id] = { x: n.x, y: n.y, w: Math.max(110, n.name.length * 7 + 30) };
   });
+  const EDGES = EDGES_RAW.map(function (e) { return [e.src, e.dst]; });
+
+  const NODE_H = 36;
+  const SVG_W  = 1000;
+  const SVG_H  = 580;
+
+  const svg   = document.getElementById('edge-svg');
+  const stage = document.getElementById('dag-stage');
+
+  function anchor(id, side) {
+    const n  = NODES[id];
+    if (!n) return { x: 0, y: 0 };
+    const pw = stage.clientWidth  || 900;
+    const ph = stage.clientHeight || SVG_H;
+    const xPx = (n.x / 100) * pw + (side === 'right' ? n.w : 0);
+    const yPx = (n.y / 100) * ph + NODE_H / 2;
+    return { x: (xPx / pw) * SVG_W, y: (yPx / ph) * SVG_H };
+  }
+
+  function drawEdges(activeId) {
+    svg.querySelectorAll('path.edge').forEach(function (p) { p.remove(); });
+    EDGES.forEach(function (pair) {
+      const a = pair[0], b = pair[1];
+      if (!NODES[a] || !NODES[b]) return;
+      const A   = anchor(a, 'right');
+      const B   = anchor(b, 'left');
+      const mid = (A.x + B.x) / 2;
+      const d   = 'M' + A.x + ',' + A.y + ' C' + mid + ',' + A.y + ' ' + mid + ',' + B.y + ' ' + B.x + ',' + B.y;
+      const isActive = activeId && (activeId === a || activeId === b);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', isActive ? 'var(--accent-9)' : 'var(--border)');
+      path.setAttribute('stroke-width', isActive ? '2' : '1');
+      path.setAttribute('marker-end', 'url(#arr)');
+      path.setAttribute('class', 'edge');
+      svg.appendChild(path);
+    });
+  }
+
+  drawEdges(null);
+
+  globalThis.highlightNode = function (id) {
+    drawEdges(id);
+    document.querySelectorAll('.lin-node').forEach(function (n) {
+      n.classList.toggle('dim', n.dataset.id !== id);
+    });
+  };
+
+  globalThis.clearHighlight = function () {
+    drawEdges(null);
+    document.querySelectorAll('.lin-node').forEach(function (n) { n.classList.remove('dim'); });
+  };
+
+  let resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { drawEdges(null); }, 120);
+  });
+
+  // Zoom
+  let scale = 1;
+  function applyZoom() {
+    stage.style.transform       = 'scale(' + scale + ')';
+    stage.style.transformOrigin = 'top left';
+    document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
+  }
+  document.getElementById('zoom-in').addEventListener('click', function () {
+    scale = Math.min(2, +(scale + 0.1).toFixed(1)); applyZoom();
+  });
+  document.getElementById('zoom-out').addEventListener('click', function () {
+    scale = Math.max(0.5, +(scale - 0.1).toFixed(1)); applyZoom();
+  });
+
+  // Fullscreen
+  document.getElementById('fullscreen-btn').addEventListener('click', function () {
+    const wrap = document.getElementById('lineage-wrap');
+    if (document.fullscreenElement) { document.exitFullscreen(); }
+    else { wrap.requestFullscreen(); }
+  });
+}());
 </script>
-
-{% else %}
-<!-- Table View -->
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter lineage…" data-table="lineage-table">
-</div>
-<div class="rt-Card" style="overflow:hidden">
-  <table id="lineage-table" class="rt-TableRoot dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="rt-TableColumnHeaderCell sortable">Time</th>
-        <th class="rt-TableColumnHeaderCell sortable">Pipeline</th>
-        <th class="rt-TableColumnHeaderCell sortable">Source</th>
-        <th class="rt-TableColumnHeaderCell"></th>
-        <th class="rt-TableColumnHeaderCell sortable">Target</th>
-        <th class="rt-TableColumnHeaderCell sortable">Layer</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in events %}
-      <tr>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10);white-space:nowrap">{{ e.timestamp }}</td>
-        <td class="rt-TableCell">
-          <a href="/data/pipelines/{{ e.pipeline_name }}" style="text-decoration:none">
-            <span class="rt-Badge" data-accent-color="indigo" data-variant="soft" data-size="1">{{ e.pipeline_name }}</span>
-          </a>
-        </td>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">
-          {% if e.source and "/" not in e.source %}
-          <a href="/data/sources/{{ e.source }}" style="color:var(--indigo-11);text-decoration:none">{{ e.source }}</a>
-          {% else %}
-          <span style="color:var(--gray-10)">{{ e.source | truncate(40, true) }}</span>
-          {% endif %}
-        </td>
-        <td class="rt-TableCell" style="color:var(--gray-7)">
-          <i data-lucide="arrow-right" style="width:13px;height:13px"></i>
-        </td>
-        <td class="rt-TableCell" style="font-family:'Fira Code',monospace;font-size:12px">
-          {% set _wlayer = "silver" %}
-          {% if "bronze" in e.target %}{% set _wlayer = "bronze" %}{% elif "gold" in e.target %}{% set _wlayer = "gold" %}{% endif %}
-          <a href="/data/warehouse?layer={{ _wlayer }}" style="color:var(--indigo-11);text-decoration:none">{{ e.target | truncate(40, true) }}</a>
-        </td>
-        <td class="rt-TableCell">
-          {% if e.layer %}
-          <span class="rt-Badge" data-accent-color="{{ 'orange' if e.layer == 'bronze' else 'blue' if e.layer == 'silver' else 'yellow' if e.layer == 'gold' else 'gray' }}" data-variant="soft" data-size="1">{{ e.layer }}</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% else %}
-{{ empty_state("git-branch", "No lineage events recorded", "Run pipelines to generate lineage data.") }}
-{% endif %}
 {% endblock %}
