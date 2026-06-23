@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Privacy Guard{% endblock %}
+{% block page_sub %}PII detection · masking strategies · outbound data controls{% endblock %}
+
+{% block page_actions %}
+<a href="/secops/policies" class="btn sm ghost" style="text-decoration:none">
+  <i data-lucide="file-text" style="width:11px;height:11px"></i> Policies
+</a>
+<a href="/secops/audit" class="btn sm ghost" style="text-decoration:none">
+  <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Audit log
+</a>
+{% endblock %}
+
+{% block content %}
+{% from "components/macros.html" import metric_card, empty_state %}
+<div style="--domain-color: var(--domain-secops)">
+
+{# ── Guard status banner ── #}
+<div class="card" style="padding:16px;margin-bottom:16px;
+  {% if guard_enabled %}border-color:color-mix(in oklch,var(--green-9) 30%,var(--border));background:color-mix(in oklch,var(--green-9) 5%,var(--bg-elev)){% else %}border-color:color-mix(in oklch,var(--red-9) 30%,var(--border));background:color-mix(in oklch,var(--red-9) 5%,var(--bg-elev)){% endif %}">
+  <div class="row" style="gap:12px;align-items:center">
+    <span class="glyph" style="width:36px;height:36px;border-radius:10px;color:{{ 'var(--green-9)' if guard_enabled else 'var(--red-9)' }};background:color-mix(in oklch,{{ 'var(--green-9)' if guard_enabled else 'var(--red-9)' }} 16%,transparent);border-color:color-mix(in oklch,{{ 'var(--green-9)' if guard_enabled else 'var(--red-9)' }} 30%,transparent)">
+      <i data-lucide="{{ 'shield-check' if guard_enabled else 'shield-x' }}" style="width:16px;height:16px"></i>
+    </span>
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px">PrivacyGuard is {{ 'active' if guard_enabled else 'inactive' }}</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">
+        {% if guard_enabled %}
+          {{ active_rules }} active rule{{ 's' if active_rules != 1 else '' }} ·
+          {{ 'blocks' if block_on_detect else 'warns' }} on PII detect ·
+          {{ 'local models only' if allow_local else 'all models' }}
+        {% else %}
+          Configure PrivacyGuard in <span class="mono">dex.yaml</span> under <span class="mono">secops:</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Metric strip ── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+  {{ metric_card("PII strategies", strategy_display | length, "shield", "indigo", active_rules ~ " active rules") }}
+  {{ metric_card("Audit events today", audit_today, "activity", "green", audit_count ~ " total") }}
+  {{ metric_card("Top masked field", top_masked_fields[0].field if top_masked_fields else "—", "eye-off", "amber", top_masked_fields[0].count ~ " times" if top_masked_fields else "none yet") }}
+</div>
+
+{# ── Configuration grid ── #}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+  {# Detection settings #}
+  <div class="card" style="padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Detection settings</span>
+    </div>
+    <div style="padding:4px 0">
+      <div class="row" style="padding:10px 16px;gap:12px;border-bottom:1px solid var(--border)">
+        <i data-lucide="shield" style="width:14px;height:14px;color:var(--domain-secops);flex-shrink:0"></i>
+        <div style="flex:1;font-size:13px">Guard enabled</div>
+        <span class="pill {{ 'ok' if guard_enabled else 'error' }}" style="height:18px;font-size:10px">{{ 'yes' if guard_enabled else 'no' }}</span>
+      </div>
+      <div class="row" style="padding:10px 16px;gap:12px;border-bottom:1px solid var(--border)">
+        <i data-lucide="ban" style="width:14px;height:14px;color:var(--domain-secops);flex-shrink:0"></i>
+        <div style="flex:1;font-size:13px">Block on detect</div>
+        <span class="pill {{ 'error' if block_on_detect else 'warn' }}" style="height:18px;font-size:10px">{{ 'block' if block_on_detect else 'warn' }}</span>
+      </div>
+      <div class="row" style="padding:10px 16px;gap:12px;border-bottom:1px solid var(--border)">
+        <i data-lucide="server" style="width:14px;height:14px;color:var(--domain-secops);flex-shrink:0"></i>
+        <div style="flex:1;font-size:13px">Allow local models</div>
+        <span class="pill {{ 'ok' if allow_local else 'warn' }}" style="height:18px;font-size:10px">{{ 'yes' if allow_local else 'no' }}</span>
+      </div>
+      <div class="row" style="padding:10px 16px;gap:12px">
+        <i data-lucide="scroll-text" style="width:14px;height:14px;color:var(--domain-secops);flex-shrink:0"></i>
+        <div style="flex:1;font-size:13px">Log all outbound</div>
+        <span class="pill {{ 'ok' if log_all_outbound else 'neutral' }}" style="height:18px;font-size:10px">{{ 'yes' if log_all_outbound else 'no' }}</span>
+      </div>
+    </div>
+  </div>
+
+  {# Top masked fields #}
+  <div class="card" style="padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600;font-size:13px">Top masked fields</span>
+    </div>
+    {% if top_masked_fields %}
+    <div style="padding:4px 0">
+      {% for f in top_masked_fields %}
+      <div class="row" style="padding:10px 16px;gap:12px;border-bottom:1px solid var(--border)">
+        <i data-lucide="eye-off" style="width:13px;height:13px;color:var(--domain-secops);flex-shrink:0"></i>
+        <div class="mono" style="flex:1;font-size:12px">{{ f.field }}</div>
+        <span class="dim" style="font-size:11px">{{ f.count }}×</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding:32px 16px;text-align:center">
+      <div class="muted" style="font-size:12px">No masking events recorded yet.</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── PII strategy table ── #}
+<div class="card" style="padding:0">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+    <span style="font-weight:600;font-size:13px">PII masking strategies</span>
+    <span class="dim" style="font-size:11px">· {{ strategy_display | length }} type{{ 's' if strategy_display | length != 1 else '' }}</span>
+  </div>
+  {% if strategy_display %}
+  <table class="dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th>PII type</th>
+        <th>Strategy</th>
+        <th>Mode</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in strategy_display %}
+      <tr>
+        <td class="mono" style="font-size:12px">{{ s.name }}</td>
+        <td class="dim" style="font-size:12px">{{ s.strategy }}</td>
+        <td>
+          {% if s.mode == 'mask' %}
+            <span class="pill warn" style="height:16px;font-size:9px">mask</span>
+          {% elif s.mode == 'block' %}
+            <span class="pill error" style="height:16px;font-size:9px">block</span>
+          {% else %}
+            <span class="pill neutral" style="height:16px;font-size:9px">allow</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  {{ empty_state("shield", "No PII strategies configured", "Add strategies under secops: in dex.yaml") }}
+  {% endif %}
+</div>
+
+{# ── Local targets ── #}
+{% if local_targets %}
+<div class="card" style="padding:0;margin-top:16px">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+    <span style="font-weight:600;font-size:13px">Trusted local targets</span>
+  </div>
+  <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">
+    {% for t in local_targets %}
+    <span class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg-subtle);border:1px solid var(--border)">{{ t }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

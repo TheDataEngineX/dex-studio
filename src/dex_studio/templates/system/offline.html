@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Engine Offline — DEX Studio{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-system); display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; padding:40px 24px; text-align:center">
+
+  <div style="width:56px;height:56px;border-radius:50%;background:color-mix(in oklch,var(--state-error) 12%,transparent);
+              border:2px solid color-mix(in oklch,var(--state-error) 30%,transparent);
+              display:flex;align-items:center;justify-content:center;margin-bottom:20px">
+    <i data-lucide="server-off" style="width:26px;height:26px;color:var(--state-error)"></i>
+  </div>
+
+  <h1 style="font-size:22px;font-weight:700;margin:0 0 8px;color:var(--text)">Engine Offline</h1>
+  <p style="font-size:14px;color:var(--text-3);max-width:440px;line-height:1.6;margin:0 0 24px">
+    A project is configured but the DEX engine could not be loaded.
+    The config file may be invalid, the engine package may be missing,
+    or a required dependency is unavailable.
+  </p>
+
+  {% if current_config %}
+  <div class="card" style="padding:10px 16px;margin-bottom:24px;display:inline-flex;align-items:center;gap:8px;max-width:560px;width:100%">
+    <i data-lucide="file-text" style="width:13px;height:13px;color:var(--text-4);flex-shrink:0"></i>
+    <span style="font-size:12px;color:var(--text-3);font-family:var(--font-mono);word-break:break-all">{{ current_config }}</span>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:32px">
+    <a href="{{ request.url.path }}" class="btn primary">
+      <i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Retry
+    </a>
+    <a href="/system/logs" class="btn ghost">
+      <i data-lucide="scroll" style="width:13px;height:13px"></i> View logs
+    </a>
+    <a href="/onboarding" class="btn ghost">
+      <i data-lucide="plus-circle" style="width:13px;height:13px"></i> Switch project
+    </a>
+  </div>
+
+  <div class="card" style="padding:16px 20px;max-width:480px;width:100%;text-align:left">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);margin-bottom:10px">Common causes</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      {% for cause, fix in [
+        ("Invalid dex.yaml", "Check the config file for syntax errors or missing required fields."),
+        ("Missing dex package", "Run: pip install dataenginex in your Python environment."),
+        ("Missing dependency", "Check /system/logs for the exact import or init error."),
+        ("Wrong config path", "Verify DEX_CONFIG_PATH or the saved project path is correct."),
+      ] %}
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <i data-lucide="alert-circle" style="width:13px;height:13px;color:var(--state-warn);flex-shrink:0;margin-top:2px"></i>
+        <div>
+          <div style="font-size:12.5px;font-weight:600;color:var(--text)">{{ cause }}</div>
+          <div style="font-size:12px;color:var(--text-3);line-height:1.5">{{ fix }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

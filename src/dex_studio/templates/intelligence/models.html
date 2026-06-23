@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, status_badge %}
+
+{% block title %}Models — Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Models{% endblock %}
+{% block page_sub %}
+  {{ models | length }} model{{ 's' if models | length != 1 else '' }} registered
+  {% if models %} · {{ stages | length }} stages{% endif %}
+{% endblock %}
+{% block page_actions %}
+<button class="btn sm primary" onclick="document.getElementById('register-dialog').showModal()">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Register model
+</button>
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── flash ── #}
+{% if flash %}
+<div class="card" style="margin-bottom:12px;padding:10px 14px;border-color:{{ 'var(--green-6)' if flash.kind == 'success' else 'var(--red-6)' }};
+                          background:color-mix(in oklch,{{ 'var(--green-9)' if flash.kind == 'success' else 'var(--red-9)' }} 8%,transparent)">
+  <span style="font-size:13px;color:{{ 'var(--green-11)' if flash.kind == 'success' else 'var(--red-11)' }}">{{ flash.msg }}</span>
+</div>
+{% endif %}
+
+{# ── metric strip ── #}
+{% if models %}
+{% set prod_count = models | selectattr('stage', 'equalto', 'production') | list | length %}
+{% set staging_count = models | selectattr('stage', 'equalto', 'staging') | list | length %}
+{% set dev_count = models | selectattr('stage', 'equalto', 'development') | list | length %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Models registered", models | length, "brain", "violet", "in registry") }}
+  {{ metric_card("In production", prod_count, "rocket", "violet", "serving" if prod_count > 0 else "none promoted") }}
+  {{ metric_card("In staging", staging_count, "flask-conical", "orange", "validation") }}
+  {{ metric_card("Development", dev_count, "code-2", "violet", "in progress") }}
+</div>
+{% endif %}
+
+{# ── 3-column master-detail ── #}
+{% if models %}
+<div class="grid" style="grid-template-columns:1fr 2fr 1fr;gap:var(--space-3);align-items:start">
+
+  {# ── Left col: model list ── #}
+  <div class="card bare">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);gap:8px">
+      <div class="input-icon" style="flex:1">
+        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+        <input class="input" id="model-search" placeholder="Filter models…" style="font-size:12px;height:26px">
+      </div>
+    </div>
+    <div id="model-list">
+      {% for m in models %}
+      <div class="pipe-item {{ 'active' if loop.first }}"
+           role="button" tabindex="0"
+           data-name="{{ m.name }}"
+           data-stage="{{ m.stage }}"
+           data-version="{{ m.version }}"
+           data-framework="{{ m.framework }}"
+           onclick="selectModel(this)"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectModel(this)}"
+           style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:10px 14px 10px 11px;cursor:pointer;display:flex;gap:10px;align-items:center">
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:6px">
+            <span class="mono" style="font-weight:600;font-size:12px;color:var(--text)">{{ m.name }}</span>
+            {% if m.stage == 'production' %}<span class="pill success" style="height:14px;font-size:9px">prod</span>
+            {% elif m.stage == 'staging' %}<span class="pill warn" style="height:14px;font-size:9px">staging</span>
+            {% else %}<span class="pill" style="height:14px;font-size:9px">dev</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:2px">v{{ m.version }} · {{ m.framework or 'no framework' }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Center col: model detail ── #}
+  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
+    {# Header #}
+    <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0">
+      <span class="glyph accent">
+        <i data-lucide="box" style="width:13px;height:13px"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:8px">
+          <span class="mono" id="detail-name" style="font-weight:600;font-size:15px">
+            {{ models[0].name if models else '—' }}
+          </span>
+          <span id="detail-stage-pill" class="pill {{ 'success' if models and models[0].stage == 'production' else 'warn' if models and models[0].stage == 'staging' else '' }}"
+                style="height:16px;font-size:9px">
+            {{ models[0].stage if models else '—' }}
+          </span>
+        </div>
+        <div class="muted mono" id="detail-framework" style="font-size:11px;margin-top:2px">
+          {{ models[0].framework if models else '—' }}
+        </div>
+      </div>
+      {# Promote dropdown #}
+      <form method="post" id="promote-form"
+            action="/intelligence/models/promote/{{ models[0].name if models else '#' }}"
+            style="display:flex;gap:4px;align-items:center">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <select name="stage" id="promote-stage-select" class="input" style="height:28px;font-size:11px;width:110px">
+          {% for s in stages %}
+          <option value="{{ s }}" {{ 'selected' if models and s == models[0].stage else '' }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn sm primary">Promote →</button>
+      </form>
+      {# Archive / Delete #}
+      <form method="post" id="delete-form"
+            action="/intelligence/models/delete/{{ models[0].name if models else '#' }}"
+            onsubmit="event.preventDefault();dexConfirm(this,'Delete model?','This will permanently remove this model and all its versions.')">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn sm ghost" style="color:var(--red-9)">
+          <i data-lucide="trash-2" style="width:11px;height:11px"></i> Archive
+        </button>
+      </form>
+    </div>
+
+    {# Tabs #}
+    <div class="tabs" style="padding-left:14px;flex-shrink:0">
+      <button class="tab active" onclick="switchModelTab('info',this)">Info</button>
+      <button class="tab" onclick="switchModelTab('params',this)">Parameters</button>
+      <button class="tab" onclick="switchModelTab('metrics',this)">Metrics</button>
+    </div>
+
+    {# Tab: Info #}
+    <div id="model-tab-info" style="padding:16px;display:flex;gap:12px;flex-wrap:wrap">
+      <div class="card dex-metric-card dex-metric-violet" style="padding:16px 20px;flex:1;min-width:110px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Version</div>
+        <div style="font-size:24px;font-weight:700;color:var(--text);line-height:1" id="info-version">{{ models[0].version if models else '—' }}</div>
+      </div>
+      <div class="card dex-metric-card dex-metric-violet" style="padding:16px 20px;flex:1;min-width:110px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Stage</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1" id="info-stage">{{ models[0].stage if models else '—' }}</div>
+      </div>
+      <div class="card dex-metric-card dex-metric-violet" style="padding:16px 20px;flex:1;min-width:110px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Framework</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1;font-family:var(--font-mono)" id="info-framework">{{ models[0].framework if models else '—' }}</div>
+      </div>
+    </div>
+
+    {# Tab: Parameters #}
+    <div id="model-tab-params" style="display:none;flex:1;overflow-y:auto">
+      <table class="dex-table" style="font-size:12px" id="params-table">
+        <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+        <tbody id="params-body"></tbody>
+      </table>
+    </div>
+
+    {# Tab: Metrics #}
+    <div id="model-tab-metrics" style="display:none;flex:1;overflow-y:auto">
+      <table class="dex-table" style="font-size:12px" id="metrics-table">
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody id="metrics-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Right col: quick predict ── #}
+  <div class="card bare" x-data="quickPredict()">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+      <div class="row" style="gap:8px">
+        <span class="glyph accent" style="width:22px;height:22px">
+          <i data-lucide="zap" style="width:11px;height:11px"></i>
+        </span>
+        <span style="font-weight:600;font-size:13px">Quick Predict</span>
+      </div>
+    </div>
+    <div style="padding:14px">
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Paste a JSON payload to run a prediction against the selected model.</div>
+      <form hx-post="/intelligence/predictions/run"
+            hx-target="#qp-result"
+            hx-swap="innerHTML">
+        <input type="hidden" name="model" id="qp-model-input" value="{{ models[0].name if models else '' }}">
+        <textarea name="input_json" id="qp-input"
+                  class="input" rows="6"
+                  style="font-family:var(--font-mono);font-size:11px;padding:8px;width:100%;resize:vertical;margin-bottom:10px"
+                  placeholder='{"feature": value}'></textarea>
+        <button type="submit" class="btn sm primary" style="width:100%">
+          <i data-lucide="zap" style="width:11px;height:11px"></i> Run prediction
+        </button>
+      </form>
+      <div id="qp-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+</div>
+
+{% else %}
+{# ── empty state ── #}
+{{ empty_state("box", "No models registered", "Register a trained model artifact to track versions, promote through stages, and serve predictions.") }}
+{% endif %}
+
+{# ── register dialog ── #}
+<dialog class="dex-dialog" id="register-dialog">
+  <div class="dlg-header">
+    <span style="font-weight:600;font-size:14px">Register model</span>
+    <button class="btn icon ghost sm" onclick="document.getElementById('register-dialog').close()">
+      <i data-lucide="x" style="width:14px;height:14px"></i>
+    </button>
+  </div>
+  <form method="post" action="/intelligence/models/register" class="dlg-body col" style="gap:14px">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-name">Name</label>
+      <input class="input" id="reg-name" name="name" required placeholder="e.g. churn-predictor" autofocus>
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-version">Version</label>
+      <input class="input" id="reg-version" name="version" value="1.0.0" placeholder="1.0.0">
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-framework">Framework</label>
+      <input class="input" id="reg-framework" name="framework" placeholder="e.g. xgboost, sklearn, pytorch">
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="reg-artifact">Artifact path</label>
+      <input class="input" id="reg-artifact" name="artifact_path" placeholder="/models/churn/v1.pkl">
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:4px">
+      <button type="button" class="btn ghost" onclick="document.getElementById('register-dialog').close()">Cancel</button>
+      <button type="submit" class="btn primary">Register</button>
+    </div>
+  </form>
+</dialog>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  const MODEL_DATA = {{ model_data_json | safe }};
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function stagePillClass(stage) {
+    if (stage === 'production') return 'success';
+    if (stage === 'staging') return 'warn';
+    return '';
+  }
+
+  function renderParams(name) {
+    const d = MODEL_DATA[name] || {};
+    const params = d.parameters || {};
+    const tbody = document.getElementById('params-body');
+    if (!tbody) return;
+    const keys = Object.keys(params);
+    if (!keys.length) {
+      tbody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:24px">No parameters stored</td></tr>';
+      return;
+    }
+    tbody.innerHTML = keys.map(k =>
+      '<tr><td class="mono" style="font-size:11px">' + esc(k) + '</td>' +
+      '<td class="mono" style="font-size:11px">' + esc(String(params[k])) + '</td></tr>'
+    ).join('');
+  }
+
+  function renderMetrics(name) {
+    const d = MODEL_DATA[name] || {};
+    const metrics = d.metrics || {};
+    const tbody = document.getElementById('metrics-body');
+    if (!tbody) return;
+    const keys = Object.keys(metrics);
+    if (!keys.length) {
+      tbody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:24px">No metrics stored</td></tr>';
+      return;
+    }
+    tbody.innerHTML = keys.map(k =>
+      '<tr><td class="mono" style="font-size:11px">' + esc(k) + '</td>' +
+      '<td class="mono" style="font-size:11px">' + esc(String(metrics[k])) + '</td></tr>'
+    ).join('');
+  }
+
+  globalThis.selectModel = function (el) {
+    document.querySelectorAll('.pipe-item').forEach(function (i) {
+      i.classList.remove('active');
+      i.style.borderLeftColor = 'transparent';
+      i.style.background = 'none';
+    });
+    el.classList.add('active');
+    el.style.borderLeftColor = 'var(--accent-9)';
+    el.style.background = 'color-mix(in oklch,var(--accent-9) 10%,transparent)';
+
+    const name    = el.dataset.name;
+    const stage   = el.dataset.stage;
+    const version = el.dataset.version;
+    const fw      = el.dataset.framework;
+
+    const nameEl = document.getElementById('detail-name');
+    if (nameEl) nameEl.textContent = name;
+
+    const sp = document.getElementById('detail-stage-pill');
+    if (sp) {
+      sp.textContent = stage;
+      sp.className = 'pill ' + stagePillClass(stage);
+      sp.style.height = '16px'; sp.style.fontSize = '9px';
+    }
+
+    const fwEl = document.getElementById('detail-framework');
+    if (fwEl) fwEl.textContent = fw || '—';
+
+    const infoV = document.getElementById('info-version');
+    if (infoV) infoV.textContent = version || '—';
+    const infoS = document.getElementById('info-stage');
+    if (infoS) infoS.textContent = stage || '—';
+    const infoFw = document.getElementById('info-framework');
+    if (infoFw) infoFw.textContent = fw || '—';
+
+    // Update promote form
+    const pf = document.getElementById('promote-form');
+    if (pf) pf.action = '/intelligence/models/promote/' + encodeURIComponent(name);
+    const ps = document.getElementById('promote-stage-select');
+    if (ps) {
+      Array.from(ps.options).forEach(o => { o.selected = o.value === stage; });
+    }
+
+    // Update delete form
+    const df = document.getElementById('delete-form');
+    if (df) df.action = '/intelligence/models/delete/' + encodeURIComponent(name);
+
+    // Update quick predict model input
+    const qm = document.getElementById('qp-model-input');
+    if (qm) qm.value = name;
+
+    // Clear quick predict result
+    const qr = document.getElementById('qp-result');
+    if (qr) qr.innerHTML = '';
+
+    renderParams(name);
+    renderMetrics(name);
+  };
+
+  // Tab switching
+  globalThis.switchModelTab = function (name, btn) {
+    document.querySelectorAll('[id^="model-tab-"]').forEach(el => { el.style.display = 'none'; });
+    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const pane = document.getElementById('model-tab-' + name);
+    if (pane) pane.style.display = '';
+  };
+
+  // Model search
+  const searchInput = document.getElementById('model-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      document.querySelectorAll('.pipe-item').forEach(item => {
+        item.style.display = item.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  // Initial render
+  const firstModel = document.querySelector('.pipe-item');
+  if (firstModel) {
+    renderParams(firstModel.dataset.name);
+    renderMetrics(firstModel.dataset.name);
+  }
+
+  function quickPredict() {
+    return {};
+  }
+  globalThis.quickPredict = quickPredict;
+}());
+</script>
+{% endblock %}

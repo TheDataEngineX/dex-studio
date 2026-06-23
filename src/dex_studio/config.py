@@ -121,6 +121,7 @@ class StudioPrefs:
     port: int = 7860
     native_mode: bool = True
     default_config_path: str = ""  # persisted across restarts
+    monthly_budget_usd: float = 25.0  # AI spend budget cap shown on /system/costs
 
 
 def load_prefs() -> StudioPrefs:
@@ -130,6 +131,7 @@ def load_prefs() -> StudioPrefs:
         "window_width": int,
         "window_height": int,
         "port": int,
+        "monthly_budget_usd": float,
         "native_mode": lambda v: str(v).lower() not in {"0", "false", "no"},
     }
     for key, coerce in _COERCE.items():

@@ -14,10 +14,15 @@ help = "Install all dependency groups (dev included)"
 shell = "bash scripts/setup-system.sh"
 help = "Install system packages (GTK, WebKitGTK, PyGObject) — run 'sudo bash scripts/setup-system.sh' directly if prompted"
 
+[tool.poe.tasks.install-dev]
+cmd = "uv pip install -e ../dataenginex"
+help = "Install dataenginex as an editable package from the local sibling repo"
+
 # ── Development ───────────────────────────────────────────────────────────────
 [tool.poe.tasks.dev]
 cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --reload --loop uvloop"
 env = { PYTHONPATH = "src" }
+envfile = ".env"
 help = "Launch DEX Studio dev server (port 7860, hot-reload)"
 
 [tool.poe.tasks.serve]
@@ -114,6 +119,23 @@ help = "Build Docker image"
 [tool.poe.tasks.docker-serve]
 shell = "docker run --rm -p 7860:7860 -e DEX_STUDIO_API_URL=http://host.docker.internal:17000 dex-studio"
 help = "Run dex-studio in Docker (connects to local DEX API on host)"
+
+# ── Documentation ────────────────────────────────────────────────────────────
+[tool.poe.tasks.docs]
+shell = """
+python3 -c "
+import json, sys
+from dex_studio.app import create_app
+import os; os.environ.setdefault('DEX_STUDIO_SESSION_SECRET', 'docs')
+schema = create_app().openapi()
+out = 'docs/openapi.json'
+os.makedirs('docs', exist_ok=True)
+json.dump(schema, open(out, 'w'), indent=2)
+print('OpenAPI schema written to', out, '—', len(schema.get('paths', {})), 'paths')
+"
+"""
+env = { PYTHONPATH = "src" }
+help = "Export OpenAPI schema to docs/openapi.json"
 
 # ── Demo & Screenshots ────────────────────────────────────────────────────────
 [tool.poe.tasks.demo]

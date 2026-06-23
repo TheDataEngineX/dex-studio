@@ -88,7 +88,7 @@ def client(real_engine) -> Generator[TestClient]:
 
     orig = _mod._ENGINE
     _mod._ENGINE = real_engine
-    os.environ["DEX_STUDIO_API_KEY"] = _TEST_API_KEY
+    os.environ["DEX_STUDIO_PASSPHRASE"] = _TEST_API_KEY
     os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
 
     from dex_studio.app import create_app
@@ -102,12 +102,12 @@ def client(real_engine) -> Generator[TestClient]:
 
     with TestClient(app, raise_server_exceptions=False) as tc:
         # Authenticate once — the TestClient persists the session cookie.
-        login = tc.post("/login", data={"api_key": _TEST_API_KEY})
+        login = tc.post("/login", data={"passphrase": _TEST_API_KEY})
         assert login.status_code in (200, 303), f"Login failed: {login.status_code}"
         yield tc
 
     _mod._ENGINE = orig
-    os.environ.pop("DEX_STUDIO_API_KEY", None)
+    os.environ.pop("DEX_STUDIO_PASSPHRASE", None)
 
 
 @pytest.fixture(scope="module")
@@ -231,32 +231,29 @@ def test_system_metrics(client: TestClient) -> None:
     assert r.status_code == 200
 
 
-# ── ML ────────────────────────────────────────────────────────────────────────
+# ── Intelligence ──────────────────────────────────────────────────────────────
 
 
-def test_ml_models(client: TestClient) -> None:
-    r = client.get("/ml/models")
+def test_intelligence_models(client: TestClient) -> None:
+    r = client.get("/intelligence/models")
     assert r.status_code == 200
 
 
-def test_ml_experiments(client: TestClient) -> None:
-    r = client.get("/ml/experiments")
+def test_intelligence_experiments(client: TestClient) -> None:
+    r = client.get("/intelligence/experiments")
     assert r.status_code == 200
 
 
-def test_ml_drift(client: TestClient) -> None:
-    r = client.get("/ml/drift")
+def test_intelligence_drift(client: TestClient) -> None:
+    r = client.get("/intelligence/drift")
     assert r.status_code == 200
 
 
-# ── AI ────────────────────────────────────────────────────────────────────────
-
-
-def test_ai_agents(client: TestClient) -> None:
-    r = client.get("/ai/agents")
+def test_intelligence_agents(client: TestClient) -> None:
+    r = client.get("/intelligence/agents")
     assert r.status_code == 200
 
 
-def test_ai_playground(client: TestClient) -> None:
-    r = client.get("/ai/playground")
+def test_intelligence_playground(client: TestClient) -> None:
+    r = client.get("/intelligence/playground")
     assert r.status_code == 200

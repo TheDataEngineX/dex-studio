@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Scheduler — System — DEX Studio{% endblock %}
+
+{% block page_title %}Scheduler{% endblock %}
+{% block page_sub %}cron pipeline schedules · dependency DAG · retry · dead letter{% endblock %}
+{% block page_actions %}
+  {% if scheduler.enabled %}
+    {% if scheduler.paused %}
+      <form method="post" action="/system/scheduler/resume" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn sm primary">
+          <i data-lucide="play" style="width:11px;height:11px"></i> Resume
+        </button>
+      </form>
+    {% else %}
+      <form method="post" action="/system/scheduler/pause" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn sm ghost">
+          <i data-lucide="pause" style="width:11px;height:11px"></i> Pause
+        </button>
+      </form>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-system)">
+
+{# ── Status banner ─────────────────────────────────────────────────────────── #}
+{% if not scheduler.enabled %}
+<div class="card" style="padding:12px 16px;border-left:3px solid var(--amber-9);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+  <i data-lucide="alert-triangle" style="width:14px;height:14px;color:var(--amber-9);flex-shrink:0"></i>
+  <span style="color:var(--amber-9);font-weight:600">Scheduler disabled</span>
+  <span class="dim" style="margin-left:4px">Add <code>scheduler: enabled: true</code> to your dex.yaml to enable automatic pipeline runs.</span>
+</div>
+{% elif scheduler.paused %}
+<div class="card" style="padding:12px 16px;border-left:3px solid var(--amber-9);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+  <i data-lucide="pause-circle" style="width:14px;height:14px;color:var(--amber-9);flex-shrink:0"></i>
+  <span style="color:var(--amber-9);font-weight:600">Scheduler paused</span>
+  <span class="dim" style="margin-left:4px">No new runs will fire until resumed.</span>
+</div>
+{% else %}
+<div class="card" style="padding:12px 16px;border-left:3px solid var(--green-9);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+  <i data-lucide="check-circle-2" style="width:14px;height:14px;color:var(--green-9);flex-shrink:0"></i>
+  <span style="color:var(--green-9);font-weight:600">Scheduler active</span>
+  <span class="dim" style="margin-left:4px">Checking every {{ scheduler.tick_s }}s · {{ scheduler.pipelines | length }} pipelines</span>
+</div>
+{% endif %}
+
+{# ── 2-column layout ───────────────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1fr 2fr;gap:var(--space-3);align-items:start">
+
+  {# ── Left col: Schedule list ─────────────────────────────────────────────── #}
+  <div class="card bare" id="sched-pipe-list"
+       hx-get="/system/scheduler" hx-trigger="every 30s" hx-select="#sched-pipe-list" hx-target="#sched-pipe-list" hx-swap="outerHTML">
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);gap:8px">
+      <span style="font-weight:600;font-size:12px">Pipelines</span>
+      <span class="pill {{ 'success' if scheduler.enabled and not scheduler.paused else 'warn' if scheduler.paused else '' }}" style="font-size:10px">
+        {{ 'active' if (scheduler.enabled and not scheduler.paused) else ('paused' if scheduler.paused else 'disabled') }}
+      </span>
+      <span class="dim mono" style="margin-left:auto;font-size:11px">{{ scheduler.pipelines | length }}</span>
+    </div>
+
+    {% for p in scheduler.pipelines %}
+    {% set p_ok = p.status == 'success' %}
+    {% set p_fail = p.status in ('failure', 'error') %}
+    {% set p_run = p.status == 'running' or p.locked %}
+    {% set p_dl = p.in_dead_letter %}
+    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border);gap:8px;align-items:flex-start;cursor:pointer"
+         onclick="selectSchedulePipeline('{{ p.name }}')" id="sched-row-{{ loop.index }}">
+      <div style="padding-top:2px">
+        <span class="sdot {{ 'ok' if p_ok else ('error' if p_fail or p_dl else ('running' if p_run else 'idle')) }}"></span>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <span class="mono" style="font-size:12px;font-weight:500">{{ p.name }}</span>
+          {% if p_dl %}<span class="pill error" style="height:14px;font-size:9px">dead letter</span>{% endif %}
+          {% if p_run and not p_dl %}<span class="pill running" style="height:14px;font-size:9px">running</span>{% endif %}
+        </div>
+        <div class="muted mono" style="font-size:10px;margin-top:2px">
+          {{ p.schedule or 'manual' }}
+          {% if p.next_run_at %}
+          · <span data-ts="{{ p.next_run_at }}">—</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if p.schedule %}
+      <form method="post" action="/system/scheduler/trigger/{{ p.name }}" style="display:inline;flex-shrink:0">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn icon ghost sm" title="Run now" onclick="event.stopPropagation()">
+          <i data-lucide="play" style="width:11px;height:11px"></i>
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="dex-empty-state" style="padding:32px 16px">
+      <i data-lucide="calendar-clock" style="width:24px;height:24px;opacity:.3;margin-bottom:8px"></i>
+      <div style="font-size:13px;font-weight:500;margin-bottom:4px">No pipelines configured</div>
+      <div class="muted" style="font-size:11px">Add pipelines with a schedule in dex.yaml.</div>
+    </div>
+    {% endfor %}
+
+    {# Global controls footer #}
+    {% if scheduler.enabled %}
+    <div style="padding:10px 14px;border-top:1px solid var(--border);background:var(--bg-elev)">
+      <div class="cap" style="margin-bottom:8px">Global Controls</div>
+      <div class="row" style="gap:8px">
+        {% if scheduler.paused %}
+        <form method="post" action="/system/scheduler/resume" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="btn sm primary"><i data-lucide="play" style="width:11px;height:11px"></i> Resume all</button>
+        </form>
+        {% else %}
+        <form method="post" action="/system/scheduler/pause" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="btn sm ghost"><i data-lucide="pause" style="width:11px;height:11px"></i> Pause all</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Right col: Detail with tabs ─────────────────────────────────────────── #}
+  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
+
+    {# Tab bar #}
+    <div class="tabs" style="padding-left:14px;flex-shrink:0">
+      <button class="tab active" onclick="switchSchedTab('dag', this)">DAG</button>
+      <button class="tab" onclick="switchSchedTab('dead-letter', this)">
+        Dead Letter
+        {% if scheduler.dead_letter %}
+        <span class="count" style="background:var(--red-9);color:#fff">{{ scheduler.dead_letter | length }}</span>
+        {% endif %}
+      </button>
+      <button class="tab" onclick="switchSchedTab('history', this)">History</button>
+    </div>
+
+    {# ── DAG tab ────────────────────────────────────────────────────────────── #}
+    <div id="sched-tab-dag" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="position:relative;height:320px;background:var(--bg);overflow:hidden" id="sched-dag-canvas">
+        <div class="grid-bg" style="position:absolute;inset:0;pointer-events:none"></div>
+        <svg id="sched-dag-svg"
+             style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"
+             viewBox="0 0 1000 320" preserveAspectRatio="none">
+          <defs>
+            <marker id="sarr" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--text-4)"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+      <div style="padding:12px 14px;border-top:1px solid var(--border);background:var(--bg-elev);flex-shrink:0">
+        <div class="row" style="gap:16px;font-size:11px">
+          <span class="row" style="gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--state-ok);display:inline-block"></span>success</span>
+          <span class="row" style="gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--state-error);display:inline-block"></span>failed</span>
+          <span class="row" style="gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-9);display:inline-block"></span>running</span>
+          <span class="row" style="gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--text-4);display:inline-block"></span>idle/never</span>
+        </div>
+      </div>
+    </div>
+
+    {# ── Dead letter tab ────────────────────────────────────────────────────── #}
+    <div id="sched-tab-dead-letter" style="display:none;flex:1;overflow-y:auto">
+      {% if scheduler.dead_letter %}
+      <table class="dex-table" style="width:100%">
+        <thead>
+          <tr><th>Pipeline</th><th>Attempts</th><th>Error</th><th>Recorded</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for dl in scheduler.dead_letter %}
+          <tr>
+            <td class="mono" style="font-size:12px;color:var(--red-9)">{{ dl.pipeline }}</td>
+            <td class="dim" style="font-size:12px">{{ dl.attempts }}</td>
+            <td class="mono" style="font-size:11px;color:var(--red-9);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ dl.error }}">
+              {{ dl.error[:80] }}
+            </td>
+            <td class="dim" style="font-size:11px">{{ dl.recorded_at[:19].replace('T', ' ') if dl.recorded_at else '—' }}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <form method="post" action="/system/scheduler/dead-letter/{{ dl.pipeline }}/clear" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button class="btn sm">Retry</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="dex-empty-state" style="padding:48px 24px">
+        <i data-lucide="inbox" style="width:28px;height:28px;opacity:.3;margin-bottom:12px"></i>
+        <div style="font-size:13px;font-weight:500;margin-bottom:4px">Dead letter queue is empty</div>
+        <div class="muted" style="font-size:11px">Pipelines that fail after max retries appear here.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── History tab ────────────────────────────────────────────────────────── #}
+    <div id="sched-tab-history" style="display:none;flex:1;overflow-y:auto"
+         hx-get="/system/scheduler" hx-trigger="every 30s" hx-select="#sched-tab-history" hx-target="#sched-tab-history" hx-swap="outerHTML">
+      <table class="dex-table" style="width:100%;font-size:12px">
+        <thead>
+          <tr>
+            <th>Pipeline</th>
+            <th>Schedule</th>
+            <th>Depends on</th>
+            <th>Last run</th>
+            <th>Next run</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in scheduler.pipelines %}
+          <tr>
+            <td class="mono" style="font-size:12px">{{ p.name }}</td>
+            <td class="mono dim" style="font-size:11px">{{ p.schedule or '—' }}</td>
+            <td class="dim mono" style="font-size:11px">{{ p.depends_on | join(', ') if p.depends_on else '—' }}</td>
+            <td class="dim" style="font-size:11px">{{ p.last_run_at[:19].replace('T', ' ') if p.last_run_at else '—' }}</td>
+            <td>
+              {% if p.next_run_at %}
+              <span data-ts="{{ p.next_run_at }}" style="font-size:11px;color:var(--text-3)">—</span>
+              {% else %}
+              <span style="color:var(--text-4)">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if p.status == 'success' %}
+                <span class="pill success" style="font-size:10px">success</span>
+              {% elif p.status in ('failure', 'error') %}
+                <span class="pill error" style="font-size:10px">failed</span>
+              {% elif p.status == 'running' or p.locked %}
+                <span class="pill running" style="font-size:10px">running</span>
+              {% else %}
+                <span class="pill" style="font-size:10px;color:var(--text-4)">never</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="dim" style="text-align:center;padding:24px">No pipelines configured.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>{# /right col #}
+</div>{# /grid #}
+</div>{# /domain-color #}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function () {
+  'use strict';
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  globalThis.switchSchedTab = function (name, btn) {
+    ['dag', 'dead-letter', 'history'].forEach(function (t) {
+      const el = document.getElementById('sched-tab-' + t);
+      if (el) el.style.display = t === name ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.tabs .tab').forEach(function (b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+  };
+
+  // ── Pipeline row selection ─────────────────────────────────────────────────
+  globalThis.selectSchedulePipeline = function (name) {
+    document.querySelectorAll('[id^="sched-row-"]').forEach(function (row) {
+      row.style.background = 'none';
+    });
+  };
+
+  // ── DAG rendering (mirrors pipelines.html pattern) ─────────────────────────
+  const DAG_DATA = {{ dag_json | safe }};
+
+  const STATUS_COLOR = {
+    success:  'var(--state-ok)',
+    failure:  'var(--state-error)',
+    error:    'var(--state-error)',
+    running:  'var(--accent-9)',
+    never:    'var(--text-4)',
+  };
+
+  const canvas = document.getElementById('sched-dag-canvas');
+  const svg    = document.getElementById('sched-dag-svg');
+  const NODE_H = 36;
+  const NODE_W = 140;
+
+  function buildDagLayout() {
+    if (!DAG_DATA.length) return [];
+    // Topological sort: roots first
+    const nameSet = new Set(DAG_DATA.map(function (p) { return p.name; }));
+    const ranks = {};
+    function rank(name, visited) {
+      if (visited.has(name)) return 0;
+      visited.add(name);
+      const node = DAG_DATA.find(function (p) { return p.name === name; });
+      if (!node) return 0;
+      const deps = (node.depends_on || []).filter(function (d) { return nameSet.has(d); });
+      if (!deps.length) { ranks[name] = 0; return 0; }
+      const r = Math.max.apply(null, deps.map(function (d) { return rank(d, visited) + 1; }));
+      ranks[name] = r;
+      return r;
+    }
+    DAG_DATA.forEach(function (p) { rank(p.name, new Set()); });
+
+    const maxRank = Math.max.apply(null, Object.values(ranks));
+    const byRank = {};
+    DAG_DATA.forEach(function (p) {
+      const r = ranks[p.name] || 0;
+      (byRank[r] = byRank[r] || []).push(p);
+    });
+
+    const nodes = [];
+    for (let r = 0; r <= maxRank; r++) {
+      const col = byRank[r] || [];
+      const xPct = maxRank > 0 ? (r / maxRank) * 80 + 5 : 50;
+      col.forEach(function (p, i) {
+        const yPct = col.length > 1 ? (i / (col.length - 1)) * 60 + 20 : 44;
+        nodes.push({ name: p.name, x: xPct, y: yPct, status: p.status, depends_on: p.depends_on || [] });
+      });
+    }
+    return nodes;
+  }
+
+  function anchor(node, side) {
+    const pw = canvas.clientWidth  || 900;
+    const ph = canvas.clientHeight || 320;
+    const xPx = (node.x / 100) * pw + (side === 'right' ? NODE_W : 0);
+    const yPx = (node.y / 100) * ph + NODE_H / 2;
+    return { x: (xPx / pw) * 1000, y: (yPx / ph) * 320 };
+  }
+
+  function renderDag() {
+    const nodes = buildDagLayout();
+    const byName = {};
+    nodes.forEach(function (n) { byName[n.name] = n; });
+
+    // Clear previous
+    canvas.querySelectorAll('.dag-node-el').forEach(function (e) { e.remove(); });
+    svg.querySelectorAll('path.dag-edge').forEach(function (e) { e.remove(); });
+
+    // Draw edges first (behind nodes)
+    nodes.forEach(function (node) {
+      node.depends_on.forEach(function (dep) {
+        const src = byName[dep];
+        if (!src) return;
+        const A = anchor(src, 'right');
+        const B = anchor(node, 'left');
+        const mid = (A.x + B.x) / 2;
+        const d = 'M' + A.x + ',' + A.y + ' C' + mid + ',' + A.y + ' ' + mid + ',' + B.y + ' ' + B.x + ',' + B.y;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'var(--border)');
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('marker-end', 'url(#sarr)');
+        path.setAttribute('class', 'dag-edge');
+        svg.appendChild(path);
+      });
+    });
+
+    // Draw nodes
+    nodes.forEach(function (node) {
+      const col = STATUS_COLOR[node.status] || 'var(--text-4)';
+      const el = document.createElement('div');
+      el.className = 'dag-node dag-node-el';
+      el.style.cssText = 'left:' + node.x + '%;top:' + node.y + '%;width:' + NODE_W + 'px;' +
+        'border-color:color-mix(in oklch,' + col + ' 40%,var(--border));background:var(--bg-elev)';
+      el.innerHTML =
+        '<span class="sdot ' + (node.status === 'success' ? 'ok' : node.status === 'running' ? 'running' : (node.status in {failure:1,error:1} ? 'error' : 'idle')) + '" style="flex-shrink:0"></span>' +
+        '<div style="overflow:hidden;flex:1"><b style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">' + node.name + '</b>' +
+        '<span style="font-size:9px;color:' + col + '">' + (node.status || 'idle') + '</span></div>';
+      canvas.appendChild(el);
+    });
+  }
+
+  if (DAG_DATA.length) {
+    renderDag();
+    let rsz;
+    window.addEventListener('resize', function () {
+      clearTimeout(rsz);
+      rsz = setTimeout(renderDag, 120);
+    });
+  } else {
+    // Empty state in canvas
+    if (canvas) {
+      const msg = document.createElement('div');
+      msg.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-4);font-size:12px';
+      msg.textContent = 'No pipelines configured';
+      canvas.appendChild(msg);
+    }
+  }
+
+  // relativeTime defined globally in base.html
+}());
+</script>
+{% endblock %}

@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Agents — Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Agents{% endblock %}
+{% block page_sub %}
+  {% set active_count = agents | selectattr('status', 'equalto', 'available') | list | length %}
+  {{ agents | length }} configured · {{ active_count }} available
+{% endblock %}
+{% block page_actions %}
+<button class="btn sm primary" onclick="document.getElementById('new-agent-dialog').showModal()">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> Add agent
+</button>
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Flash ── #}
+{% if flash %}
+<div class="alert {{ flash.kind }}" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--r-2);font-size:13px;
+  {% if flash.kind == 'error' %}background:color-mix(in oklch,var(--red-9) 10%,transparent);border:1px solid color-mix(in oklch,var(--red-9) 25%,transparent);color:var(--red-11)
+  {% else %}background:color-mix(in oklch,var(--green-9) 10%,transparent);border:1px solid color-mix(in oklch,var(--green-9) 25%,transparent);color:var(--green-11){% endif %}">
+  <i data-lucide="{{ 'alert-circle' if flash.kind == 'error' else 'check-circle' }}" style="width:14px;height:14px;flex-shrink:0"></i>
+  {{ flash.msg }}
+</div>
+{% endif %}
+
+{# ── Metric strip ── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {% set active_count = agents | selectattr('status', 'equalto', 'available') | list | length %}
+  {% set offline_count = agents | rejectattr('status', 'equalto', 'available') | list | length %}
+  {{ metric_card("Agents", agents | length, "brain-circuit", "violet") }}
+  {{ metric_card("Available", active_count, "check-circle", "violet") }}
+  {{ metric_card("Offline", offline_count, "wifi-off", "violet") }}
+</div>
+
+{# ── Circuit breaker warning banner ── #}
+{% set open_agents = agents | selectattr('circuit_state', 'ne', 'closed') | list %}
+{% if open_agents %}
+<div style="background:color-mix(in oklch,var(--amber-9) 10%,transparent);border:1px solid color-mix(in oklch,var(--amber-9) 25%,transparent);border-radius:var(--r-2);padding:10px 14px;margin-bottom:20px;display:flex;align-items:flex-start;gap:10px">
+  <i data-lucide="shield-alert" style="width:15px;height:15px;color:var(--amber-9);flex-shrink:0;margin-top:1px"></i>
+  <div>
+    <div style="font-size:13px;font-weight:600;color:var(--amber-11)">Circuit breaker active</div>
+    <div style="font-size:12px;color:var(--amber-10);margin-top:3px">
+      {% for a in open_agents %}
+      <span class="mono" style="font-weight:500">{{ a.name }}</span>
+      {% if a.circuit_state == 'open' %}<span class="pill error" style="font-size:9px;height:15px;margin-left:4px">open</span>
+      {% else %}<span class="pill warn" style="font-size:9px;height:15px;margin-left:4px">half-open</span>{% endif %}
+      {% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Agents table ── #}
+{% if agents %}
+<div class="card bare" style="overflow:hidden;margin-bottom:32px">
+  <table class="dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Model</th>
+        <th>Capabilities</th>
+        <th style="width:80px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in agents %}
+      <tr>
+        <td>
+          <div class="row" style="gap:8px;align-items:center">
+            <span class="glyph accent" style="width:24px;height:24px;flex-shrink:0">
+              <i data-lucide="bot" style="width:12px;height:12px"></i>
+            </span>
+            <span class="mono" style="font-weight:600;font-size:13px">{{ a.name }}</span>
+            {% if a.circuit_state == 'open' %}
+              <span class="pill error" style="height:15px;font-size:9px">circuit open</span>
+            {% elif a.circuit_state in ('half_open', 'probing') %}
+              <span class="pill warn" style="height:15px;font-size:9px">recovering</span>
+            {% endif %}
+          </div>
+        </td>
+        <td>
+          <span class="type-pill">{{ a.type or 'builtin' }}</span>
+        </td>
+        <td>
+          {% if a.status == 'available' %}
+            <span class="pill success" style="font-size:10px">available</span>
+          {% else %}
+            <span class="pill" style="font-size:10px">{{ a.status or 'offline' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="mono muted" style="font-size:11.5px">{{ a.model or '—' }}</span>
+        </td>
+        <td>
+          <div class="row" style="gap:4px;flex-wrap:wrap">
+            {% if a.capabilities %}
+              {% for cap in a.capabilities %}
+              <span class="chip" style="height:18px;font-size:10px">{{ cap }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted" style="font-size:11px">—</span>
+            {% endif %}
+          </div>
+        </td>
+        <td>
+          <div class="row" style="gap:6px;justify-content:flex-end">
+            <a href="/intelligence/playground?agent={{ a.name | urlencode }}"
+               class="btn sm ghost" style="text-decoration:none" title="Test in playground">
+              <i data-lucide="message-square" style="width:11px;height:11px"></i>
+            </a>
+            <form method="post" action="/intelligence/agents/delete/{{ a.name }}"
+                  onsubmit="event.preventDefault();dexConfirm(this,'Delete agent?','Remove &quot;{{ a.name }}&quot; from the registry.')">
+              <button type="submit" class="btn icon ghost sm" title="Delete agent" style="color:var(--red-9)">
+                <i data-lucide="trash-2" style="width:11px;height:11px"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div style="margin-bottom:32px">
+  {{ empty_state("brain-circuit", "No agents configured", "Add agents to dex.yaml under intelligence.agents, or create one using the button above.") }}
+  <div style="text-align:center;margin-top:12px">
+    <button class="btn primary" onclick="document.getElementById('new-agent-dialog').showModal()">
+      <i data-lucide="plus" style="width:12px;height:12px"></i> Add agent
+    </button>
+  </div>
+</div>
+{% endif %}
+
+{# ── Circuit breaker detail table ── #}
+{% if agents %}
+<div class="section-h">
+  <h2>Circuit Breakers</h2>
+  <span class="muted" style="font-size:var(--text-xs)">LLM backend health per agent</span>
+</div>
+<div class="card bare" style="overflow:hidden;margin-bottom:32px">
+  <table class="dex-table" style="width:100%">
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>State</th>
+        <th>Failures</th>
+        <th>Reset in</th>
+        <th style="width:100px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in agents %}
+      <tr>
+        <td class="mono" style="font-weight:500">{{ a.name }}</td>
+        <td>
+          {% if a.circuit_state == 'open' %}
+            <span class="pill error" style="font-size:10px">open</span>
+          {% elif a.circuit_state in ('half_open', 'probing') %}
+            <span class="pill warn" style="font-size:10px">half-open</span>
+          {% else %}
+            <span class="pill success" style="font-size:10px">closed</span>
+          {% endif %}
+        </td>
+        <td class="mono dim" style="font-size:12px">{{ a.failures or '0' }}</td>
+        <td class="muted" style="font-size:12px">—</td>
+        <td>
+          <button class="btn sm ghost" title="Reset circuit" disabled>
+            <i data-lucide="refresh-cw" style="width:10px;height:10px"></i> Reset
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── Add agent dialog ── #}
+<dialog class="dex-dialog" id="new-agent-dialog" style="width:440px">
+  <div class="row" style="margin-bottom:16px">
+    <span style="font-weight:700;font-size:15px">Add agent</span>
+    <button class="btn icon ghost sm" style="margin-left:auto" onclick="document.getElementById('new-agent-dialog').close()">
+      <i data-lucide="x" style="width:13px;height:13px"></i>
+    </button>
+  </div>
+  <form method="post" action="/intelligence/agents/add">
+    <div class="col" style="gap:14px">
+      <div>
+        <label for="ag-name" style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">Name *</label>
+        <input id="ag-name" type="text" name="name" placeholder="my_agent" required class="input" style="width:100%;font-family:var(--font-mono)">
+      </div>
+      <div>
+        <label for="ag-runtime" style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">Runtime</label>
+        <select id="ag-runtime" name="runtime" class="input" style="width:100%;font-family:var(--font-mono)">
+          <option value="builtin">builtin</option>
+          <option value="custom">custom</option>
+        </select>
+      </div>
+      <div>
+        <label for="ag-prompt" style="font-size:12px;font-weight:500;display:block;margin-bottom:4px">System prompt</label>
+        <textarea id="ag-prompt" name="system_prompt" rows="4"
+          placeholder="Optional system prompt…"
+          class="input" style="width:100%;resize:vertical;line-height:1.5;font-size:13px"></textarea>
+      </div>
+    </div>
+    <div class="row" style="gap:8px;justify-content:flex-end;margin-top:20px">
+      <button type="button" class="btn ghost" onclick="document.getElementById('new-agent-dialog').close()">Cancel</button>
+      <button type="submit" class="btn primary">Add agent</button>
+    </div>
+  </form>
+</dialog>
+
+</div>
+{% endblock %}

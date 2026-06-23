@@ -1,0 +1,443 @@
+{# ──────────────────────────────────────────────────────────────────────────────
+   data/pipeline_quality.html — HTMX partial for pipeline quality rules tab
+
+   Context:
+   - pipeline_name (str)
+   - columns (list of dicts: {name, type, nullable, constraints, rules, passing, failing})
+   - by_col (dict: col_name → list of rule dicts)
+   - total_rules, passing_rules, failing_rules (int)
+   - csrf_token (str)
+
+   Rule dict fields: id, col_name, rule_type, config, on_failure, enabled,
+                    [last_result (bool, default True), pass_pct (int, default 90), violation_desc (str)]
+   ────────────────────────────────────────────────────────────────────────────── #}
+
+<div x-data="pipelineQuality()" x-cloak style="display:flex;flex-direction:column;height:100%;gap:12px">
+
+  {# ──── Toolbar: stats + actions ──── #}
+  <div class="spread" style="padding:0 2px">
+    <div class="row" style="gap:16px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="sdot ok"></span>
+        <span style="font-size:12px;color:var(--text-3)">
+          <span style="font-weight:500;color:var(--text)">{{ passing_rules }}</span> passing
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="sdot error"></span>
+        <span style="font-size:12px;color:var(--text-3)">
+          <span style="font-weight:500;color:var(--text)">{{ failing_rules }}</span> failing
+        </span>
+      </div>
+    </div>
+    <div class="row" style="gap:8px">
+      <button class="btn sm ghost" @click="toggleFilter()" title="Filter rules">
+        <i data-lucide="filter" style="width:12px;height:12px"></i>
+      </button>
+      <form method="post" action="/data/pipelines/{{ pipeline_name }}/quality/run-checks" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn sm primary">
+          <i data-lucide="play" style="width:12px;height:12px"></i> Run checks
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ──── Main layout: column list (260px) + detail panel (flex-1) ──── #}
+  <div style="display:flex;gap:12px;flex:1;min-height:0;overflow:hidden">
+
+    {# ──── Column list (left pane, 260px) ──── #}
+    <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;border-right:1px solid var(--border);padding-right:12px">
+
+      {% if columns %}
+        {% for col in columns %}
+          <button @click="activeCol='{{ col.name }}'"
+                  :class="{ 'active': activeCol === '{{ col.name }}' }"
+                  style="display:flex;align-items:flex-start;gap:8px;padding:8px;background:transparent;border:1px solid var(--border);border-radius:var(--r-2);cursor:pointer;text-align:left;transition:background var(--d-fast),border-color var(--d-fast)"
+                  :style="activeCol === '{{ col.name }}' ? 'background:var(--bg-hover);border-color:var(--accent-9)' : 'background:transparent;border-color:var(--border)'">
+            <div style="flex-shrink:0;margin-top:2px">
+              {% if col.failing > 0 %}
+                <span class="sdot error" style="width:8px;height:8px"></span>
+              {% elif col.rules | length > 0 %}
+                <span class="sdot ok" style="width:8px;height:8px"></span>
+              {% else %}
+                <span class="sdot idle" style="width:8px;height:8px"></span>
+              {% endif %}
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ col.name }}</div>
+              <div style="font-size:11px;color:var(--text-4);margin-top:2px">{{ col.type }}</div>
+              {% if col.constraints %}
+                <div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">
+                  {% for c in col.constraints %}
+                    <span class="pill" style="height:16px;padding:0 6px;font-size:10px;border-radius:4px">{{ c }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {% if col.rules | length > 0 %}
+                <div style="font-size:10px;color:var(--text-3);margin-top:3px">
+                  <span style="color:var(--green-9)">{{ col.passing }}</span>/<span style="color:var(--text-3)">{{ col.rules | length }}</span>
+                </div>
+              {% endif %}
+            </div>
+          </button>
+        {% endfor %}
+
+        {# Add rule button #}
+        <button @click="showAddRuleForm=true"
+                style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-elev);border:1px dashed var(--border);border-radius:var(--r-2);cursor:pointer;color:var(--text-3);font-size:12px;font-weight:500;transition:all var(--d-fast)"
+                @mouseenter="this.style.background='var(--bg-hover);this.style.color='var(--text)'"
+                @mouseleave="this.style.background='var(--bg-elev);this.style.color='var(--text-3)'">
+          <i data-lucide="plus" style="width:12px;height:12px"></i>
+          Add rule
+        </button>
+      {% else %}
+        <div style="padding:16px;text-align:center;color:var(--text-4);font-size:12px">
+          <i data-lucide="inbox" style="width:20px;height:20px;display:block;margin:0 auto 8px;opacity:.5"></i>
+          No columns
+        </div>
+      {% endif %}
+
+    </div>
+
+    {# ──── Detail panel (right pane, flex-1) ──── #}
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow-y:auto">
+
+      {% if columns %}
+        {% for col in columns %}
+          <div x-show="activeCol === '{{ col.name }}'" style="display:flex;flex-direction:column;gap:12px">
+
+            {# Column stat bar #}
+            <div style="padding:12px;background:var(--bg-elev);border-radius:var(--r-2);border:1px solid var(--border)">
+              <div class="row" style="gap:8px;margin-bottom:8px">
+                <span style="font-family:var(--font-mono);font-weight:500;color:var(--text)">{{ col.name }}</span>
+                <span class="pill" style="height:18px;padding:0 6px;font-size:10px">{{ col.type }}</span>
+              </div>
+              {% if col.get('null_pct') or col.get('min') or col.get('max') %}
+                <div class="row" style="gap:6px;flex-wrap:wrap">
+                  {% if col.get('null_pct') is not none %}
+                    <span class="stat-chip">{{ col.null_pct }}% null</span>
+                  {% endif %}
+                  {% if col.get('min') is not none %}
+                    <span class="stat-chip">min: {{ col.min }}</span>
+                  {% endif %}
+                  {% if col.get('max') is not none %}
+                    <span class="stat-chip">max: {{ col.max }}</span>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+
+            {# Rules list #}
+            {% if col.rules | length > 0 %}
+              {% for rule in col.rules %}
+                <div class="card" style="padding:12px" x-data="{ editMode: false }">
+
+                  {# Header: status + type + actions #}
+                  <div class="row" style="margin-bottom:8px">
+                    {% if rule.get('last_result', True) %}
+                      <span class="sdot ok" style="width:8px;height:8px;flex-shrink:0"></span>
+                    {% else %}
+                      <span class="sdot error" style="width:8px;height:8px;flex-shrink:0"></span>
+                    {% endif %}
+                    <span class="pill" style="height:18px;padding:0 6px;font-size:10px;background:color-mix(in oklch,var(--accent-9) 12%,transparent);color:var(--accent-11);border-color:color-mix(in oklch,var(--accent-9) 24%,transparent)">
+                      {{ rule.rule_type }}
+                    </span>
+                    <div style="flex:1"></div>
+                    <button class="btn icon ghost sm" @click="editMode=!editMode" style="width:24px;height:24px">
+                      <i data-lucide="pencil" style="width:12px;height:12px"></i>
+                    </button>
+                    <button class="btn icon ghost sm danger" @click="deleteRule('{{ rule.id }}')" style="width:24px;height:24px">
+                      <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+                    </button>
+                  </div>
+
+                  {# Pass/fail progress bar #}
+                  <div style="height:4px;background:var(--bg-elev-2);border-radius:999px;overflow:hidden;margin-bottom:8px">
+                    <div style="height:100%;background:var(--green-9);width:{{ rule.get('pass_pct', 90) }}%"></div>
+                  </div>
+
+                  {# Violation callout #}
+                  {% if not rule.get('last_result', True) %}
+                    <div style="padding:8px;background:color-mix(in oklch,var(--red-9) 12%,transparent);border:1px solid color-mix(in oklch,var(--red-9) 24%,transparent);border-radius:var(--r-2);margin-bottom:8px">
+                      <div style="font-size:11px;color:var(--red-9);font-weight:500">Rule violation</div>
+                      {% if rule.get('violation_desc') %}
+                        <div style="font-size:11px;color:var(--text-3);margin-top:2px">{{ rule.violation_desc }}</div>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+
+                  {# Inline edit form (toggle via Alpine) #}
+                  <div x-show="editMode" @click.stop style="padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-2);display:flex;flex-direction:column;gap:8px">
+                    <div>
+                      <label style="display:block;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;font-weight:500;margin-bottom:4px">On failure</label>
+                      <select class="input" x-ref="onFailure" style="height:24px;padding:0 6px;font-size:11px" value="{{ rule.on_failure }}">
+                        <option value="warn">Warn</option>
+                        <option value="fail">Fail</option>
+                        <option value="skip">Skip</option>
+                      </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <input type="checkbox" id="r-enabled-{{ rule.id }}" x-ref="enabled" {% if rule.enabled %}checked{% endif %} style="width:14px;height:14px;cursor:pointer">
+                      <label for="r-enabled-{{ rule.id }}" style="font-size:11px;color:var(--text-2);cursor:pointer">Enabled</label>
+                    </div>
+                    <div class="row" style="gap:6px;justify-content:flex-end">
+                      <button type="button" class="btn ghost sm" @click="editMode=false">Cancel</button>
+                      <button type="button" class="btn sm primary" @click="saveRule('{{ rule.id }}', $refs.onFailure.value, $refs.enabled.checked)">
+                        Save
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              {% endfor %}
+            {% else %}
+              <div style="padding:24px;text-align:center;color:var(--text-4);font-size:12px">
+                <i data-lucide="inbox" style="width:20px;height:20px;display:block;margin:0 auto 8px;opacity:.5"></i>
+                No rules for this column
+              </div>
+            {% endif %}
+
+            {# Add rule form for this column #}
+            <div style="padding:12px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--r-2)">
+              <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;font-weight:500;margin-bottom:8px">Add rule to {{ col.name }}</div>
+
+              {# Rule type picker (8-type grid) #}
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+                <button type="button" class="btn sm" @click="$data.newRuleType='NULL'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'NULL' ? 'primary' : 'ghost'">
+                  NULL
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='TYPE'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'TYPE' ? 'primary' : 'ghost'">
+                  TYPE
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='UNIQUE'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'UNIQUE' ? 'primary' : 'ghost'">
+                  UNIQUE
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='RANGE'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'RANGE' ? 'primary' : 'ghost'">
+                  RANGE
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='ENUM'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'ENUM' ? 'primary' : 'ghost'">
+                  ENUM
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='PATTERN'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'PATTERN' ? 'primary' : 'ghost'">
+                  PATTERN
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='FK'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'FK' ? 'primary' : 'ghost'">
+                  FK
+                </button>
+                <button type="button" class="btn sm" @click="$data.newRuleType='EXPR'; $el.classList.add('primary')"
+                        style="border-radius:var(--r-1);font-size:10px"
+                        :class="$data.newRuleType === 'EXPR' ? 'primary' : 'ghost'">
+                  EXPR
+                </button>
+              </div>
+
+              {# Type-specific fields (shown conditionally) #}
+              <div x-show="$data.newRuleType === 'RANGE'" style="display:flex;gap:6px;margin-bottom:8px">
+                <input class="input" x-ref="rangeMin" placeholder="min" style="height:24px;font-size:11px;flex:1">
+                <input class="input" x-ref="rangeMax" placeholder="max" style="height:24px;font-size:11px;flex:1">
+              </div>
+
+              <div x-show="$data.newRuleType === 'ENUM'" style="margin-bottom:8px">
+                <input class="input" x-ref="enumValues" placeholder="value1, value2, value3" style="height:24px;font-size:11px;width:100%">
+              </div>
+
+              <div x-show="$data.newRuleType === 'PATTERN'" style="margin-bottom:8px">
+                <input class="input" x-ref="patternExpr" placeholder="^[A-Z][0-9]{3}$" style="height:24px;font-size:11px;width:100%;font-family:var(--font-mono)">
+              </div>
+
+              <div x-show="$data.newRuleType === 'FK'" style="display:flex;gap:6px;margin-bottom:8px">
+                <input class="input" x-ref="fkTable" placeholder="ref_table" style="height:24px;font-size:11px;flex:1">
+                <input class="input" x-ref="fkCol" placeholder="ref_col" style="height:24px;font-size:11px;flex:1">
+              </div>
+
+              <div x-show="$data.newRuleType === 'EXPR'" style="margin-bottom:8px">
+                <textarea class="input" x-ref="exprBody" placeholder="e.g. amount > 0 AND amount < 1000000" style="height:48px;font-size:11px;font-family:var(--font-mono);padding:6px;resize:none"></textarea>
+              </div>
+
+              {# on_failure select #}
+              <div style="margin-bottom:8px">
+                <label style="display:block;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;font-weight:500;margin-bottom:4px">On failure</label>
+                <select class="input" x-ref="newOnFailure" style="height:24px;font-size:11px;width:100%">
+                  <option value="warn">Warn</option>
+                  <option value="fail" selected>Fail</option>
+                  <option value="skip">Skip</option>
+                </select>
+              </div>
+
+              {# Submit button #}
+              <button type="button" class="btn sm primary" @click="submitNewRule('{{ col.name }}')" style="width:100%">
+                <i data-lucide="plus" style="width:10px;height:10px"></i>
+                Add rule
+              </button>
+            </div>
+
+          </div>
+        {% endfor %}
+      {% endif %}
+
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+function pipelineQuality() {
+  return {
+    activeCol: '{{ columns[0].name if columns else "" }}',
+    showAddRuleForm: false,
+    newRuleType: null,
+
+    toggleFilter() {
+      // Placeholder for filter functionality
+      console.log('Filter clicked');
+    },
+
+    saveRule(ruleId, onFailure, enabled) {
+      const params = new URLSearchParams({
+        on_failure: onFailure,
+        enabled: enabled ? '1' : '0',
+        _csrf: '{{ csrf_token }}',
+      });
+      fetch('/data/pipelines/{{ pipeline_name }}/quality/rules/' + ruleId + '/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      }).then(() => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Rule saved', kind: 'success' }
+        }));
+      }).catch(err => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Error saving rule: ' + err, kind: 'error' }
+        }));
+      });
+    },
+
+    deleteRule(ruleId) {
+      if (!confirm('Delete this rule?')) return;
+      const params = new URLSearchParams({
+        _csrf: '{{ csrf_token }}',
+      });
+      fetch('/data/pipelines/{{ pipeline_name }}/quality/rules/' + ruleId + '/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      }).then(() => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Rule deleted', kind: 'success' }
+        }));
+        // TODO: refresh the view
+      }).catch(err => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Error deleting rule: ' + err, kind: 'error' }
+        }));
+      });
+    },
+
+    submitNewRule(colName) {
+      const type = this.newRuleType;
+      if (!type) {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Please select a rule type', kind: 'error' }
+        }));
+        return;
+      }
+
+      const config = {};
+
+      if (type === 'RANGE') {
+        config.min = document.querySelector('[x-ref="rangeMin"]').value;
+        config.max = document.querySelector('[x-ref="rangeMax"]').value;
+        if (!config.min || !config.max) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { msg: 'Min and max are required for RANGE', kind: 'error' }
+          }));
+          return;
+        }
+      } else if (type === 'ENUM') {
+        config.allowed = document.querySelector('[x-ref="enumValues"]').value.split(',').map(v => v.trim());
+        if (config.allowed.length === 0) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { msg: 'At least one value required for ENUM', kind: 'error' }
+          }));
+          return;
+        }
+      } else if (type === 'PATTERN') {
+        config.pattern = document.querySelector('[x-ref="patternExpr"]').value;
+        if (!config.pattern) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { msg: 'Pattern is required', kind: 'error' }
+          }));
+          return;
+        }
+      } else if (type === 'FK') {
+        config.ref_table = document.querySelector('[x-ref="fkTable"]').value;
+        config.ref_col = document.querySelector('[x-ref="fkCol"]').value;
+        if (!config.ref_table || !config.ref_col) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { msg: 'Ref table and column are required for FK', kind: 'error' }
+          }));
+          return;
+        }
+      } else if (type === 'EXPR') {
+        config.expr = document.querySelector('[x-ref="exprBody"]').value;
+        if (!config.expr) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { msg: 'Expression is required', kind: 'error' }
+          }));
+          return;
+        }
+      }
+
+      const onFailure = document.querySelector('[x-ref="newOnFailure"]').value;
+
+      const formData = new URLSearchParams({
+        col_name: colName,
+        rule_type: type,
+        config: JSON.stringify(config),
+        on_failure: onFailure,
+        _csrf: '{{ csrf_token }}',
+      });
+
+      fetch('/data/pipelines/{{ pipeline_name }}/quality/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData,
+      }).then(() => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Rule added', kind: 'success' }
+        }));
+        // Reset form
+        this.newRuleType = null;
+        document.querySelector('[x-ref="rangeMin"]').value = '';
+        document.querySelector('[x-ref="rangeMax"]').value = '';
+        document.querySelector('[x-ref="enumValues"]').value = '';
+        document.querySelector('[x-ref="patternExpr"]').value = '';
+        document.querySelector('[x-ref="fkTable"]').value = '';
+        document.querySelector('[x-ref="fkCol"]').value = '';
+        document.querySelector('[x-ref="exprBody"]').value = '';
+      }).catch(err => {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { msg: 'Error adding rule: ' + err, kind: 'error' }
+        }));
+      });
+    },
+  };
+}
+</script>

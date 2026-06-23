@@ -43,7 +43,7 @@ def _make_engine_mock() -> MagicMock:
 @pytest.fixture
 def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with API key set but no session — every request is unauthenticated."""
-    monkeypatch.setenv("DEX_STUDIO_API_KEY", _API_KEY)
+    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -56,7 +56,7 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 @pytest.fixture
 def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
-    monkeypatch.setenv("DEX_STUDIO_API_KEY", _API_KEY)
+    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -64,7 +64,7 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 
         app = create_app()
         client = TestClient(app, follow_redirects=False)
-        resp = client.post("/login", data={"api_key": _API_KEY})
+        resp = client.post("/login", data={"passphrase": _API_KEY})
         assert resp.status_code in (302, 303), f"login failed: {resp.status_code}"
         yield client
 
@@ -83,13 +83,17 @@ class TestHtmlAuthDep:
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers["location"]
 
-    def test_unauthenticated_ml_redirects_to_login(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.get("/ml/")
+    def test_unauthenticated_intelligence_redirects_to_login(
+        self, unauthed_client: TestClient
+    ) -> None:
+        resp = unauthed_client.get("/intelligence/")
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers["location"]
 
-    def test_unauthenticated_ai_redirects_to_login(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.get("/ai/")
+    def test_unauthenticated_intelligence_playground_redirects_to_login(
+        self, unauthed_client: TestClient
+    ) -> None:
+        resp = unauthed_client.get("/intelligence/playground")
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers["location"]
 
@@ -131,19 +135,19 @@ class TestJsonAuthDep:
         assert resp.status_code == 401
 
     def test_unauthenticated_predict_models_returns_401(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.get("/ai/predict/models")
+        resp = unauthed_client.get("/intelligence/predict/models")
         assert resp.status_code == 401
 
     def test_unauthenticated_chat_returns_401(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.post("/ai/chat", json={"agent": "bot", "message": "hi"})
+        resp = unauthed_client.post("/intelligence/chat", json={"agent": "bot", "message": "hi"})
         assert resp.status_code == 401
 
     def test_unauthenticated_native_call_returns_401(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.post("/ai/native", json={"tool": "noop"})
+        resp = unauthed_client.post("/intelligence/native", json={"tool": "noop"})
         assert resp.status_code == 401
 
     def test_unauthenticated_chat_stream_returns_401(self, unauthed_client: TestClient) -> None:
-        resp = unauthed_client.get("/ai/chat/stream?agent=bot&message=hi")
+        resp = unauthed_client.get("/intelligence/stream?agent=bot&message=hi")
         assert resp.status_code == 401
 
     def test_authenticated_pipeline_runs_all_returns_200(self, authed_client: TestClient) -> None:
@@ -163,19 +167,19 @@ def _extract_csrf(html: str) -> str:
 
 class TestCSRFEnforcement:
     def test_post_without_csrf_after_token_set_returns_403(self, authed_client: TestClient) -> None:
-        # GET /ai/agents sets the CSRF token in the session via base_ctx.
-        resp = authed_client.get("/ai/agents")
+        # GET /intelligence/agents sets the CSRF token in the session via base_ctx.
+        resp = authed_client.get("/intelligence/agents")
         assert resp.status_code == 200
         # POST with no CSRF header/param → 403.
-        resp = authed_client.post("/ai/agents/add", data={"name": "x"})
+        resp = authed_client.post("/intelligence/agents/add", data={"name": "x"})
         assert resp.status_code == 403
 
     def test_post_with_csrf_header_succeeds(self, authed_client: TestClient) -> None:
-        resp = authed_client.get("/ai/agents")
+        resp = authed_client.get("/intelligence/agents")
         csrf = _extract_csrf(resp.text)
         assert csrf, "CSRF token not found in page HTML"
         resp = authed_client.post(
-            "/ai/agents/add",
+            "/intelligence/agents/add",
             data={"name": "bot", "runtime": "builtin"},
             headers={"X-CSRF-Token": csrf},
         )
@@ -183,9 +187,9 @@ class TestCSRFEnforcement:
         assert resp.status_code in (200, 302, 303)
 
     def test_post_with_wrong_csrf_returns_403(self, authed_client: TestClient) -> None:
-        authed_client.get("/ai/agents")  # set CSRF in session
+        authed_client.get("/intelligence/agents")  # set CSRF in session
         resp = authed_client.post(
-            "/ai/agents/add",
+            "/intelligence/agents/add",
             data={"name": "bot"},
             headers={"X-CSRF-Token": "definitely-wrong"},
         )
@@ -193,7 +197,7 @@ class TestCSRFEnforcement:
 
     def test_post_without_csrf_token_returns_403(self, authed_client: TestClient) -> None:
         # CSRF is seeded at login — every authenticated POST requires the token.
-        resp = authed_client.post("/ai/agents/add", data={"name": "bot"})
+        resp = authed_client.post("/intelligence/agents/add", data={"name": "bot"})
         assert resp.status_code == 403
 
 
@@ -206,14 +210,14 @@ class TestWebSocketAuth:
 
         with (
             pytest.raises(WebSocketDisconnect) as exc_info,
-            unauthed_client.websocket_connect("/ai/playground/ws/test-agent") as ws,
+            unauthed_client.websocket_connect("/intelligence/playground/ws/test-agent") as ws,
         ):
             ws.receive_text()
         assert exc_info.value.code == 3000
 
     def test_authenticated_websocket_accepts(self, authed_client: TestClient) -> None:
         # Authenticated WS should accept and stay open until we disconnect.
-        with authed_client.websocket_connect("/ai/playground/ws/unknown-agent") as ws:
+        with authed_client.websocket_connect("/intelligence/playground/ws/unknown-agent") as ws:
             ws.send_text("hello")
             data = ws.receive_json()
         # Unknown agent → assistant error reply, not a close.

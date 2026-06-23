@@ -1,160 +1,190 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
 
 {% block title %}Components — System — DEX Studio{% endblock %}
 {% block page_title %}Components{% endblock %}
-{% block page_sub %}engine internals · 8 of 8 healthy · uptime 6d 14h 22m{% endblock %}
+{% block page_sub %}{{ healthy_count }}/{{ total_count }} healthy{% if uptime_str is defined %} · uptime {{ uptime_str }}{% endif %}{% endblock %}
+
 {% block page_actions %}
-<button class="btn"><i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Recheck</button>
-<button class="btn"><i data-lucide="file-text" style="width:13px;height:13px"></i> Diagnostics</button>
-<button class="btn ghost"><i data-lucide="book" style="width:13px;height:13px"></i> Runbooks</button>
+<a href="/system/status" class="btn sm ghost">
+  <i data-lucide="activity" style="width:11px;height:11px"></i> Status
+</a>
+<form method="post" action="/system/reload-config" style="display:contents">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <button type="submit" class="btn sm">
+    <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config
+  </button>
+</form>
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-system)">
 
-{# ── metric strip ── #}
-<div class="grid grid-4">
-  <div class="stat card" data-spark='[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]' data-spark-color="var(--green-9)">
-    <div class="stat-label">Components healthy</div>
-    <div class="stat-value">8 / 8</div>
-    <div class="stat-delta">all green</div>
-  </div>
-  <div class="stat card" data-spark='[3,3.4,3.1,3.6,2.9,3.5,3.2,3.7,3.0,3.4,3.1,3.8,3.2,3.5,3.0,3.6,3.1,3.7,3.2,3.4,3.0,3.5,3.1,3.2]'>
-    <div class="stat-label">Memory used</div>
-    <div class="stat-value">3.2<span class="stat-unit">GB</span></div>
-    <div class="stat-delta">of 43.5 GB</div>
-  </div>
-  <div class="stat card" data-spark='[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]' data-spark-color="var(--blue-9)">
-    <div class="stat-label">Uptime (engine)</div>
-    <div class="stat-value">6.6<span class="stat-unit">d</span></div>
-    <div class="stat-delta">since May 17</div>
-  </div>
-  <div class="stat card" data-spark='[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]' data-spark-color="var(--green-9)">
-    <div class="stat-label">Restarts · 7d</div>
-    <div class="stat-value">0</div>
-    <div class="stat-delta">all clean</div>
-  </div>
-</div>
-
-{# ── health overview ── #}
-<div class="section-h">
-  <h2>Health overview</h2>
-</div>
-
-<div class="grid grid-4">
-  {% set comps = [
-    ('DuckDB',          'cpu',     'v1.4.0',            0.18, 1.2,  16,  'ready · 2 active queries'),
-    ('Iceberg REST',    'book',    'v1.6.1',            0.04, 0.18, 4,   'ready · 12 tables registered'),
-    ('MinIO',           'archive', 'RELEASE.2024',      0.22, 0.48, 8,   'ready · 521 MB used of 100 GB'),
-    ('Redis',           'database','7.4',               0.02, 0.08, 2,   'ready · 1,242 keys'),
-    ('Worker pool',     'cpu',     '4 procs',           0.62, 0.66, 8,   '2 busy / 2 idle'),
-    ('Kafka (embed.)',  'radio',   '0.11 compat',       0.14, 0.32, 4,   'ready · 7 topics'),
-    ('Privacy guard',   'shield',  'v0.5.0',            0.02, 0.04, 1,   'ready · 14 strategies armed'),
-    ('Schema registry', 'book',    'v0.4.2',            0.01, 0.02, 0.5, 'ready · 42 schemas'),
-  ] %}
-  {% for name, icon, version, cpu, mem_used, mem_total, detail in comps %}
-  {% set cpu_pct = (cpu * 100) | int %}
-  {% set mem_pct = ((mem_used / mem_total) * 100) | int %}
-  <div class="card" style="padding:14px">
-    <div class="row" style="gap:8px;margin-bottom:10px">
-      <span class="glyph" style="width:26px;height:26px"><i data-lucide="{{ icon }}" style="width:12px;height:12px"></i></span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:13px">{{ name }}</div>
-        <div class="dim mono" style="font-size:10px">{{ version }}</div>
-      </div>
-      <span style="width:8px;height:8px;border-radius:999px;background:var(--green-9);box-shadow:0 0 0 2px color-mix(in oklch,var(--green-9) 24%,transparent)"></span>
+{# ── Health banner ─────────────────────────────────────────────────────────── #}
+<div class="dex-health-banner {{ 'healthy' if is_healthy else 'degraded' }}" style="margin-bottom:20px">
+  <span style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:{{ 'color-mix(in oklch,var(--green-9) 18%,transparent)' if is_healthy else 'color-mix(in oklch,var(--red-9) 18%,transparent)' }}">
+    <i data-lucide="{{ 'check-circle' if is_healthy else 'alert-triangle' }}" style="width:16px;height:16px;color:{{ 'var(--green-9)' if is_healthy else 'var(--red-9)' }}"></i>
+  </span>
+  <div>
+    <div style="font-size:13px;font-weight:600;color:var(--text)">
+      {{ "All Systems Operational" if is_healthy else "System Degraded — one or more components offline" }}
     </div>
-    <div class="muted" style="font-size:11.5px;margin-bottom:10px;line-height:1.5">{{ detail }}</div>
-    <div class="col" style="gap:6px">
-      <div>
-        <div class="row" style="font-size:10px;margin-bottom:3px">
-          <span class="dim">CPU</span>
-          <span class="mono dim" style="margin-left:auto">{{ cpu_pct }}%</span>
-        </div>
-        <div class="progress thin">
-          <i style="width:{{ cpu_pct }}%;background:{% if cpu_pct > 75 %}var(--amber-9){% else %}var(--accent-9){% endif %}"></i>
-        </div>
+    <div class="muted" style="font-size:11px;margin-top:3px">
+      {{ healthy_count }}/{{ total_count }} components healthy
+    </div>
+  </div>
+  <a href="/system/logs" class="btn sm ghost" style="margin-left:auto;flex-shrink:0">
+    <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Logs
+  </a>
+</div>
+
+{# ── Metric strip ─────────────────────────────────────────────────────────── #}
+<div class="grid grid-4" style="margin-bottom:20px">
+  <div class="card dex-metric-card {{ 'dex-metric-green' if healthy_count == total_count else 'dex-metric-red' }}" style="padding:14px">
+    <div class="stat-label">Components healthy</div>
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
+      {{ healthy_count }}<span style="font-size:14px;font-weight:400;color:var(--text-3)">/{{ total_count }}</span>
+    </div>
+    <div class="stat-delta" style="color:{{ 'var(--green-10)' if healthy_count == total_count else 'var(--red-10)' }}">
+      {{ 'all green' if healthy_count == total_count else '%d offline' % (total_count - healthy_count) }}
+    </div>
+  </div>
+
+  <div class="card dex-metric-card dex-metric-blue" style="padding:14px">
+    <div class="stat-label">Memory used</div>
+    {% if mem_used_gb is defined %}
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
+      {{ mem_used_gb }}<span style="font-size:14px;font-weight:400;color:var(--text-3)"> GB</span>
+    </div>
+    <div class="stat-delta">of {{ mem_total_gb }} GB ({{ mem_pct }}%)</div>
+    {% else %}
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">—</div>
+    <div class="stat-delta">unavailable</div>
+    {% endif %}
+  </div>
+
+  <div class="card dex-metric-card {{ 'dex-metric-orange' if cpu_pct is defined and cpu_pct > 80 else 'dex-metric-indigo' }}" style="padding:14px">
+    <div class="stat-label">CPU usage</div>
+    {% if cpu_pct is defined %}
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
+      {{ cpu_pct }}<span style="font-size:14px;font-weight:400;color:var(--text-3)">%</span>
+    </div>
+    <div class="stat-delta" style="{{ 'color:var(--red-10)' if cpu_pct > 80 else '' }}">
+      {{ 'high load' if cpu_pct > 80 else 'normal' }}
+    </div>
+    {% else %}
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">—</div>
+    <div class="stat-delta">unavailable</div>
+    {% endif %}
+  </div>
+
+  <div class="card dex-metric-card dex-metric-violet" style="padding:14px">
+    <div class="stat-label">Uptime</div>
+    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
+      {% if uptime_str is defined %}{{ uptime_str }}{% else %}—{% endif %}
+    </div>
+    <div class="stat-delta">engine process</div>
+  </div>
+</div>
+
+{# ── Component health grid ─────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <h2>Health overview</h2>
+  <span class="sub">{{ healthy_count }}/{{ total_count }} components online</span>
+</div>
+
+{% if components %}
+<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px">
+  {% for c in components %}
+  {% set unconfigured = not c.available and c.message == 'Not initialized' %}
+  {% set is_error = not c.available and not unconfigured %}
+  <div class="card" style="padding:14px 16px;
+    background:{{ 'color-mix(in oklch,var(--state-error) 6%,transparent)' if is_error else 'transparent' }};
+    border-left:3px solid {{ 'var(--state-ok)' if c.available else ('var(--border)' if unconfigured else 'var(--state-error)') }}">
+    <div class="row" style="gap:8px;margin-bottom:10px">
+      <span class="glyph" style="width:28px;height:28px;border-radius:var(--r-2);background:{{ 'color-mix(in oklch,var(--green-4) 60%,var(--bg-elev))' if c.available else 'var(--bg-elev)' }}">
+        <i data-lucide="{{ c.icon | default('box') }}" style="width:13px;height:13px;color:{{ 'var(--green-10)' if c.available else 'var(--text-3)' }}"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div>
+        <div class="muted mono" style="font-size:10px">{{ c.raw_name | default(c.name | lower | replace(' ', '_')) }}</div>
       </div>
-      <div>
-        <div class="row" style="font-size:10px;margin-bottom:3px">
-          <span class="dim">Memory</span>
-          <span class="mono dim" style="margin-left:auto">{{ mem_used }} / {{ mem_total }} GB</span>
-        </div>
-        <div class="progress thin">
-          <i style="width:{{ mem_pct }}%;background:{% if mem_pct > 75 %}var(--amber-9){% else %}var(--green-9){% endif %}"></i>
-        </div>
-      </div>
+      <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px;
+        background:{{ 'var(--green-9)' if c.available else ('var(--gray-6)' if unconfigured else 'var(--red-9)') }};
+        box-shadow:0 0 0 2px color-mix(in oklch,{{ 'var(--green-9)' if c.available else ('var(--gray-6)' if unconfigured else 'var(--red-9)') }} 25%,transparent)">
+      </span>
+    </div>
+    <div style="font-size:11px;font-weight:500;color:{{ 'var(--green-10)' if c.available else ('var(--text-3)' if unconfigured else 'var(--red-10)') }}">
+      {{ 'Online' if c.available else ('Not configured' if unconfigured else 'Offline') }}
     </div>
   </div>
   {% endfor %}
 </div>
+{% else %}
+{{ empty_state("cpu", "No components detected", "Engine may still be initializing.") }}
+{% endif %}
 
-{# ── events + config ── #}
-<div class="grid" style="grid-template-columns:1.2fr 1fr;gap:16px;margin-top:16px">
+{# ── Events + runtime config ──────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1.2fr 1fr;gap:16px">
 
-  {# component events #}
+  {# Recent log events #}
   <div class="card bare">
     <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600;font-size:13px">Component events</span>
-      <span class="muted" style="font-size:11px;margin-left:8px">last 7 days · 0 errors</span>
+      <span style="font-weight:600;font-size:13px">Recent log events</span>
+      <a href="/system/logs" style="font-size:11px;color:var(--accent-9);margin-left:auto;text-decoration:none">
+        All logs <i data-lucide="arrow-right" style="width:10px;height:10px;vertical-align:-1px"></i>
+      </a>
     </div>
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th style="width:130px">When</th>
-          <th>Component</th>
-          <th>Event</th>
-          <th>Outcome</th>
-        </tr>
-      </thead>
+    {% if recent_events %}
+    <table class="dex-table">
       <tbody>
-        {% set events = [
-          ('today 02:00',  'DuckDB',        'auto-compact bronze.raw_orders',            'ok'),
-          ('yesterday',    'Iceberg REST',  'GC stale snapshots (412 candidates)',        'ok'),
-          ('2d ago',       'Privacy guard', 'policy hot-reload · users.email',            'ok'),
-          ('3d ago',       'Worker pool',   'scaled 2 → 4 procs (queue depth > 8)',       'ok'),
-          ('5d ago',       'MinIO',         'scheduled bucket integrity scan',            'ok'),
-          ('May 17',       'engine',        'cold start · v0.5.0 deployment',             'ok'),
-        ] %}
-        {% for time, comp, event, outcome in events %}
+        {% for ev in recent_events %}
         <tr>
-          <td class="dim mono" style="font-size:11px">{{ time }}</td>
-          <td class="mono" style="font-size:12px">{{ comp }}</td>
-          <td class="muted" style="font-size:12px">{{ event }}</td>
-          <td><span class="pill success" style="height:18px">{{ outcome }}</span></td>
+          <td class="mono muted" style="font-size:10px;white-space:nowrap;width:130px">{{ ev.ts }}</td>
+          <td style="width:60px"><span class="dex-log-badge dex-log-{{ ev.level }}">{{ ev.level }}</span></td>
+          <td class="muted" style="font-size:11.5px;max-width:0;width:99%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ev.msg }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% else %}
+    <div class="muted" style="padding:28px;text-align:center;font-size:12px">
+      <i data-lucide="info" style="width:16px;height:16px;opacity:.4;display:block;margin:0 auto 6px"></i>
+      No log events yet
+    </div>
+    {% endif %}
   </div>
 
-  {# runtime config #}
+  {# Runtime config #}
   <div class="card" style="padding:16px">
     <div style="font-weight:600;font-size:13px;margin-bottom:12px">Runtime configuration</div>
-    <div class="col" style="gap:8px">
-      {% set config = [
-        ('dex.version',             'v0.5.0'),
-        ('dex.mode',                'local-first'),
-        ('dex.data_dir',            '~/.dex/retail-analytics'),
-        ('duckdb.memory_limit',     '16 GB'),
-        ('duckdb.threads',          '8'),
-        ('iceberg.warehouse',       'minio://warehouse'),
-        ('worker.pool_size',        '4 (max 16)'),
-        ('privacy.guard.strategy',  'default (14 rules)'),
-      ] %}
-      {% for key, val in config %}
-      <div class="row" style="font-size:11.5px;padding:3px 0;{% if not loop.first %}border-top:1px solid var(--border);{% endif %}">
-        <span class="mono muted" style="flex:1">{{ key }}</span>
-        <span class="mono" style="color:var(--text-2)">{{ val }}</span>
+    {% if config_entries %}
+    <div class="col" style="gap:0">
+      {% for key, val in config_entries %}
+      <div class="row" style="font-size:11.5px;padding:5px 0;{% if not loop.first %}border-top:1px solid var(--border);{% endif %}">
+        <span class="mono muted" style="flex:1;min-width:0">{{ key }}</span>
+        <span class="mono" style="color:var(--text-2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right" title="{{ val }}">{{ val }}</span>
       </div>
       {% endfor %}
     </div>
+    {% else %}
+    <div class="muted" style="font-size:12px;padding:12px 0">No config loaded</div>
+    {% endif %}
     <div class="div-y" style="margin:14px 0"></div>
     <div class="row" style="gap:6px;flex-wrap:wrap">
-      <button class="btn sm"><i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config</button>
-      <button class="btn sm"><i data-lucide="archive" style="width:11px;height:11px"></i> Compact all</button>
-      <button class="btn sm ghost"><i data-lucide="alert-triangle" style="width:11px;height:11px"></i> Force restart</button>
+      <form method="post" action="/system/reload-config" style="display:contents">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn sm">
+          <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config
+        </button>
+      </form>
+      <button class="btn sm ghost" disabled title="Not implemented">
+        <i data-lucide="alert-triangle" style="width:11px;height:11px"></i> Force restart
+      </button>
     </div>
   </div>
+
 </div>
 
+</div>
 {% endblock %}

@@ -1,12 +1,14 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, filter_empty_state %}
 
 {% block title %}Data Quality — DEX Studio{% endblock %}
 
-{% block page_title %}Data quality{% endblock %}
-{% block page_sub %}{% set total = checks | length %}{% set failing_ct = checks | rejectattr('passed') | list | length %}{{ total }} tables checked · {{ total - failing_ct }} passing · {{ failing_ct }} failing{% endblock %}
+{% block page_title %}Data Quality{% endblock %}
+{% block page_sub %}{% if checks %}{% set total = checks | length %}{% set failing_ct = checks | rejectattr('passed') | list | length %}{{ total }} table{{ 's' if total != 1 }} checked · {{ total - failing_ct }} passing · {{ failing_ct }} failing{% else %}validate completeness, uniqueness, and freshness across your lakehouse tables{% endif %}{% endblock %}
 
 {% block page_actions %}
 <form method="post" action="/data/quality/run" style="display:inline">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <button type="submit" class="btn sm ghost">
     <i data-lucide="play" style="width:12px;height:12px"></i> Run all checks
   </button>
@@ -17,47 +19,28 @@
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-data)">
 
-{# ── Stat cards ──────────────────────────────────────────────────────────── #}
+{# ── Metric strip ── #}
 {% set passing_checks = checks | selectattr('passed') | list %}
 {% set failing_checks = checks | rejectattr('passed') | list %}
-<div class="grid grid-4">
-  <div class="stat" data-spark-color="var(--green-9)">
-    <div class="label">Overall score</div>
-    <div class="val">{{ score_pct }}</div>
-    <div class="delta">across {{ checks | length }} tables</div>
-  </div>
-  <div class="stat">
-    <div class="label">Tables checked</div>
-    <div class="val">{{ checks | length }}</div>
-    <div class="delta">{{ run_count }} run{{ 's' if run_count != 1 }}</div>
-  </div>
-  <div class="stat" data-spark-color="var(--green-9)">
-    <div class="label">Passing</div>
-    <div class="val">{{ passing_checks | length }}</div>
-    <div class="delta">tables healthy</div>
-  </div>
-  <div class="stat" data-spark-color="var(--red-9)">
-    <div class="label">Failing</div>
-    <div class="val">{{ failing_checks | length }}</div>
-    <div class="delta">need attention</div>
-  </div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Overall Score", overall_pass_pct | default(score_pct, true), "shield-check", "indigo", "weighted average") }}
+  {{ metric_card("Tables Checked", checks | length, "table-2", "blue", (run_count | string) + " run" + ("s" if run_count != 1 else "")) }}
+  {{ metric_card("Passing", passing_checks | length, "check-circle", "green", "healthy") }}
+  {{ metric_card("Failing", failing_checks | length, "alert-circle", "red" if failing_checks else "green", "need attention" if failing_checks else "all clear") }}
 </div>
 
 {% if not checks %}
-{# ── Empty state — no quality runs yet ── #}
-<div class="card" style="padding:48px 24px;text-align:center;margin-top:16px">
-  <i data-lucide="shield-check" style="width:28px;height:28px;color:var(--text-4);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto"></i>
-  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No quality checks run yet</div>
-  <div class="muted" style="font-size:12px;margin-top:6px;max-width:360px;margin-left:auto;margin-right:auto">
-    Run quality checks to validate completeness, uniqueness, and freshness across your lakehouse tables.
-  </div>
-  <form method="post" action="/data/quality/run" style="margin-top:16px">
-    <button class="btn primary" type="submit">
-      <i data-lucide="play" style="width:12px;height:12px"></i> Run quality checks
-    </button>
-  </form>
-</div>
+{# ── Empty state ── #}
+{% call empty_state("shield-check", "No quality checks run yet", "Run quality checks to validate completeness, uniqueness, and freshness across your lakehouse tables.") %}
+<form method="post" action="/data/quality/run" style="margin-top:16px">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <button class="btn primary" type="submit">
+    <i data-lucide="play" style="width:12px;height:12px"></i> Run quality checks
+  </button>
+</form>
+{% endcall %}
 
 {% else %}
 
@@ -65,10 +48,10 @@
 {# ── Needs attention ── #}
 <div class="section-h">
   <h2>Needs attention</h2>
-  <span class="muted" style="font-size:12px">{{ failing_checks | length }} table{{ 's' if failing_checks | length != 1 }}</span>
+  <span class="muted" style="font-size:var(--text-xs)">{{ failing_checks | length }} table{{ 's' if failing_checks | length != 1 }}</span>
 </div>
-<div class="card bare">
-  <table class="tbl dex-table">
+<div class="card bare" style="margin-bottom:20px">
+  <table class="dex-table">
     <thead>
       <tr>
         <th style="width:30px"></th>
@@ -77,7 +60,6 @@
         <th style="width:120px">Completeness</th>
         <th style="width:120px">Uniqueness</th>
         <th style="width:90px">Status</th>
-        <th style="width:30px"></th>
       </tr>
     </thead>
     <tbody>
@@ -89,7 +71,6 @@
         <td class="mono dim">{{ c.completeness }}</td>
         <td class="mono dim">{{ c.uniqueness }}</td>
         <td><span class="pill error">failed</span></td>
-        <td><i data-lucide="chevron-right" style="width:13px;height:13px;opacity:.4"></i></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -97,29 +78,72 @@
 </div>
 {% endif %}
 
+{# ── Quality by pipeline (expandable) ── #}
+{% if quality_by_pipeline %}
+<div class="section-h" style="margin-top:8px">
+  <h2>Quality by pipeline</h2>
+  <span class="muted" style="font-size:var(--text-xs)">{{ quality_by_pipeline | length }} pipeline{{ 's' if quality_by_pipeline | length != 1 }} with checks</span>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+  {% for p in quality_by_pipeline %}
+  <div class="card" x-data="{open:false}" style="padding:0;overflow:hidden">
+    <div class="row" style="padding:12px 14px;cursor:pointer;gap:12px" @click="open=!open">
+      <span class="mono" style="font-size:13px;font-weight:500">{{ p.name }}</span>
+      <span style="flex:1"></span>
+      {# Mini pass/fail bar #}
+      <div style="display:flex;gap:2px;align-items:center;height:14px">
+        {% set pass_w = (p.pass_count / p.check_count * 100) | int if p.check_count else 0 %}
+        {% set fail_w = 100 - pass_w %}
+        <div style="width:{{ (pass_w * 60 / 100) | int }}px;height:8px;border-radius:2px;background:var(--state-ok);min-width:{{ 2 if p.pass_count else 0 }}px"></div>
+        {% if p.fail_count > 0 %}
+        <div style="width:{{ (fail_w * 60 / 100) | int }}px;height:8px;border-radius:2px;background:var(--state-error);min-width:2px"></div>
+        {% endif %}
+      </div>
+      <span class="muted" style="font-size:11px">{{ p.pass_count }}/{{ p.check_count }} pass</span>
+      {% if p.fail_count > 0 %}
+      <span class="pill error" style="height:16px;font-size:9px">{{ p.fail_count }} fail</span>
+      {% else %}
+      <span class="pill success" style="height:16px;font-size:9px">all pass</span>
+      {% endif %}
+      <span class="muted" style="font-size:11px">{{ p.last_checked }}</span>
+      <i data-lucide="chevron-down" style="width:12px;height:12px;opacity:.4;transition:transform .2s"
+         :style="open ? 'transform:rotate(180deg)' : ''"></i>
+    </div>
+    <div x-show="open" x-cloak style="border-top:1px solid var(--border);padding:12px 14px;background:var(--bg-elev)">
+      <div class="muted" style="font-size:12px">{{ p.check_count }} check{{ 's' if p.check_count != 1 }} configured · {{ p.pass_count }} passing · {{ p.fail_count }} failing</div>
+      <div style="margin-top:8px">
+        <a href="/data/pipelines/{{ p.name }}" class="btn sm ghost" style="text-decoration:none">
+          <i data-lucide="external-link" style="width:11px;height:11px"></i> View pipeline
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {# ── All checks ── #}
-<div class="section-h" style="margin-top:16px">
+<div class="section-h" style="margin-top:4px">
   <h2>All tables</h2>
   <div class="row" style="gap:8px;margin-left:auto">
     <div class="input-icon" style="width:220px">
       <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
       <input id="q-search" class="input" placeholder="Search tables…" style="height:26px;font-size:12px"
-             oninput="qFilter()">
+             oninput="qFilter()" autocomplete="off">
     </div>
     <span class="chip active">All <span class="count">{{ checks | length }}</span></span>
   </div>
 </div>
 <div class="card bare">
-  <table id="q-table" class="tbl dex-table">
+  <table id="q-table" class="dex-table">
     <thead>
       <tr>
         <th style="width:30px"></th>
-        <th class="sortable" style="cursor:pointer">Table <span class="sort-icon">↕</span></th>
-        <th class="sortable" style="cursor:pointer;width:100px">Score <span class="sort-icon">↕</span></th>
-        <th class="sortable" style="cursor:pointer;width:120px">Completeness <span class="sort-icon">↕</span></th>
-        <th class="sortable" style="cursor:pointer;width:120px">Uniqueness <span class="sort-icon">↕</span></th>
+        <th>Table</th>
+        <th style="width:100px">Score</th>
+        <th style="width:120px">Completeness</th>
+        <th style="width:120px">Uniqueness</th>
         <th style="width:90px">Status</th>
-        <th style="width:30px"></th>
       </tr>
     </thead>
     <tbody>
@@ -137,18 +161,43 @@
         <td class="mono dim">{{ c.completeness }}</td>
         <td class="mono dim">{{ c.uniqueness }}</td>
         <td>
-          {% if c.passed %}<span class="pill ok">passed</span>
+          {% if c.passed %}<span class="pill success">passed</span>
           {% else %}<span class="pill error">failed</span>{% endif %}
         </td>
-        <td><i data-lucide="chevron-right" style="width:13px;height:13px;opacity:.4"></i></td>
       </tr>
       {% endfor %}
+      {{ filter_empty_state() }}
     </tbody>
   </table>
 </div>
 
+{# ── Recent quality events feed ── #}
+{% if quality_events %}
+<div class="section-h" style="margin-top:20px">
+  <h2>Recent quality events</h2>
+</div>
+<div class="hub-feed" style="margin-top:0">
+  {% for ev in quality_events[:10] %}
+  <div class="feed-row">
+    <div class="feed-icon" style="background:color-mix(in oklch,{{ 'var(--state-ok)' if ev.passed else 'var(--state-error)' }} 10%,transparent);
+                                  color:{{ 'var(--state-ok)' if ev.passed else 'var(--state-error)' }}">
+      <i data-lucide="{{ 'check-circle' if ev.passed else 'alert-circle' }}" style="width:12px;height:12px"></i>
+    </div>
+    <div class="feed-body">
+      <div class="feed-desc">{{ ev.table }} — {{ ev.check_type }}</div>
+      <div class="feed-sub">Score: {{ ev.score }}</div>
+    </div>
+    <div class="feed-right">
+      <span class="feed-badge {{ 'success' if ev.passed else 'error' }}">{{ 'PASS' if ev.passed else 'FAIL' }}</span>
+      <span class="feed-time">{{ ev.timestamp }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
+{% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -160,35 +209,15 @@
 
   globalThis.qFilter = function () {
     const q = document.getElementById('q-search').value.toLowerCase();
-    document.querySelectorAll('#q-table tbody tr').forEach(row => {
-      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    let visible = 0;
+    document.querySelectorAll('#q-table tbody tr:not(.filter-empty)').forEach(row => {
+      const show = !q || row.textContent.toLowerCase().includes(q);
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
     });
+    const emptyRow = document.querySelector('#q-table .filter-empty');
+    if (emptyRow) emptyRow.style.display = visible === 0 ? '' : 'none';
   };
-
-})();
-
-(function () {
-  // Sparklines for stat cards
-  document.querySelectorAll('.stat[data-spark]').forEach(el => {
-    const data  = JSON.parse(el.dataset.spark);
-    const color = el.dataset.sparkColor || 'var(--accent-9)';
-    const W = 90, H = 28;
-    const max = Math.max(...data);
-    const min = Math.min(...data);
-    const range = max - min || 1;
-    const step = W / (data.length - 1);
-    const pts  = data.map((v, i) => `${i * step},${H - ((v - min) / range) * H}`).join(' ');
-    const svg = `<svg class="spark-svg" viewBox="0 0 ${W} ${H}" style="width:${W}px;height:${H}px" preserveAspectRatio="none">
-      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>`;
-    let sparkEl = el.querySelector('.spark');
-    if (!sparkEl) {
-      sparkEl = document.createElement('div');
-      sparkEl.className = 'spark';
-      el.appendChild(sparkEl);
-    }
-    sparkEl.innerHTML = svg;
-  });
 })();
 </script>
 
@@ -235,6 +264,7 @@
         <input id="qt-thresh" class="input" name="threshold" placeholder="e.g. 0,10" style="width:100%">
       </div>
       <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button type="button" class="btn ghost" @click="$store.testModal.open=false">Cancel</button>
         <button type="submit" class="btn primary">Add test</button>
       </div>

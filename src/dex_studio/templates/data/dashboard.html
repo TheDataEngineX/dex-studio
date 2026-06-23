@@ -1,119 +1,259 @@
 {% extends "base.html" %}
 {% from "components/macros.html" import metric_card, section_heading, empty_state %}
 
-{% block title %}Data — DEX Studio{% endblock %}
-{% block page_title %}Data{% endblock %}
-{% block page_actions %}
-<div style="display:flex;gap:6px">
-  <a href="/data/sources" class="rt-Button" data-variant="soft" data-color="indigo" data-size="2">
-    <i data-lucide="database" style="width:13px;height:13px"></i> Sources
-  </a>
-  <a href="/data/pipelines" class="rt-Button" data-variant="solid" data-size="2">
-    <i data-lucide="workflow" style="width:13px;height:13px"></i> Pipelines
-  </a>
-</div>
-{% endblock %}
+{% block title %}Data Command Center — DEX Studio{% endblock %}
+{% block page_title %}Data Command Center{% endblock %}
 
-{% block content %}
-<!-- Navigatable metric cards -->
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
-  <a href="/data/pipelines" style="text-decoration:none;flex:1;min-width:140px">
-    {{ metric_card("Pipelines", stats.get("total",0), "workflow", "indigo",
-        (stats.get("scheduled",0)|string + " scheduled") if stats.get("scheduled",0) else "") }}
-  </a>
-  <a href="/data/pipelines?status=scheduled" style="text-decoration:none;flex:1;min-width:140px">
-    {{ metric_card("Scheduled", stats.get("scheduled",0), "clock", "indigo") }}
-  </a>
-  <a href="/data/pipelines?status=failed" style="text-decoration:none;flex:1;min-width:140px">
-    {{ metric_card("Failed", stats.get("failed",0), "alert-circle", "red") }}
-  </a>
-  <a href="/data/sources" style="text-decoration:none;flex:1;min-width:140px">
-    {{ metric_card("Sources", source_count, "database", "green") }}
-  </a>
-</div>
+{# Full-bleed so we own all padding like hub.html #}
+{% block content_class %}full-bleed{% endblock %}
 
-<!-- Lakehouse Layers (linked cards) -->
-{{ section_heading("Lakehouse Layers") }}
-{% if layers %}
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
-  {% for layer in layers %}
-  <a href="/data/warehouse?layer={{ layer.name }}"
-     class="rt-Card dex-layer-card dex-layer-{{ layer.name }}"
-     style="padding:14px 20px;text-decoration:none;display:flex;align-items:center;gap:10px;min-width:150px">
-    <i data-lucide="layers" class="dex-layer-icon" style="width:15px;height:15px"></i>
-    <div>
-      <div style="font-weight:600;font-size:13px;color:var(--gray-12)">{{ layer.name|title }}</div>
-      <div style="font-size:11px;color:var(--gray-9)">
-        {% set tc = layer.get('table_count', 0) %}
-        {% if tc %}{{ tc }} table{{ "s" if tc != 1 else "" }}{% else %}No tables yet{% endif %}
+{% block full_bleed %}
+<div style="--domain-color: var(--domain-data)">
+
+{# ── Flow strip — Accent Cards ────────────────────────────────────────────── #}
+<div class="flow-strip">
+
+  {# 1. Sources #}
+  {% set src_count = source_count %}
+  <a href="/data/sources" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Sources</span>
+      {% if src_count > 0 %}
+        <span class="accent-card-status" title="All sources live" style="color:var(--state-ok)">✓</span>
+      {% else %}
+        <span class="accent-card-status" title="No sources" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon">
+        <i data-lucide="link" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ src_count }} / {{ src_count }} live</div>
+        <div class="accent-card-sub">Active connectors</div>
+      </div>
+    </div>
+    <div class="accent-card-widget">
+      {% if src_count > 0 %}
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        {% for lyr in layers[:3] %}
+        <span class="type-pill">{{ lyr.get('name', lyr) if lyr is mapping else lyr }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <span style="font-size:10px;color:var(--text-4)">No sources configured</span>
+      {% endif %}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 2. Pipelines #}
+  {% set p_total   = stats.get('total', 0) %}
+  {% set p_running = stats.get('running', 0) %}
+  {% set p_failed  = stats.get('failed', 0) %}
+  {% set p_idle    = [p_total - p_running - p_failed, 0] | max %}
+  <a href="/data/pipelines" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Pipelines</span>
+      {% if p_failed > 0 %}
+        <span class="accent-card-status" style="color:var(--state-error)" title="{{ p_failed }} failed">⚠</span>
+      {% elif p_running > 0 %}
+        <span class="accent-card-status" style="color:var(--state-running)" title="{{ p_running }} running">⏱</span>
+      {% elif p_total > 0 %}
+        <span class="accent-card-status" style="color:var(--state-ok)" title="All idle">✓</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon">
+        <i data-lucide="workflow" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">
+          {% if p_running %}{{ p_running }} running · {% endif %}
+          {{ p_idle }} idle
+          {% if p_failed %} · <span style="color:var(--state-error)">{{ p_failed }} failed</span>{% endif %}
+        </div>
+        <div class="accent-card-sub">{{ p_total }} total pipelines</div>
+      </div>
+    </div>
+    <div class="accent-card-widget">
+      <div class="sparkbar">
+        {% for col in sparkbar_data %}
+        <div class="sparkbar-col {{ col.status }}" style="height:{{ col.get('height', '50') }}%"></div>
+        {% endfor %}
       </div>
     </div>
   </a>
-  {% endfor %}
-</div>
-{% else %}
-<div style="margin-bottom:24px">
-  {{ empty_state("layers", "No warehouse layers yet", "Run a pipeline to populate the lakehouse.") }}
-</div>
-{% endif %}
 
-<!-- SQL Console shortcut -->
-<div class="rt-Card" style="padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:16px">
-  <div style="display:flex;align-items:center;gap:10px">
-    <div style="background:var(--indigo-3);border-radius:6px;padding:7px;display:flex;flex-shrink:0">
-      <i data-lucide="terminal" style="width:14px;height:14px;color:var(--indigo-9)"></i>
+  <span class="flow-chevron">›</span>
+
+  {# 3. Warehouse #}
+  <a href="/data/warehouse" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Warehouse</span>
+      {% if table_count > 0 %}
+      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% else %}
+      <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
     </div>
-    <div>
-      <div style="font-size:13px;font-weight:600;color:var(--gray-12)">SQL Console</div>
-      <div style="font-size:11px;color:var(--gray-9)">Query lakehouse tables directly</div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon">
+        <i data-lucide="layers" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ table_count }} table{{ 's' if table_count != 1 }}</div>
+        <div class="accent-card-sub">Across all layers</div>
+      </div>
     </div>
-  </div>
-  <a href="/data/sql" class="rt-Button" data-variant="solid" data-size="2">
-    Open Console
+    <div class="accent-card-widget">
+      <div class="tier-dots" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        {% for ls in layer_stats %}
+        {% if ls.count > 0 %}
+        <span class="tier-dot {{ ls.layer }}" title="{{ ls.layer }}: {{ ls.count }} tables"></span>
+        <span style="font-size:9.5px;color:var(--text-4)">{{ ls.count }}</span>
+        {% endif %}
+        {% endfor %}
+        {% if table_count == 0 %}
+        <span style="font-size:10px;color:var(--text-4)">No tables yet</span>
+        {% endif %}
+      </div>
+    </div>
   </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 4. Catalog #}
+  <a href="/data/catalog" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Catalog</span>
+      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon">
+        <i data-lucide="book-open" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ table_count }} entr{{ 'ies' if table_count != 1 else 'y' }}</div>
+        <div class="accent-card-sub">Total catalog entries</div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {% if table_count == 0 %}No tables indexed{% else %}→ Browse catalog{% endif %}
+    </div>
+  </a>
+
 </div>
 
-<!-- Recent pipeline runs strip -->
-{% if stats and stats.get('total', 0) > 0 %}
-<div class="rt-Card" style="padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-  <span style="font-size:12px;font-weight:600;color:var(--gray-10);text-transform:uppercase;letter-spacing:.05em">Pipeline Health</span>
-  <div style="display:flex;gap:16px;flex:1;flex-wrap:wrap">
-    {% if stats.get('scheduled', 0) %}
-    <span style="font-size:12px;color:var(--indigo-11);display:flex;align-items:center;gap:5px">
-      <i data-lucide="clock" style="width:12px;height:12px"></i> {{ stats.get('scheduled', 0) }} scheduled
-    </span>
-    {% endif %}
-    {% if stats.get('running', 0) %}
-    <span style="font-size:12px;color:var(--cyan-11);display:flex;align-items:center;gap:5px">
-      <i data-lucide="loader" style="width:12px;height:12px"></i> {{ stats.get('running', 0) }} running
-    </span>
-    {% endif %}
-    {% if stats.get('failed', 0) %}
-    <span style="font-size:12px;color:var(--red-11);display:flex;align-items:center;gap:5px">
-      <i data-lucide="alert-circle" style="width:12px;height:12px"></i> {{ stats.get('failed', 0) }} failed
-    </span>
-    {% endif %}
-    {% if not stats.get('failed', 0) %}
-    <span style="font-size:12px;color:var(--green-11);display:flex;align-items:center;gap:5px">
-      <i data-lucide="check-circle" style="width:12px;height:12px"></i> All healthy
-    </span>
+{# ── Three below-fold panels ─────────────────────────────────────────────── #}
+<div class="hub-grid">
+
+  {# Panel 1: Recent runs #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Recent runs</span>
+      <a href="/data/pipelines" class="hub-panel-link">All pipelines →</a>
+    </div>
+    {% if recent_runs %}
+      {% for r in recent_runs[:5] %}
+      <a href="/data/pipelines/{{ r.get('name', '') }}" class="hub-row" style="text-decoration:none">
+        <span class="sdot {{ r.get('status_class', 'idle') }}"></span>
+        <span class="hub-row-name mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.get('name', '—') }}</span>
+        <span class="hub-row-meta dim mono" style="font-size:10px">{{ r.get('duration', '—') }}</span>
+        <span class="hub-row-meta dim" style="font-size:10px">{{ r.get('rows', '—') }} rows</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No runs yet — run a pipeline to see activity here.</div>
     {% endif %}
   </div>
-  <a href="/data/pipelines" style="font-size:12px;color:var(--indigo-9);text-decoration:none;white-space:nowrap;display:flex;align-items:center;gap:4px">
-    View all <i data-lucide="arrow-right" style="width:11px;height:11px"></i>
-  </a>
-</div>
-{% endif %}
 
-<!-- Quick Access — at the very bottom -->
-<div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--gray-4)">
-  <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-9);margin-bottom:10px">Quick Access</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
-    {% for label, href, icon in [("Pipelines","/data/pipelines","workflow"),("Sources","/data/sources","database"),("Lakehouse","/data/warehouse","layers"),("Lineage","/data/lineage","git-branch"),("Quality","/data/quality","shield-check"),("Catalog","/data/catalog","book-open")] %}
-    <a href="{{ href }}" class="rt-Button" data-variant="soft" data-color="indigo" data-size="2">
-      <i data-lucide="{{ icon }}" style="width:13px;height:13px"></i> {{ label }}
+  {# Panel 2: Warehouse layers #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Warehouse layers</span>
+      <a href="/data/catalog" class="hub-panel-link">Catalog →</a>
+    </div>
+    {% for ls in layer_stats %}
+    <a href="/data/catalog?layer={{ ls.layer }}" class="hub-row" style="text-decoration:none">
+      <span class="tier-dot {{ ls.layer }}" style="width:8px;height:8px;border-radius:50%;flex-shrink:0"></span>
+      <span class="hub-row-name" style="text-transform:capitalize">{{ ls.layer }}</span>
+      <span class="hub-row-meta">{{ ls.count }} table{{ 's' if ls.count != 1 }}</span>
+      {% if ls.count > 0 %}
+      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok)">PASS</span>
+      {% else %}
+      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--bg-elev);color:var(--text-4)">EMPTY</span>
+      {% endif %}
     </a>
+    {% else %}
+    <div class="hub-row" style="color:var(--text-4);font-style:italic">No warehouse tables yet</div>
     {% endfor %}
   </div>
+
+  {# Panel 3: Quality #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Quality</span>
+      <a href="/data/quality" class="hub-panel-link">Details →</a>
+    </div>
+    <div class="hub-row" style="border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;color:var(--text-3)">Overall score</span>
+      <span style="flex:1"></span>
+      <span class="mono" style="font-size:13px;font-weight:600;color:{{ 'var(--state-ok)' if quality_summary.pass_pct != '—' else 'var(--text-3)' }}">{{ quality_summary.pass_pct }}</span>
+    </div>
+    {% if quality_summary.failing %}
+      {% for f in quality_summary.failing[:4] %}
+      <a href="/data/quality" class="hub-row" style="text-decoration:none">
+        <span class="sdot error"></span>
+        <span class="hub-row-name mono" style="font-size:11px">{{ f.table }}</span>
+        <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-error) 12%,transparent);color:var(--state-error)">{{ f.score }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">
+        {% if quality_summary.pass_pct == '—' %}No quality checks run yet{% else %}All checks passing{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Activity feed ────────────────────────────────────────────────────────── #}
+<div class="hub-feed">
+  <div class="hub-feed-head">
+    <span class="hub-feed-title">Data activity</span>
+    <a href="/data/pipelines" style="font-size:10.5px;color:var(--text-4);text-decoration:none">All pipelines →</a>
+  </div>
+  {% if activity_feed %}
+    {% for ev in activity_feed %}
+    <a href="{{ ev.href }}" class="feed-row ev-{{ ev.domain }}" style="text-decoration:none">
+      <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-{{ ev.domain }}) 10%,transparent);
+                                    color:var(--domain-{{ ev.domain }})">
+        <i data-lucide="{{ ev.icon }}" style="width:12px;height:12px"></i>
+      </div>
+      <div class="feed-body">
+        <div class="feed-desc">{{ ev.desc }}</div>
+        <div class="feed-sub">{{ ev.sub }}</div>
+      </div>
+      <div class="feed-right">
+        <span class="feed-badge">{{ ev.badge }}</span>
+        <span class="feed-time">{{ ev.time_ago }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
+      No recent activity. Run a pipeline to see events here.
+    </div>
+  {% endif %}
+</div>
+
 </div>
 {% endblock %}

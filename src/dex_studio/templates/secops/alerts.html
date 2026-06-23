@@ -11,15 +11,18 @@
     no alert rules configured
   {% endif %}
 {% endblock %}
+
 {% block page_actions %}
-<button class="btn"><i data-lucide="book" style="width:13px;height:13px"></i> Templates</button>
-<button class="btn primary"><i data-lucide="plus" style="width:13px;height:13px"></i> New rule</button>
+<button class="btn sm ghost"><i data-lucide="book" style="width:11px;height:11px"></i> Templates</button>
+<button class="btn sm primary"><i data-lucide="plus" style="width:11px;height:11px"></i> New rule</button>
 {% endblock %}
 
 {% block content %}
+{% from "components/macros.html" import metric_card, empty_state %}
+<div style="--domain-color: var(--domain-secops)">
 
 {% if firing_count > 0 %}
-{# ── firing banner ── #}
+{# ── Firing banner ── #}
 <div class="card" style="padding:16px;margin-bottom:16px;border-color:color-mix(in oklch,var(--red-9) 35%,var(--border));background:linear-gradient(180deg,color-mix(in oklch,var(--red-9) 6%,var(--bg-elev)),var(--bg-elev))">
   <div class="row" style="gap:10px">
     <span class="glyph" style="width:32px;height:32px;border-radius:8px;color:var(--red-9);background:color-mix(in oklch,var(--red-9) 18%,transparent);border-color:color-mix(in oklch,var(--red-9) 35%,transparent)">
@@ -33,82 +36,91 @@
         {% endfor %}
       </div>
     </div>
-    <button class="btn ghost"><i data-lucide="check" style="width:11px;height:11px"></i> Acknowledge all</button>
+    <button class="btn ghost sm"><i data-lucide="check" style="width:11px;height:11px"></i> Acknowledge all</button>
   </div>
 </div>
 {% endif %}
 
+{# ── Severity buckets ── #}
+<div class="grid" style="grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+
+  {# Critical / high #}
+  <div class="card" style="padding:18px;border-left:3px solid var(--red-9)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--red-9)">Critical</span>
+      <div style="background:var(--red-3);border-radius:6px;padding:5px;display:flex">
+        <i data-lucide="alert-circle" style="width:13px;height:13px;color:var(--red-9)"></i>
+      </div>
+    </div>
+    <div style="font-size:26px;font-weight:700;color:var(--text);line-height:1">{{ critical_count | default(0) }}</div>
+    <div style="font-size:11px;color:var(--red-10);margin-top:4px">{{ 'action needed' if critical_count else 'none firing' }}</div>
+  </div>
+
+  {# Warning / med #}
+  {% set warn_count = alert_rules | selectattr('severity','equalto','med') | selectattr('state','equalto','firing') | list | length %}
+  <div class="card" style="padding:18px;border-left:3px solid var(--amber-9)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--amber-9)">Warning</span>
+      <div style="background:var(--amber-3);border-radius:6px;padding:5px;display:flex">
+        <i data-lucide="alert-triangle" style="width:13px;height:13px;color:var(--amber-9)"></i>
+      </div>
+    </div>
+    <div style="font-size:26px;font-weight:700;color:var(--text);line-height:1">{{ warn_count }}</div>
+    <div style="font-size:11px;color:var(--amber-10);margin-top:4px">{{ 'needs review' if warn_count else 'all clear' }}</div>
+  </div>
+
+  {# Info / low #}
+  <div class="card" style="padding:18px;border-left:3px solid var(--blue-9)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-9)">Info</span>
+      <div style="background:var(--blue-3);border-radius:6px;padding:5px;display:flex">
+        <i data-lucide="info" style="width:13px;height:13px;color:var(--blue-9)"></i>
+      </div>
+    </div>
+    <div style="font-size:26px;font-weight:700;color:var(--text);line-height:1">{{ info_count | default(0) }}</div>
+    <div style="font-size:11px;color:var(--blue-10);margin-top:4px">informational</div>
+  </div>
+
+</div>
+
 {% if alert_rules %}
 
-{# ── metric strip ── #}
-<div class="grid grid-4">
-  <div class="stat card">
-    <div class="stat-label">Total rules</div>
-    <div class="stat-value">{{ alert_rules | length }}</div>
-    <div class="stat-delta">configured</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Firing</div>
-    <div class="stat-value" style="{% if firing_count > 0 %}color:var(--red-9){% endif %}">{{ firing_count }}</div>
-    <div class="stat-delta {% if firing_count > 0 %}down{% endif %}">{% if firing_count > 0 %}action needed{% else %}all clear{% endif %}</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Armed</div>
-    <div class="stat-value">{{ armed_count }}</div>
-    <div class="stat-delta">monitoring</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Snoozed</div>
-    <div class="stat-value">{{ alert_rules | selectattr('state', 'equalto', 'snoozed') | list | length }}</div>
-    <div class="stat-delta">paused</div>
-  </div>
-</div>
-
-{# ── filter chips ── #}
-<div class="section-h">
-  <h2>Rules</h2>
-  <div class="row" style="gap:6px">
-    <button class="chip active" id="state-all"     onclick="setStateFilter('all',this)">All <span class="count">{{ alert_rules | length }}</span></button>
-    {% if firing_count %}<button class="chip" id="state-firing"  onclick="setStateFilter('firing',this)">Firing <span class="count">{{ firing_count }}</span></button>{% endif %}
-    {% if armed_count  %}<button class="chip" id="state-armed"   onclick="setStateFilter('armed',this)">Armed <span class="count">{{ armed_count }}</span></button>{% endif %}
-    {% set snoozed_count = alert_rules | selectattr('state', 'equalto', 'snoozed') | list | length %}
-    {% if snoozed_count %}<button class="chip" id="state-snoozed" onclick="setStateFilter('snoozed',this)">Snoozed <span class="count">{{ snoozed_count }}</span></button>{% endif %}
+{# ── Filter bar ── #}
+<div class="card" style="padding:10px 14px;margin-bottom:12px">
+  <div class="row" style="gap:8px;flex-wrap:wrap">
+    <div class="row" style="gap:6px">
+      <button class="chip active" id="status-all"    onclick="setStatusFilter('all',this)">All <span class="count">{{ alert_rules | length }}</span></button>
+      <button class="chip" id="status-firing"        onclick="setStatusFilter('firing',this)">Active
+        {% if firing_count %}<span class="count">{{ firing_count }}</span>{% endif %}
+      </button>
+      <button class="chip" id="status-armed"         onclick="setStatusFilter('armed',this)">Armed
+        {% if armed_count %}<span class="count">{{ armed_count }}</span>{% endif %}
+      </button>
+      {% set snoozed_count = alert_rules | selectattr('state','equalto','snoozed') | list | length %}
+      {% if snoozed_count %}
+      <button class="chip" id="status-snoozed"       onclick="setStatusFilter('snoozed',this)">Snoozed <span class="count">{{ snoozed_count }}</span></button>
+      {% endif %}
+    </div>
+    <div style="flex:1"></div>
+    <div class="input-icon" style="width:200px">
+      <i data-lucide="search" style="width:11px;height:11px" class="icon"></i>
+      <input class="input" id="alert-search" placeholder="Search rules…" style="height:26px;font-size:12px"
+             oninput="renderAlerts()">
+    </div>
   </div>
 </div>
 
-<div class="card bare">
-  <table class="tbl" id="rules-table">
-    <thead>
-      <tr>
-        <th>Rule</th>
-        <th>Condition</th>
-        <th>Severity</th>
-        <th>Channel</th>
-        <th>State</th>
-        <th class="num">Firings · 7d</th>
-        <th>Last fired</th>
-        <th style="width:60px"></th>
-      </tr>
-    </thead>
-    <tbody id="rules-tbody"></tbody>
-  </table>
+{# ── Alert list ── #}
+<div class="card bare" id="alerts-list">
+  {# Rendered by JS below #}
 </div>
 
 {% else %}
 
-{# ── empty state ── #}
-<div class="card" style="padding:56px 24px;text-align:center;margin-bottom:24px">
-  <span class="glyph lg" style="width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 16px">
-    <i data-lucide="bell" style="width:24px;height:24px"></i>
-  </span>
-  <div style="font-weight:600;font-size:15px;color:var(--text-2)">No alert rules configured</div>
-  <div class="muted" style="font-size:12.5px;margin-top:8px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.65">
-    Alert rules fire when drift is detected, pipelines fail, or spend thresholds are crossed.
-    DEX auto-creates drift rules when <code>ml.drift</code> is configured.
-  </div>
-</div>
+{# ── Empty state ── #}
+{{ empty_state("bell", "No alert rules configured", "Alert rules fire when drift is detected, pipelines fail, or spend thresholds are crossed. DEX auto-creates drift rules when ml.drift is configured.") }}
 
-{# ── built-in rule types ── #}
+{# ── Built-in rule types ── #}
 <div class="section-h">
   <h2>Built-in rule types</h2>
 </div>
@@ -141,10 +153,10 @@
   const RULES = {{ alert_rules | tojson }};
   if (!RULES || RULES.length === 0) return;
 
-  const SEV_PILL  = { high: 'error', med: 'warn', low: 'info' };
-  const SEV_LABEL = { high: 'high',  med: 'med',  low: 'low'  };
+  let statusFilter = 'all';
 
-  let stateFilter = 'all';
+  const SEV_COLOR = { high: 'var(--red-9)', med: 'var(--amber-9)', low: 'var(--blue-9)' };
+  const SEV_LABEL = { high: 'high', med: 'med', low: 'low' };
 
   function stateClass(state) {
     if (state === 'firing')  return 'error';
@@ -152,43 +164,86 @@
     return 'success';
   }
 
-  function renderRules() {
-    const tbody = document.getElementById('rules-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    RULES.forEach(function (r) {
-      if (stateFilter !== 'all' && r.state !== stateFilter) return;
-      const snoozeHtml = r.snooze_until
-        ? '<span class="dim mono" style="font-size:10px;margin-left:6px">until ' + r.snooze_until + '</span>'
-        : '';
-      const firingsHtml = r.firings > 0 ? r.firings : '<span class="dim">—</span>';
-      const tr = document.createElement('tr');
-      tr.setAttribute('data-state', r.state);
-      tr.innerHTML =
-        '<td class="mono" style="font-weight:500;font-size:12px">' + r.name + '</td>' +
-        '<td class="muted mono" style="font-size:11px">' + (r.condition || '—') + '</td>' +
-        '<td><span class="pill ' + (SEV_PILL[r.severity] || '') + '" style="height:18px">' + (SEV_LABEL[r.severity] || r.severity) + '</span></td>' +
-        '<td class="mono dim" style="font-size:11px">' + (r.channel || '—') + '</td>' +
-        '<td><span class="pill ' + stateClass(r.state) + '" style="height:18px">' + r.state + '</span>' + snoozeHtml + '</td>' +
-        '<td class="num mono">' + firingsHtml + '</td>' +
-        '<td class="dim mono" style="font-size:11px">' + (r.last_fired || '—') + '</td>' +
-        '<td><div class="row" style="gap:2px;justify-content:flex-end">' +
-          '<button class="btn icon ghost sm" title="Edit"><i data-lucide="pencil" style="width:11px;height:11px"></i></button>' +
-          '<button class="btn icon ghost sm" title="More"><i data-lucide="more-horizontal" style="width:11px;height:11px"></i></button>' +
-        '</div></td>';
-      tbody.appendChild(tr);
+  function sevPill(sev) {
+    const c = SEV_COLOR[sev] || 'var(--text-4)';
+    const l = SEV_LABEL[sev] || sev;
+    return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:' + c + '">' +
+      '<span style="width:6px;height:6px;border-radius:999px;background:' + c + ';flex-shrink:0"></span>' + l + '</span>';
+  }
+
+  function renderAlerts() {
+    const container = document.getElementById('alerts-list');
+    if (!container) return;
+    const searchEl = document.getElementById('alert-search');
+    const search = searchEl ? searchEl.value.toLowerCase() : '';
+
+    let html = '';
+    let count = 0;
+    RULES.forEach(function (r, idx) {
+      if (statusFilter !== 'all' && r.state !== statusFilter) return;
+      if (search && !r.name.toLowerCase().includes(search) && !(r.condition || '').toLowerCase().includes(search)) return;
+      count++;
+
+      const borderColor = r.severity === 'high' ? 'var(--red-9)' : (r.severity === 'med' ? 'var(--amber-9)' : 'var(--blue-9)');
+      const stateHtml = '<span class="pill ' + stateClass(r.state) + '" style="height:16px;font-size:9px">' + r.state + '</span>';
+      const elapsed = r.last_fired && r.last_fired !== 'never' ? r.last_fired : 'never fired';
+
+      html +=
+        '<div style="border-left:3px solid ' + borderColor + ';padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer"' +
+        ' data-idx="' + idx + '" data-status="' + r.state + '" data-name="' + r.name + '" onclick="toggleDetail(this,' + idx + ')">' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            sevPill(r.severity) +
+            '<span class="mono" style="font-weight:600;font-size:12.5px;flex:1">' + r.name + '</span>' +
+            '<span class="muted mono" style="font-size:10.5px">' + elapsed + '</span>' +
+            stateHtml +
+            '<button class="btn sm ghost" style="margin-left:6px" onclick="event.stopPropagation()">' +
+              '<i data-lucide="check" style="width:10px;height:10px"></i> Ack' +
+            '</button>' +
+          '</div>' +
+          '<div class="muted mono" style="font-size:11px;margin-top:4px">' + (r.condition || '—') + ' · ' + (r.channel || '—') + '</div>' +
+          '<div class="rule-detail" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-2)">' +
+            '<div style="font-size:12px;margin-bottom:8px;line-height:1.6">' + (r.message || r.condition || '—') + '</div>' +
+            '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:11px">' +
+              '<span class="muted">Source</span><span class="mono">' + (r.source || '—') + '</span>' +
+              '<span class="muted">Threshold</span><span class="mono">' + (r.threshold || '—') + '</span>' +
+              '<span class="muted">Last fired</span><span class="mono">' + (r.last_fired || 'never') + '</span>' +
+              '<span class="muted">Firings (7d)</span><span class="mono">' + (r.firings || 0) + '</span>' +
+            '</div>' +
+            '<div class="row" style="gap:6px;margin-top:10px">' +
+              '<button class="btn sm ghost" onclick="event.stopPropagation()"><i data-lucide="check" style="width:10px;height:10px"></i> Acknowledge</button>' +
+              '<button class="btn sm ghost" onclick="event.stopPropagation()"><i data-lucide="check-check" style="width:10px;height:10px"></i> Resolve</button>' +
+              '<button class="btn sm ghost" onclick="event.stopPropagation()"><i data-lucide="moon" style="width:10px;height:10px"></i> Suppress 1h</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
     });
+
+    if (count === 0) {
+      html = '<div class="dex-empty-state" style="padding:40px 24px">' +
+        '<i data-lucide="search-x" style="width:24px;height:24px;opacity:.3;margin-bottom:10px;display:block;margin-left:auto;margin-right:auto"></i>' +
+        '<div style="font-size:13px;font-weight:500;color:var(--text-3)">No matching alerts</div>' +
+        '</div>';
+    }
+
+    container.innerHTML = html;
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
-  globalThis.setStateFilter = function (state, el) {
-    stateFilter = state;
-    document.querySelectorAll('[id^="state-"]').forEach(function (b) { b.classList.remove('active'); });
-    el.classList.add('active');
-    renderRules();
+  globalThis.toggleDetail = function (rowEl, _idx) {
+    const detail = rowEl.querySelector('.rule-detail');
+    if (!detail) return;
+    detail.style.display = detail.style.display === 'none' ? '' : 'none';
   };
 
-  renderRules();
+  globalThis.setStatusFilter = function (status, el) {
+    statusFilter = status;
+    document.querySelectorAll('[id^="status-"]').forEach(function (b) { b.classList.remove('active'); });
+    el.classList.add('active');
+    renderAlerts();
+  };
+
+  renderAlerts();
 }());
 </script>
+</div>
 {% endblock %}

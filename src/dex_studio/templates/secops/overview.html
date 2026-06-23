@@ -1,343 +1,279 @@
 {% extends "base.html" %}
 
-{% block title %}Privacy — DEX Studio{% endblock %}
+{% block title %}Security — DEX Studio{% endblock %}
 
-{% block page_title %}Privacy &amp; Security{% endblock %}
-{% block page_badge %}
-{% if guard_enabled %}
-<span class="pill success no-dot" style="height:22px">guard active · {{ strategies | length }} strateg{{ 'ies' if strategies | length != 1 else 'y' }}</span>
-{% else %}
-<span class="pill warn" style="height:22px">guard disabled</span>
-{% endif %}
-{% endblock %}
+{% block content_class %}full-bleed{% endblock %}
 
-{% block page_sub %}
-<div class="sub">{% if allow_local %}external outbound calls routed through the privacy guard · local LLMs ({{ local_targets | join(', ') }}) bypass the guard · PII never leaves disk unmasked{% else %}all outbound calls routed through the local privacy guard · PII never leaves disk unmasked{% endif %}</div>
-{% endblock %}
+{% block full_bleed %}
+{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block page_actions %}
-<button class="btn">
-  <i data-lucide="eye" style="width:13px;height:13px"></i> Inspect policy
-</button>
-<a href="/secops/audit" class="btn primary" style="text-decoration:none">
-  <i data-lucide="scroll-text" style="width:13px;height:13px"></i> Audit log
-</a>
-{% endblock %}
-
-{% block content %}
-
-{# ── Stat cards with sparklines ────────────────────────────────────────────── #}
-<div class="grid grid-4">
-
-  <div class="stat" data-spark='{{ chart_zeros }}'
-                    data-spark-color="var(--accent-9)">
-    <div class="lbl"><i data-lucide="send" style="width:11px;height:11px"></i> Outbound calls today</div>
-    <div class="val">{{ outbound_calls_today | default('—') }}</div>
-    <div class="delta {{ 'up' if outbound_calls_today else 'muted' }}">
-      {% if outbound_calls_today %}<i data-lucide="arrow-up" style="width:11px;height:11px"></i>{% endif %}
-      {{ outbound_delta if outbound_delta is defined else ('active' if outbound_calls_today else 'local calls bypass the guard' if allow_local else 'no calls yet') }}
+{# ── Security Posture Banner ──────────────────────────────────────────────── #}
+<div style="border-bottom:1px solid var(--border);padding:16px 24px;background:color-mix(in oklch,var(--domain-secops) 6%,var(--bg-elev))">
+  <div style="display:flex;align-items:center;gap:16px">
+    <div style="width:52px;height:52px;border-radius:50%;
+                border:3px solid {{ 'var(--state-ok)' if security_score >= 80 else ('var(--state-warn)' if security_score >= 50 else 'var(--state-error)') }};
+                display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <span style="font-size:16px;font-weight:700;color:{{ 'var(--state-ok)' if security_score >= 80 else ('var(--state-warn)' if security_score >= 50 else 'var(--state-error)') }}">{{ security_score }}%</span>
     </div>
-  </div>
-
-  <div class="stat" data-spark='{{ chart_zeros }}'
-                    data-spark-color="var(--green-9)">
-    <div class="lbl"><i data-lucide="shield-check" style="width:11px;height:11px"></i> PII fields masked</div>
-    <div class="val">{{ pii_masked_today | default(0) }}</div>
-    <div class="delta {{ 'up' if pii_masked_today else 'muted' }}">
-      {% if pii_masked_today %}<i data-lucide="arrow-up" style="width:11px;height:11px"></i>{% endif %}
-      {{ pii_masked_delta if pii_masked_delta is defined else ('masked' if pii_masked_today else 'none yet') }}
+    <div>
+      <div style="font-weight:600;font-size:15px">{{ posture_label }}</div>
+      <div class="muted" style="font-size:12px">PrivacyGuard {{ 'active' if guard_active else 'inactive' }} · {{ strategy_count }} strateg{{ 'ies' if strategy_count != 1 else 'y' }} · {{ active_rules }} rule{{ 's' if active_rules != 1 else '' }}</div>
     </div>
+    <span style="flex:1"></span>
+    <a href="/secops/audit" class="btn sm ghost" style="text-decoration:none">
+      <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Audit log
+    </a>
+    <a href="/secops/alerts" class="btn sm ghost" style="text-decoration:none">
+      <i data-lucide="bell" style="width:11px;height:11px"></i> Alerts
+    </a>
   </div>
+</div>
 
-  <div class="stat" data-spark='{{ chart_zeros }}'
-                    data-spark-color="var(--red-9)">
-    <div class="lbl"><i data-lucide="shield-x" style="width:11px;height:11px"></i> Calls blocked</div>
-    <div class="val">{{ calls_blocked_today | default(0) }}</div>
-    <div class="delta muted">{{ 'blocked today' if calls_blocked_today else 'none blocked' }}</div>
-  </div>
+{# ── Metric Strip ─────────────────────────────────────────────────────────── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--bg-elev)">
+  {{ metric_card("Outbound calls today", outbound_calls_today | default(0), "send", "indigo",
+      "active" if outbound_calls_today else "no calls yet") }}
+  {{ metric_card("PII fields masked", pii_masked_today | default(0), "shield-check", "green",
+      "masked today" if pii_masked_today else "none yet") }}
+  {{ metric_card("Calls blocked", calls_blocked_today | default(0), "shield-x",
+      "red" if calls_blocked_today else "indigo",
+      "blocked today" if calls_blocked_today else "none blocked") }}
+  {{ metric_card("External spend today", "$" ~ (external_spend_today | default("0.00")), "dollar-sign", "amber",
+      "local LLM · no cost" if (not external_spend_today or external_spend_today == "0.00") else "") }}
+</div>
 
-  <div class="stat" data-spark='[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]'
-                    data-spark-color="var(--amber-9)">
-    <div class="lbl"><i data-lucide="dollar-sign" style="width:11px;height:11px"></i> External spend today</div>
-    <div class="val">${{ external_spend_today | default('0.00') }}</div>
-    <div class="delta muted">{{ 'local LLM · no cost' if external_spend_today == '0.00' or not external_spend_today else '' }}</div>
-  </div>
+{# ── Flow Strip — Accent Cards ────────────────────────────────────────────── #}
+<div class="flow-strip">
+
+  {# 1. Strategies #}
+  <a href="/secops/" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Strategies</span>
+      {% if guard_active %}
+        <span class="accent-card-status" style="color:var(--state-ok)" title="Guard active">✓</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-warn)" title="Guard inactive">⚠</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
+        <i data-lucide="shield" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ strategy_count }} strateg{{ 'ies' if strategy_count != 1 else 'y' }}</div>
+        <div class="accent-card-sub">
+          {% set mask_ct = strategy_display | selectattr('mode','equalto','mask') | list | length %}
+          {% set block_ct = strategy_display | selectattr('mode','equalto','block') | list | length %}
+          {{ mask_ct }} mask · {{ block_ct }} block
+        </div>
+      </div>
+    </div>
+    <div class="accent-card-widget">
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        {% for s in strategy_display[:4] %}
+        <span class="type-pill">{{ s.name }}</span>
+        {% endfor %}
+        {% if strategy_display | length > 4 %}
+        <span class="type-pill">+{{ strategy_display | length - 4 }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 2. Alerts #}
+  {% set open_alerts = firing_count | default(0) %}
+  <a href="/secops/alerts" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Alerts</span>
+      {% if open_alerts > 0 %}
+        <span class="accent-card-status" style="color:var(--state-error)" title="{{ open_alerts }} firing">⚠</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-ok)" title="All clear">✓</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
+        <i data-lucide="bell" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary" style="{{ 'color:var(--state-error)' if open_alerts else '' }}">
+          {{ open_alerts }} open
+        </div>
+        <div class="accent-card-sub">alert rules</div>
+      </div>
+    </div>
+    <div class="accent-card-widget">
+      {% if open_alerts %}
+      <span class="pill error" style="font-size:9.5px">{{ open_alerts }} critical</span>
+      {% else %}
+      <span style="font-size:10px;color:var(--text-4)">No active alerts</span>
+      {% endif %}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 3. Audit #}
+  <a href="/secops/audit" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Audit</span>
+      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
+        <i data-lucide="scroll-text" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ audit_today | default(0) }} today</div>
+        <div class="accent-card-sub">{{ audit_count | default(0) }} total events</div>
+      </div>
+    </div>
+    <div class="accent-card-widget">
+      <span style="font-size:10px;color:var(--text-4)">→ Full audit timeline</span>
+    </div>
+  </a>
 
 </div>
 
-{# ── Two-column: outbound chart + guard config ──────────────────────────────── #}
-<div class="grid" style="grid-template-columns:1.5fr 1fr;margin-top:var(--space-3)">
+{# ── Hub Grid — 3 panels ──────────────────────────────────────────────────── #}
+<div class="hub-grid">
 
-  {# Outbound activity line chart #}
-  <div class="card" style="padding:18px">
-    <div class="spread" style="margin-bottom:12px">
-      <div>
-        <div style="font-weight:600;font-size:var(--text-sm)">Outbound activity</div>
-        <div class="muted" style="font-size:var(--text-xs)">last 7 days · by provider</div>
-      </div>
-      <div class="row" style="gap:6px">
-        <span class="chip active">7d</span>
-        <span class="chip">30d</span>
-        <span class="chip">90d</span>
-      </div>
+  {# Panel 1: Active strategies #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Active strategies</span>
+      <a href="/secops/" class="hub-panel-link">Config →</a>
     </div>
-    {# SVG line chart — rendered by JS from data attributes #}
-    <div id="outbound-chart" style="width:100%;height:200px"
-         data-anthropic='{{ chart_zeros }}'
-         data-openai='{{ chart_zeros }}'
-         data-local='{{ chart_zeros }}'>
-    </div>
-    {# Chart legend #}
-    <div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap">
-      <div class="row" style="gap:6px;font-size:var(--text-xs);color:var(--text-3)">
-        <span style="width:9px;height:2px;background:var(--accent-9);border-radius:2px;display:inline-block"></span>
-        Anthropic
-      </div>
-      <div class="row" style="gap:6px;font-size:var(--text-xs);color:var(--text-3)">
-        <span style="width:9px;height:2px;background:var(--green-9);border-radius:2px;display:inline-block"></span>
-        OpenAI
-      </div>
-      <div class="row" style="gap:6px;font-size:var(--text-xs);color:var(--text-3)">
-        <span style="width:9px;height:2px;background:var(--gray-7);border-radius:2px;display:inline-block"></span>
-        Local
-      </div>
-    </div>
-  </div>
-
-  {# Guard configuration — field-level rules #}
-  <div class="card" style="padding:18px">
-    <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:12px">Guard configuration</div>
-
-    {% if strategies %}
-      {% for s in strategies %}
-      {% if not loop.first %}<div class="div-y"></div>{% endif %}
-      <div class="row" style="padding:8px 0;font-size:var(--text-sm)">
-        <span class="mono" style="flex:1;font-size:11.5px;color:var(--text)">{{ s.pii_type }}</span>
-        <span class="mono dim" style="font-size:11px;margin-right:10px">{{ s.strategy }}</span>
-        <span class="pill success no-dot" style="height:18px;font-size:10px">on</span>
+    {% if strategy_display %}
+      {% for s in strategy_display %}
+      <div class="hub-row">
+        <span class="pill {{ 'warn' if s.mode == 'mask' else ('error' if s.mode == 'block' else 'success') }} no-dot"
+              style="height:16px;font-size:9px;flex-shrink:0">{{ s.mode }}</span>
+        <span class="hub-row-name mono">{{ s.name }}</span>
+        <span class="hub-row-meta">{{ s.field_count }} field{{ 's' if s.field_count != 1 else '' }}</span>
       </div>
       {% endfor %}
     {% else %}
-      {# PII patterns from secops.pii.patterns in dex.yaml #}
-      {% for pattern, action in [
-        ('email',       pii_action | default('warn')),
-        ('ssn',         'block'),
-        ('phone',       pii_action | default('warn')),
-        ('credit_card', 'block'),
-      ] %}
-      {% if not loop.first %}<div class="div-y"></div>{% endif %}
-      <div class="row" style="padding:8px 0;font-size:var(--text-sm)">
-        <span class="mono" style="flex:1;font-size:11.5px;color:var(--text)">{{ pattern }}</span>
-        <span class="mono dim" style="font-size:11px;margin-right:10px">{{ action }}</span>
-        <span class="pill {{ 'success' if action != 'block' else 'warn' }} no-dot" style="height:18px;font-size:10px">{{ action }}</span>
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No strategies configured</div>
+    {% endif %}
+  </div>
+
+  {# Panel 2: Recent events #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Recent events</span>
+      <a href="/secops/audit" class="hub-panel-link">All events →</a>
+    </div>
+    {% if recent_events %}
+      {% for e in recent_events[:5] %}
+      <a href="/secops/audit" class="hub-row" style="text-decoration:none">
+        <span class="pill {{ 'error' if e.operation == 'blocked' else 'success' }} no-dot"
+              style="height:16px;font-size:9px;flex-shrink:0">{{ e.operation }}</span>
+        <span class="hub-row-name mono">{{ e.dataset | default('—') }}</span>
+        <span class="hub-row-meta">{{ (e.occurred_at or '—')[-8:] }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No events yet</div>
+    {% endif %}
+  </div>
+
+  {# Panel 3: Top masked fields #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Top masked fields</span>
+      <a href="/secops/audit" class="hub-panel-link">Audit →</a>
+    </div>
+    {% if top_masked_fields %}
+      {% for f in top_masked_fields %}
+      <div class="hub-row">
+        <span class="hub-row-name mono">{{ f.field }}</span>
+        <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--amber-9) 12%,transparent);color:var(--amber-11)">{{ f.count }}</span>
+        <span class="hub-row-meta">{{ f.strategy }}</span>
       </div>
       {% endfor %}
-      <div class="div-y" style="margin-top:8px"></div>
-      <div style="margin-top:10px;font-size:var(--text-xs);color:var(--text-3)">
-        PII patterns from <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">secops.pii.patterns</code> · add <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">secops.guard</code> for field-level rules
-      </div>
-    {% endif %}
-
-    {% if not guard_enabled %}
-    <div class="div-y" style="margin-top:8px"></div>
-    <div style="margin-top:10px;font-size:var(--text-xs);color:var(--text-3)">
-      Enable guard in <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">dex.yaml</code>:
-      <pre style="margin-top:6px;font-family:var(--font-mono);font-size:11px;background:var(--bg-elev-2);
-                  padding:10px;border-radius:var(--r-2);border:1px solid var(--border);line-height:1.6;overflow-x:auto">secops:
-  guard:
-    enabled: true</pre>
-    </div>
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No mask events yet</div>
     {% endif %}
   </div>
 
 </div>
 
-{# ── Recent outbound calls ──────────────────────────────────────────────────── #}
-<div class="section-h">
-  <h2>Recent outbound calls</h2>
-  <span class="muted" style="font-size:var(--text-xs)">last 20</span>
+{# ── Activity Feed ────────────────────────────────────────────────────────── #}
+<div class="hub-feed">
+  <div class="hub-feed-head">
+    <span class="hub-feed-title">Security activity</span>
+    <a href="/secops/audit" style="font-size:10.5px;color:var(--text-4);text-decoration:none">Full log →</a>
+  </div>
+  {% if activity_feed %}
+    {% for ev in activity_feed %}
+    <a href="{{ ev.href }}" class="feed-row ev-secops" style="text-decoration:none">
+      <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-secops) 10%,transparent);
+                                    color:{{ 'var(--state-error)' if ev.badge == 'blocked' else ('var(--amber-9)' if ev.badge == 'masked' else 'var(--blue-9)') }}">
+        <i data-lucide="{{ ev.icon }}" style="width:12px;height:12px"></i>
+      </div>
+      <div class="feed-body">
+        <div class="feed-desc">{{ ev.desc }}</div>
+        <div class="feed-sub">{{ ev.sub }}</div>
+      </div>
+      <div class="feed-right">
+        <span class="feed-badge">{{ ev.badge }}</span>
+        <span class="feed-time">{{ ev.time_ago }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  {% else %}
+    <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
+      No security events yet. Events appear here when PrivacyGuard intercepts outbound calls.
+    </div>
+  {% endif %}
 </div>
 
-{% if recent_events %}
-<div class="card bare">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th style="width:90px">Time</th>
-        <th>Target</th>
-        <th>Operation</th>
-        <th style="width:70px">Fields</th>
-        <th style="width:110px">Masked</th>
-        <th class="num" style="width:80px">Cost</th>
-        <th style="width:90px">Result</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in recent_events %}
-      <tr>
-        <td class="mono dim" style="font-size:var(--text-xs)">{{ e.occurred_at }}</td>
-        <td class="mono" style="font-size:11.5px">{{ e.dataset | default('—') }}</td>
-        <td><span class="mono dim" style="font-size:11px">{{ e.operation }}</span></td>
-        <td class="mono dim">{{ e.record_count | default('—') }}</td>
-        <td>
-          {% if e.operation == 'blocked' %}
-            <span class="pill error no-dot" style="height:18px">blocked</span>
-          {% else %}
-            <span class="pill success no-dot" style="height:18px">{{ e.pii_fields | length }} masked</span>
+{# ── Strategy Accordion ───────────────────────────────────────────────────── #}
+<div style="padding:0 24px 24px">
+  <div class="section-h" style="margin-bottom:12px">
+    <h2>Strategy detail</h2>
+    <span class="muted" style="font-size:var(--text-xs)">{{ strategy_count }} configured</span>
+  </div>
+
+  {% if strategy_display %}
+    {% for s in strategy_display %}
+    <div x-data="{open:false}"
+         style="border:1px solid var(--border);border-radius:var(--r-2);margin-bottom:6px;overflow:hidden;background:var(--bg-elev)">
+      {# Accordion header #}
+      <div class="row" style="padding:10px 14px;cursor:pointer;gap:10px;user-select:none"
+           @click="open=!open">
+        <span class="pill {{ 'warn' if s.mode == 'mask' else ('error' if s.mode == 'block' else 'success') }} no-dot"
+              style="height:16px;font-size:9px;flex-shrink:0">{{ s.mode }}</span>
+        <span class="mono" style="font-weight:500;font-size:13px;flex:1">{{ s.name }}</span>
+        <span class="dim" style="font-size:11px">{{ s.field_count }} field{{ 's' if s.field_count != 1 else '' }}</span>
+        <i data-lucide="chevron-down" style="width:12px;height:12px;flex-shrink:0;transition:transform .2s"
+           :style="open ? 'transform:rotate(180deg)' : ''"></i>
+      </div>
+      {# Expanded body #}
+      <div x-show="open" x-cloak
+           style="border-top:1px solid var(--border);padding:12px 14px;background:var(--bg)">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <span class="chip">{{ s.name }}</span>
+          {% if s.strategy %}
+          <span class="chip">strategy: {{ s.strategy }}</span>
           {% endif %}
-        </td>
-        <td class="num mono" style="font-weight:500">—</td>
-        <td>
-          {% if e.operation == 'blocked' %}
-            <span class="row" style="gap:5px;color:var(--red-9);font-size:var(--text-xs)">
-              <i data-lucide="shield-x" style="width:11px;height:11px"></i> blocked
-            </span>
-          {% else %}
-            <span class="row" style="gap:5px;color:var(--green-9);font-size:var(--text-xs)">
-              <i data-lucide="check" style="width:11px;height:11px"></i> sent
-            </span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        </div>
+        <div class="muted" style="font-size:11.5px">
+          Mode: <span class="mono" style="color:{{ 'var(--amber-9)' if s.mode == 'mask' else ('var(--red-9)' if s.mode == 'block' else 'var(--green-9)') }}">{{ s.mode }}</span>
+          · Applied to: <span class="mono">{{ s.name }}</span> PII type
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    {{ empty_state("shield", "No strategies configured", "Add a secops.guard section to dex.yaml to configure field-level rules.") }}
+  {% endif %}
 </div>
-{% elif audit_enabled %}
-{# Demo rows to show the UI before any real events are captured #}
-<div class="card bare">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th style="width:90px">Time</th>
-        <th>Target</th>
-        <th>Operation</th>
-        <th style="width:70px">Fields</th>
-        <th style="width:110px">Masked</th>
-        <th class="num" style="width:80px">Cost</th>
-        <th style="width:90px">Result</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td colspan="7">
-          <div class="dex-empty-state" style="padding:40px 24px">
-            <i data-lucide="shield-check" style="width:28px;height:28px;opacity:.3;margin-bottom:10px"></i>
-            <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No outbound calls recorded yet</div>
-            <div class="muted" style="font-size:var(--text-xs)">
-              {% if allow_local %}Local LLM calls bypass the guard when <code style="font-family:var(--font-mono);font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:var(--r-1)">allow_local</code> is enabled.{% endif %}
-              Events appear here once the guard intercepts outbound LLM calls.
-            </div>
-          </div>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-{% else %}
-<div class="card" style="padding:14px">
-  <span class="muted" style="font-size:var(--text-sm)">
-    Audit logger is disabled. Enable it in
-    <code style="font-family:var(--font-mono);font-size:var(--text-xs);background:var(--bg-elev-2);padding:1px 6px;border-radius:var(--r-1)">dex.yaml</code>
-    to record outbound call events.
-  </span>
-</div>
-{% endif %}
 
-{% endblock %}
-
-{% block scripts %}
-<script>
-// ── Sparklines in stat cards ──────────────────────────────────────────────────
-(function () {
-  function renderSpark(el) {
-    const raw = el.dataset.spark;
-    const color = el.dataset.sparkColor || 'var(--accent-9)';
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    const W = 90; const H = 36;
-    const min = Math.min(...data); const max = Math.max(...data);
-    const range = max - min || 1;
-    const stepX = W / (data.length - 1);
-    const pts = data.map((v, i) => [
-      i * stepX,
-      H - ((v - min) / range) * (H - 4) - 2,
-    ]);
-    const path = pts.map((p, i) => (i === 0 ? `M${p[0].toFixed(1)},${p[1].toFixed(1)}` : `L${p[0].toFixed(1)},${p[1].toFixed(1)}`)).join(' ');
-    const areaPath = `${path} L${W},${H} L0,${H} Z`;
-    const last = pts[pts.length - 1];
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.classList.add('spark-svg');
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    svg.setAttribute('preserveAspectRatio', 'none');
-    svg.style.cssText = `width:${W}px;height:${H}px;display:block;overflow:visible`;
-    svg.innerHTML = `
-      <path d="${areaPath}" fill="${color}" opacity="0.12"/>
-      <path d="${path}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.2" fill="${color}"/>
-    `;
-    const wrap = document.createElement('div');
-    wrap.className = 'spark';
-    wrap.appendChild(svg);
-    el.style.position = 'relative';
-    el.appendChild(wrap);
-  }
-  document.querySelectorAll('.stat[data-spark]').forEach(renderSpark);
-})();
-
-// ── Outbound activity line chart ──────────────────────────────────────────────
-(function () {
-  const el = document.getElementById('outbound-chart');
-  if (!el) return;
-  const parse = (key) => { try { return JSON.parse(el.dataset[key] || '[]'); } catch { return []; } };
-  const anthropic = parse('anthropic');
-  const openai    = parse('openai');
-  const local     = parse('local');
-  const series = [
-    { data: anthropic, color: 'var(--accent-9)',  name: 'Anthropic' },
-    { data: openai,    color: 'var(--green-9)',   name: 'OpenAI' },
-    { data: local,     color: 'var(--gray-7)',    name: 'Local' },
-  ];
-  const W = 600; const H = 200;
-  const n = series[0].data.length;
-  if (n === 0) return;
-  const allV = series.flatMap(s => s.data);
-  const maxV = Math.max(...allV) || 1;
-  const padTop = 16; const padBot = 22; const padLeft = 36;
-  const innerH = H - padTop - padBot;
-  const innerW = W - padLeft;
-  const yFn = v => padTop + innerH - (v / maxV) * innerH;
-  const xFn = i => padLeft + (i / (n - 1)) * innerW;
-
-  // gridlines
-  let gridLines = '';
-  [0, 0.25, 0.5, 0.75, 1].forEach(g => {
-    const yy = yFn(maxV * g);
-    gridLines += `<line x1="${padLeft}" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="var(--border)" stroke-width="0.7" stroke-dasharray="${g===0?'0':'2 3'}"/>`;
-    gridLines += `<text x="${padLeft - 4}" y="${(yy + 3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--text-4)" font-family="var(--font-mono)">${Math.round(maxV * g)}</text>`;
-  });
-  // x labels
-  const xLabels = ['7d ago', '6d', '5d', '4d', '3d', '2d', '1d'];
-  let xLabelSvg = '';
-  xLabels.forEach((lbl, i) => {
-    const idx = Math.floor(i * (n - 1) / 6);
-    xLabelSvg += `<text x="${xFn(idx).toFixed(1)}" y="${H - 4}" font-size="9.5" text-anchor="middle" fill="var(--text-4)" font-family="var(--font-mono)">${lbl}</text>`;
-  });
-  // series paths
-  let seriesSvg = '';
-  series.forEach(s => {
-    const path = s.data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xFn(i).toFixed(1)},${yFn(v).toFixed(1)}`).join(' ');
-    const areaPath = `${path} L${W},${yFn(0).toFixed(1)} L${padLeft},${yFn(0).toFixed(1)} Z`;
-    seriesSvg += `<path d="${areaPath}" fill="${s.color}" opacity="0.08"/>`;
-    seriesSvg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
-  });
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.style.cssText = 'width:100%;height:100%;display:block';
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.innerHTML = gridLines + xLabelSvg + seriesSvg;
-  el.appendChild(svg);
-})();
-</script>
 {% endblock %}

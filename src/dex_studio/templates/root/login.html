@@ -3,55 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login — DEX Studio</title>
+  <title>Sign In — DEX Studio</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/studio.css">
   <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
-<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium"
-      style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)">
+<body style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)">
 
-  <div class="rt-Card animate-scale-in" style="width:360px;padding:32px">
+  <div class="card animate-scale-in" style="width:360px;padding:32px">
     <div style="text-align:center;margin-bottom:28px">
-      <div style="background:var(--indigo-9);border-radius:10px;padding:10px;display:inline-flex;margin-bottom:12px">
+      <div style="background:var(--accent-9);border-radius:10px;padding:10px;display:inline-flex;margin-bottom:12px">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       </div>
       <h1 style="font-size:20px;font-weight:700;margin:0 0 4px">DEX Studio</h1>
-      <p style="font-size:13px;color:var(--gray-10);margin:0">Enter your access key to continue</p>
+      <p style="font-size:13px;color:var(--text-3);margin:0">Enter your passphrase to continue</p>
     </div>
 
     {% if error %}
-    <div class="rt-CalloutRoot" data-color="red" data-size="1" style="margin-bottom:16px">
-      <p class="rt-CalloutText">{{ error }}</p>
+    <div style="background:var(--red-2);border:1px solid var(--red-6);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--red-11)">
+      {{ error }}
     </div>
     {% endif %}
 
     <form method="post" action="/login" x-data="{show:false}">
-      <input type="hidden" name="next" value="{{ next }}">
-      <div class="dex-form-group" style="margin-bottom:16px">
-        <label for="api_key" style="font-size:12px;font-weight:500;color:var(--gray-11)">Access Key</label>
+      <div style="margin-bottom:16px">
+        <label for="passphrase" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">Passphrase</label>
         <div style="position:relative">
-          <input id="api_key" :type="show ? 'text' : 'password'" name="api_key" placeholder="dex-..."
+          <input id="passphrase" :type="show ? 'text' : 'password'" name="passphrase"
+                 placeholder="word-word-0000"
                  autocomplete="current-password" autofocus required
-                 class="rt-TextFieldInput"
-                 style="width:100%;padding:8px 36px 8px 10px;font-family:'Fira Code',monospace;font-size:13px">
+                 class="input"
+                 style="width:100%;padding-right:36px;font-family:var(--font-mono);font-size:13px">
           <button type="button" @click="show=!show"
-                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray-9);padding:2px">
+                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-3);padding:2px">
             <svg x-show="!show" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             <svg x-show="show" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           </button>
         </div>
       </div>
-      <button type="submit" class="rt-Button" data-variant="solid" data-size="3" style="width:100%">
+      <button type="submit" class="btn primary" style="width:100%;height:36px;font-size:13px">
         Sign In
       </button>
     </form>
 
-    <p style="font-size:11px;color:var(--gray-8);text-align:center;margin-top:20px">
-      Set <code style="font-size:10px">DEX_STUDIO_API_KEY</code> env var to configure access key
+    <p style="font-size:11px;color:var(--text-4);text-align:center;margin-top:20px">
+      Passphrase saved to <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">~/.dex-studio/passphrase</code><br>
+      Override with <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">DEX_STUDIO_PASSPHRASE</code> env var
     </p>
   </div>
 
-  <!-- icons are inline SVG; no lucide runtime needed -->
 </body>
 </html>

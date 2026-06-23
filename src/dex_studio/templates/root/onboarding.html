@@ -15,8 +15,7 @@
   </script>
   <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
-<body class="radix-themes" data-accent-color="indigo" data-gray-color="slate" data-radius="medium"
-      style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)"
+<body style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)"
       x-data="{
         tab: 'open',
         selectedIsExample: {{ 'true' if (all_projects and all_projects[0].source == 'example') else 'false' }},
@@ -26,40 +25,38 @@
         }
       }">
 
-  <div class="rt-Card animate-scale-in" style="width:480px;padding:32px">
+  <div class="card animate-scale-in" style="width:480px;padding:32px">
     <!-- Header -->
     <div style="text-align:center;margin-bottom:24px">
-      <div style="background:var(--indigo-9);border-radius:10px;padding:10px;display:inline-flex;margin-bottom:12px">
+      <div style="background:var(--accent-9);border-radius:10px;padding:10px;display:inline-flex;margin-bottom:12px">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       </div>
       <h1 style="font-size:20px;font-weight:700;margin:0 0 4px">DEX Studio</h1>
-      <p style="font-size:13px;color:var(--gray-10);margin:0">Open or create a DataEngineX project</p>
+      <p style="font-size:13px;color:var(--text-3);margin:0">Open or create a DataEngineX project</p>
     </div>
 
     {% if error %}
-    <div class="rt-CalloutRoot" data-color="red" data-size="1" style="margin-bottom:16px">
-      <p class="rt-CalloutText">{{ error }}</p>
+    <div style="background:var(--red-2);border:1px solid var(--red-6);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--red-11)">
+      {{ error }}
     </div>
     {% endif %}
 
     {% if warnings %}
-    <div class="rt-CalloutRoot" data-color="orange" data-size="1" style="margin-bottom:16px">
-      {% for w in warnings %}
-      <p class="rt-CalloutText" style="margin:0">{{ w }}</p>
-      {% endfor %}
+    <div style="background:var(--amber-2);border:1px solid var(--amber-6);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--amber-11)">
+      {% for w in warnings %}<p style="margin:0">{{ w }}</p>{% endfor %}
     </div>
     {% endif %}
 
     <!-- Tabs -->
-    <div style="display:flex;border-bottom:1px solid var(--gray-4);margin-bottom:20px">
+    <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:20px">
       <button @click="tab='open'" type="button"
-              :style="tab==='open' ? 'border-bottom:2px solid var(--indigo-9);color:var(--indigo-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--gray-10)'"
+              :style="tab==='open' ? 'border-bottom:2px solid var(--accent-9);color:var(--accent-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--text-3)'"
               style="padding:7px 14px;background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:-1px;display:flex;align-items:center;gap:5px">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Open Project
       </button>
       <button @click="tab='new'" type="button"
-              :style="tab==='new' ? 'border-bottom:2px solid var(--indigo-9);color:var(--indigo-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--gray-10)'"
+              :style="tab==='new' ? 'border-bottom:2px solid var(--accent-9);color:var(--accent-11);font-weight:600' : 'border-bottom:2px solid transparent;color:var(--text-3)'"
               style="padding:7px 14px;background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:-1px;display:flex;align-items:center;gap:5px">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New Project
@@ -70,11 +67,11 @@
     <div x-show="tab==='open'">
       {% if all_projects %}
       <form method="post" action="/onboarding/open">
-        <div class="dex-form-group" style="margin-bottom:12px">
-          <label for="project_select" style="font-size:12px;font-weight:500;color:var(--gray-11)">Project</label>
+        <div style="margin-bottom:12px">
+          <label for="project_select" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">Project</label>
           <select id="project_select" name="config_path"
-                  class="rt-SelectTrigger"
-                  style="width:100%;padding:8px 10px;font-size:13px;border-radius:5px;border:1px solid var(--gray-6);background:var(--color-background);color:var(--gray-12)"
+                  class="input"
+                  style="width:100%;height:36px;font-size:13px"
                   @change="onSelect($event)">
             {% set user_projs = all_projects | selectattr('source', 'equalto', 'user') | list %}
             {% set example_projs = all_projects | selectattr('source', 'equalto', 'example') | list %}
@@ -95,26 +92,27 @@
           </select>
         </div>
         <input type="hidden" name="is_example" :value="selectedIsExample ? '1' : ''">
-        <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">Open Selected</button>
+        <button type="submit" class="btn primary" style="width:100%;height:36px;font-size:13px">Open Selected</button>
       </form>
 
       <div style="display:flex;align-items:center;gap:8px;margin:16px 0">
-        <div style="flex:1;height:1px;background:var(--gray-4)"></div>
-        <span style="font-size:11px;color:var(--gray-9)">or enter path manually</span>
-        <div style="flex:1;height:1px;background:var(--gray-4)"></div>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:11px;color:var(--text-3)">or enter path manually</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
       </div>
       {% endif %}
 
       <form method="post" action="/onboarding/open">
-        <div class="dex-form-group" style="margin-bottom:12px">
-          {% if not all_projects %}<label for="config_path_manual" style="font-size:12px;font-weight:500;color:var(--gray-11)">Config path</label>{% endif %}
+        <div style="margin-bottom:12px">
+          {% if not all_projects %}
+          <label for="config_path_manual" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">Config path</label>
+          {% endif %}
           <input id="config_path_manual" type="text" name="config_path" placeholder="/path/to/dex.yaml"
-                 class="rt-TextFieldInput"
-                 style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+                 class="input"
+                 style="width:100%;font-family:var(--font-mono);font-size:12px">
         </div>
-        <button type="submit" class="rt-Button"
-                data-variant="{% if all_projects %}outline{% else %}solid{% endif %}"
-                data-size="2" style="width:100%">
+        <button type="submit" class="btn {{ 'ghost' if all_projects else 'primary' }}"
+                style="width:100%;height:36px;font-size:13px">
           Open from Path
         </button>
       </form>
@@ -123,21 +121,21 @@
     <!-- New tab -->
     <div x-show="tab==='new'" style="display:none">
       <form method="post" action="/onboarding/create">
-        <div class="dex-form-group" style="margin-bottom:12px">
-          <label for="project_name" style="font-size:12px;font-weight:500;color:var(--gray-11)">Project Name</label>
+        <div style="margin-bottom:12px">
+          <label for="project_name" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">Project Name</label>
           <input id="project_name" type="text" name="project_name" placeholder="my-project" required
-                 class="rt-TextFieldInput" style="width:100%;padding:8px 10px;font-size:13px">
+                 class="input" style="width:100%;font-size:13px">
         </div>
-        <div class="dex-form-group" style="margin-bottom:16px">
-          <label for="project_path" style="font-size:12px;font-weight:500;color:var(--gray-11)">
+        <div style="margin-bottom:16px">
+          <label for="project_path" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">
             Location
-            <span style="font-weight:400;color:var(--gray-9)">(leave blank for ~/.dex-studio/projects/)</span>
+            <span style="font-weight:400;color:var(--text-3)">(leave blank for ~/.dex-studio/projects/)</span>
           </label>
           <input id="project_path" type="text" name="project_path" placeholder="~/.dex-studio/projects/my-project"
-                 class="rt-TextFieldInput"
-                 style="width:100%;padding:8px 10px;font-family:'Fira Code',monospace;font-size:12px">
+                 class="input"
+                 style="width:100%;font-family:var(--font-mono);font-size:12px">
         </div>
-        <button type="submit" class="rt-Button" data-variant="solid" data-size="2" style="width:100%">
+        <button type="submit" class="btn primary" style="width:100%;height:36px;font-size:13px">
           Create &amp; Open
         </button>
       </form>

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ project_name }} — DEX Studio{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_sub %}Configure dex.yaml — project · scheduler · AI · privacy · observability{% endblock %}
+
+{% macro field_input(label, name, value, placeholder="", type="text") %}
+<div>
+  <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">{{ label }}</label>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}" placeholder="{{ placeholder }}"
+         style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                padding:7px 10px;font-size:13px;color:var(--text);outline:none;transition:border-color var(--d-fast)"
+         onfocus="this.style.borderColor='var(--accent-9)'" onblur="this.style.borderColor='var(--border)'">
+</div>
+{% endmacro %}
+
+{% macro toggle(name, checked, label, sub, border=true) %}
+<label style="display:flex;align-items:center;gap:10px;cursor:pointer{% if border %};padding-bottom:14px;border-bottom:1px solid var(--border){% endif %}">
+  <input type="checkbox" name="{{ name }}" {% if checked %}checked{% endif %}
+         style="width:16px;height:16px;accent-color:var(--accent-9);cursor:pointer;flex-shrink:0">
+  <span>
+    <span style="font-size:13px;font-weight:600;color:var(--text)">{{ label }}</span>
+    <span style="display:block;font-size:11.5px;color:var(--text-4)">{{ sub }}</span>
+  </span>
+</label>
+{% endmacro %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-system)">
+
+{% if config_path %}
+<div style="padding:6px 0 16px;display:flex;align-items:center;gap:6px;color:var(--text-4);font-size:11.5px">
+  <i data-lucide="file-text" style="width:11px;height:11px"></i>
+  <span style="font-family:var(--font-mono)">{{ config_path }}</span>
+</div>
+{% endif %}
+
+<form method="post" action="/system/settings">
+<input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+{# ── Project ──────────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="folder" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Project</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div class="grid grid-2" style="gap:16px">
+    {{ field_input("Name", "proj_name", proj_name) }}
+    {{ field_input("Version", "proj_version", proj_version) }}
+    <div style="grid-column:1/-1">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">Description</label>
+      <textarea name="proj_description" rows="3"
+                style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                       padding:7px 10px;font-size:13px;color:var(--text);outline:none;resize:vertical;
+                       font-family:inherit;line-height:1.5;transition:border-color var(--d-fast)"
+                onfocus="this.style.borderColor='var(--accent-9)'" onblur="this.style.borderColor='var(--border)'">{{ proj_description }}</textarea>
+    </div>
+  </div>
+</div>
+
+{# ── Scheduler ──────────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="calendar-clock" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Scheduler</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div class="grid grid-2" style="gap:16px">
+    {{ field_input("Timezone", "sched_timezone", sched_timezone, "UTC") }}
+    {{ field_input("Max concurrent pipelines", "sched_max_concurrent", sched_max_concurrent, type="number") }}
+    {{ field_input("Retry max attempts", "sched_retry_attempts", sched_retry_attempts, type="number") }}
+    {{ field_input("Retry backoff (seconds)", "sched_retry_backoff", sched_retry_backoff, type="number") }}
+    <div style="grid-column:1/-1">
+      {{ toggle("sched_enabled", sched_enabled, "Enable scheduler", "Run pipelines automatically on their cron schedules", border=false) }}
+    </div>
+  </div>
+</div>
+
+{# ── AI / LLM ──────────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="bot" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">AI · LLM</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div class="grid grid-2" style="gap:16px">
+    <div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">Provider</label>
+      <select name="llm_provider"
+              style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                     padding:7px 10px;font-size:13px;color:var(--text);outline:none;cursor:pointer">
+        {% for p in ["ollama", "openai", "anthropic", "groq", "mistral"] %}
+        <option value="{{ p }}" {% if llm_provider == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {{ field_input("Model", "llm_model", llm_model, "e.g. qwen3:8b or gpt-4o") }}
+    <div style="grid-column:1/-1">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">
+        Host <span style="font-weight:400;color:var(--text-4)">(optional — for Ollama or self-hosted)</span>
+      </label>
+      <input type="text" name="llm_host" value="{{ llm_host }}"
+             style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                    padding:7px 10px;font-size:13px;color:var(--text);outline:none;font-family:var(--font-mono);
+                    transition:border-color var(--d-fast)"
+             onfocus="this.style.borderColor='var(--accent-9)'" onblur="this.style.borderColor='var(--border)'"
+             placeholder="http://localhost:11434">
+    </div>
+  </div>
+</div>
+
+{# ── AI / Retrieval ──────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="search" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">AI · Retrieval</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div class="grid grid-2" style="gap:16px">
+    <div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">Strategy</label>
+      <select name="ret_strategy"
+              style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                     padding:7px 10px;font-size:13px;color:var(--text);outline:none;cursor:pointer">
+        {% for s in ["hybrid", "vector", "keyword"] %}
+        <option value="{{ s }}" {% if ret_strategy == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {{ field_input("Top K results", "ret_top_k", ret_top_k, type="number") }}
+    <div style="grid-column:1/-1">
+      {{ toggle("ret_reranker", ret_reranker, "Enable reranker", "Cross-encoder reranking for higher retrieval precision", border=false) }}
+    </div>
+  </div>
+</div>
+
+{# ── Privacy & SecOps ──────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="shield" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Privacy & SecOps</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div style="display:flex;flex-direction:column;gap:14px">
+    {{ toggle("pii_scan", pii_scan, "Scan data for PII patterns", "Detect email, SSN, phone, and credit card numbers") }}
+    {{ toggle("audit_enabled", audit_enabled, "Enable immutable audit log", "Record all data access and mutations") }}
+    {{ toggle("guard_enabled", guard_enabled, "Enable privacy guard", "Monitor and control outbound data flows") }}
+    {{ toggle("guard_block_on_detect", guard_block_on_detect, "Block requests when PII is detected", "Reject operations that would leak sensitive data") }}
+    {{ toggle("guard_log_all_outbound", guard_log_all_outbound, "Log all outbound data transfers", "Full audit trail for data leaving the platform", border=false) }}
+  </div>
+</div>
+
+{# ── Observability ──────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="activity" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Observability</span>
+</div>
+<div class="card" style="padding:20px 22px;margin-bottom:24px">
+  <div class="grid grid-2" style="gap:16px">
+    <div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-3);margin-bottom:5px">Log level</label>
+      <select name="obs_log_level"
+              style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);
+                     padding:7px 10px;font-size:13px;color:var(--text);outline:none;cursor:pointer">
+        {% for lvl in ["DEBUG", "INFO", "WARNING", "ERROR"] %}
+        <option value="{{ lvl }}" {% if obs_log_level == lvl %}selected{% endif %}>{{ lvl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;padding-top:4px">
+      {{ toggle("obs_metrics", obs_metrics, "Enable metrics", "Prometheus-compatible metrics endpoint", border=false) }}
+      {{ toggle("obs_tracing", obs_tracing, "Enable tracing", "Distributed trace collection (OpenTelemetry)", border=false) }}
+    </div>
+  </div>
+</div>
+
+{# ── Actions ──────────────────────────────────────────────────────────────── #}
+<div style="display:flex;align-items:center;gap:10px;padding-bottom:32px">
+  <button type="submit" class="btn primary">
+    <i data-lucide="save" style="width:13px;height:13px"></i> Save settings
+  </button>
+  <a href="/system/components" class="btn ghost">Cancel</a>
+  <span style="flex:1"></span>
+  <span style="font-size:11.5px;color:var(--text-4)">Saves to dex.yaml and reloads the engine</span>
+</div>
+
+</form>
+</div>
+{% endblock %}
