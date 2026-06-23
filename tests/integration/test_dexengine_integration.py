@@ -97,6 +97,7 @@ def client(real_engine, tmp_path_factory: pytest.TempPathFactory) -> Generator[T
     _orig_hash_file = _auth_mod._HASH_FILE
     _auth_mod._HASH_FILE = hash_file
 
+    os.environ["DEX_STUDIO_PASSPHRASE"] = _TEST_API_KEY
     os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
 
     from dex_studio.app import create_app
@@ -116,6 +117,7 @@ def client(real_engine, tmp_path_factory: pytest.TempPathFactory) -> Generator[T
 
     _mod._ENGINE = orig
     _auth_mod._HASH_FILE = _orig_hash_file
+    os.environ.pop("DEX_STUDIO_PASSPHRASE", None)
 
 
 @pytest.fixture(scope="module")

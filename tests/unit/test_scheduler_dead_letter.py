@@ -150,6 +150,9 @@ class TestSchedulerClearDeadLetter:
 
         state_after = studio_db.get_run_state("stuck_pipe")
         assert state_after["attempts"] == 0, "run state attempts should be reset to 0 after clear"
+        assert state_after["attempts"] == 0, (
+            "run state attempts should be reset to 0 after clear"
+        )
 
     def test_different_pipeline_names_forwarded_correctly(self) -> None:
         """run_pipeline_bg receives exactly the pipeline name passed to

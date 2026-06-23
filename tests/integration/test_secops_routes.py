@@ -65,6 +65,9 @@ def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[
     hash_file = tmp_path / "auth.hash"
     hash_file.write_text(_hash_password(_API_KEY))
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
+def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+    """Authenticated client — valid session via POST /login."""
+    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -83,6 +86,9 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generato
     hash_file = tmp_path / "auth.hash"
     hash_file.write_text(_hash_password(_API_KEY))
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
+def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+    """Unauthenticated client — API key set but no session cookie."""
+    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -273,6 +279,13 @@ class TestAllRoutesSmokeTest:
     def test_authenticated_route_returns_200(self, authed_client: TestClient, path: str) -> None:
         resp = authed_client.get(path)
         assert resp.status_code == 200, f"Expected 200 for {path!r}, got {resp.status_code}"
+    def test_authenticated_route_returns_200(
+        self, authed_client: TestClient, path: str
+    ) -> None:
+        resp = authed_client.get(path)
+        assert resp.status_code == 200, (
+            f"Expected 200 for {path!r}, got {resp.status_code}"
+        )
 
     # Routes that must redirect unauthenticated requests to /login.
     _AUTH_GUARDED_ROUTES = [
