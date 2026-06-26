@@ -38,6 +38,7 @@ log = structlog.get_logger().bind(src="router.data")
 def _safe_pipeline_name(name: str) -> str:
     """Sanitize pipeline_name for use in redirect URLs — strip path traversal chars."""
     import re as _re
+
     return _re.sub(r"[^A-Za-z0-9_\-]", "", name)[:128]
 
 

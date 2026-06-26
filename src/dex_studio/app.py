@@ -60,13 +60,24 @@ STATIC_DIR = _HERE / "static"
 
 def _session_secret() -> str:
     """Return or generate a persistent session signing secret."""
-    key_file = Path.home() / ".dex-studio" / "session.key"
+    data_dir = os.environ.get("DEX_STUDIO_DATA_DIR")
+    base = Path(data_dir) if data_dir else Path.home() / ".dex-studio"
+    key_file = base / "session.key"
     if key_file.exists():
         return key_file.read_text().strip()
     key = secrets.token_hex(32)
-    key_file.parent.mkdir(parents=True, exist_ok=True)
-    key_file.write_text(key)
-    key_file.chmod(0o600)
+    try:
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        key_file.write_text(key)
+        key_file.chmod(0o600)
+    except PermissionError:
+        # Fallback for read-only home dirs (e.g. containers)
+        key_file = Path("/tmp/.dex-studio/session.key")
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        if not key_file.exists():
+            key_file.write_text(key)
+            key_file.chmod(0o600)
+        return key_file.read_text().strip()
     return key
 
 

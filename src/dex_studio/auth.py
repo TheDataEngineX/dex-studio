@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import os
 import secrets
 import threading
 import time
@@ -15,7 +16,8 @@ from fastapi.responses import RedirectResponse
 from starlette.requests import HTTPConnection
 
 SESSION_COOKIE = "dex_session"
-_HASH_FILE = Path.home() / ".dex-studio" / "auth.hash"
+_DATA_DIR = Path(os.environ.get("DEX_STUDIO_DATA_DIR", "")) or Path.home() / ".dex-studio"
+_HASH_FILE = _DATA_DIR / "auth.hash"
 
 _PBKDF2_ITERS = 600_000
 MIN_PASSWORD_LEN = 8
