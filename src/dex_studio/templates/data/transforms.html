@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
 
 {% block title %}Transforms — Data — DEX Studio{% endblock %}
 {% block page_title %}Transforms{% endblock %}
@@ -9,18 +10,15 @@
 {% block page_actions %}
 {% if selected_pipeline %}
 <form method="post" action="/data/pipelines/run/{{ selected_pipeline }}" style="display:inline">
-  <button type="submit" class="btn primary"><i data-lucide="play" style="width:12px;height:12px"></i> Run flow</button>
+  <button type="submit" class="btn sm primary"><i data-lucide="play" style="width:12px;height:12px"></i> Run flow</button>
 </form>
 {% endif %}
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-data)">
 {% if not pipelines %}
-<div class="card" style="padding:56px 24px;text-align:center">
-  <i data-lucide="workflow" style="width:28px;height:28px;color:var(--text-4);display:block;margin:0 auto 12px"></i>
-  <div style="font-weight:500;font-size:14px;color:var(--text-2)">No pipelines yet</div>
-  <div class="muted" style="font-size:12px;margin-top:6px">Add a pipeline on the Pipelines page, then compose its transformations here.</div>
-</div>
+{{ empty_state("workflow", "No pipelines yet", "Add a pipeline on the Pipelines page, then compose its transformations here.") }}
 {% else %}
 <div style="display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start">
 
@@ -84,4 +82,5 @@
   </div>
 </div>
 {% endif %}
+</div>
 {% endblock %}

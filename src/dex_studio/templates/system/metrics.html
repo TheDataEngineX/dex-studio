@@ -1,21 +1,84 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card %}
+{% from "components/macros.html" import metric_card, section_heading %}
 
-{% block title %}Metrics — DEX Studio{% endblock %}
+{% block title %}Metrics — System — DEX Studio{% endblock %}
 {% block page_title %}System Metrics{% endblock %}
+{% block page_sub %}live resource usage · pipeline statistics · ML &amp; AI registry{% endblock %}
+
+{% block page_actions %}
+<a href="/system/status" class="btn sm ghost">
+  <i data-lucide="activity" style="width:11px;height:11px"></i> Status
+</a>
+<a href="/system/metrics" class="btn sm ghost">
+  <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Refresh
+</a>
+{% endblock %}
 
 {% block content %}
-<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">Data</h3>
+<div style="--domain-color: var(--domain-system)">
+
+{# ── Resource metrics (live) ────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Host Resources</span>
+  <span class="muted" style="font-size:11px">live snapshot</span>
+</div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px"
+     hx-get="/system/metrics" hx-trigger="every 5s" hx-select="#resource-metrics" hx-target="#resource-metrics" hx-swap="outerHTML">
+  <div id="resource-metrics" style="display:contents">
+    {{ metric_card("CPU", (cpu_pct | default("—")) ~ ("%" if cpu_pct is defined else ""), "cpu", "indigo" if (cpu_pct | default(0)) < 80 else "red", "utilization") }}
+    {{ metric_card("Memory", (mem_used_gb | default("—")) ~ (" GB" if mem_used_gb is defined else ""), "memory-stick", "blue", "of " ~ (mem_total_gb | default("?")) ~ " GB") }}
+    {{ metric_card("Uptime", uptime_str | default("—"), "clock", "green", "engine process") }}
+  </div>
+</div>
+
+{% if cpu_pct is defined %}
+<div class="card" style="padding:16px;margin-bottom:24px">
+  <div class="row" style="margin-bottom:10px">
+    <span style="font-size:12px;font-weight:600">Resource utilization</span>
+    <span class="muted" style="font-size:11px;margin-left:auto">{{ uptime_str | default('—') }} uptime</span>
+  </div>
+  <div class="col" style="gap:10px">
+    <div>
+      <div class="row" style="margin-bottom:4px">
+        <span class="muted" style="font-size:11px">CPU</span>
+        <span class="mono" style="font-size:11px;margin-left:auto">{{ cpu_pct }}%</span>
+      </div>
+      <div style="height:6px;background:var(--bg-elev-2);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:{{ cpu_pct }}%;background:{{ 'var(--red-9)' if cpu_pct > 80 else 'var(--amber-9)' if cpu_pct > 60 else 'var(--green-9)' }};transition:width .6s;border-radius:3px"></div>
+      </div>
+    </div>
+    <div>
+      <div class="row" style="margin-bottom:4px">
+        <span class="muted" style="font-size:11px">Memory</span>
+        <span class="mono" style="font-size:11px;margin-left:auto">{{ mem_used_gb }} / {{ mem_total_gb }} GB ({{ mem_pct }}%)</span>
+      </div>
+      <div style="height:6px;background:var(--bg-elev-2);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:{{ mem_pct }}%;background:{{ 'var(--red-9)' if mem_pct > 85 else 'var(--amber-9)' if mem_pct > 65 else 'var(--blue-9)' }};transition:width .6s;border-radius:3px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Pipeline statistics ────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Data</span>
+</div>
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
   {{ metric_card("Total Pipelines", pipeline_total, "workflow", "indigo") }}
-  {{ metric_card("Scheduled", pipeline_scheduled, "clock", "indigo") }}
-  {{ metric_card("Failed", pipeline_failed, "alert-circle", "red") }}
+  {{ metric_card("Scheduled", pipeline_scheduled, "calendar-clock", "indigo") }}
+  {{ metric_card("Failed", pipeline_failed, "alert-circle", "red", "last 24h") }}
   {{ metric_card("Lineage Events", lineage_events, "git-branch", "indigo") }}
 </div>
 
-<h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 12px">ML & AI</h3>
-<div style="display:flex;gap:12px;flex-wrap:wrap">
+{# ── ML & AI ────────────────────────────────────────────────────────────────── #}
+<div class="section-h" style="margin-bottom:12px">
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">ML &amp; AI</span>
+</div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
   {{ metric_card("Registered Models", model_count, "brain", "violet") }}
-  {{ metric_card("Active Agents", agent_count, "cpu", "cyan") }}
+  {{ metric_card("Active Agents", agent_count, "bot", "cyan") }}
+</div>
+
 </div>
 {% endblock %}

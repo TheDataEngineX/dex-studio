@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, status_badge %}
+
+{% block title %}Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Intelligence{% endblock %}
+
+{% block content_class %}full-bleed{% endblock %}
+
+{% block full_bleed %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Metric strip ─────────────────────────────────────────────────────────── #}
+<div class="flow-strip">
+
+  {# 1. Models #}
+  <a href="/intelligence/models" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Models</span>
+      {% if production_model_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% elif model_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-warn)">⚠</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
+        <i data-lucide="brain" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ model_count }} model{{ 's' if model_count != 1 }}</div>
+        <div class="accent-card-sub">{{ production_model_count }} in production</div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {{ '→ View models' if model_count > 0 else 'No models registered' }}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 2. Agents #}
+  {% set open_count = agent_statuses | selectattr('circuit_state', 'equalto', 'open') | list | length %}
+  <a href="/intelligence/agents" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Agents</span>
+      {% if open_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-error)" title="{{ open_count }} circuit(s) open">⚠</span>
+      {% elif agent_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
+        <i data-lucide="cpu" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ agent_count }} agent{{ 's' if agent_count != 1 }}</div>
+        <div class="accent-card-sub">
+          {% if circuit_state == 'open' %}
+            <span style="color:var(--state-error)">circuit open</span>
+          {% elif circuit_state == 'half_open' %}
+            <span style="color:var(--state-warn)">recovering</span>
+          {% else %}
+            circuit closed
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {{ '→ View agents' if agent_count > 0 else 'No agents configured' }}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 3. Tools #}
+  <a href="/intelligence/tools" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Tools</span>
+      {% if tool_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
+        <i data-lucide="wrench" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ tool_count }} tool{{ 's' if tool_count != 1 }}</div>
+        <div class="accent-card-sub">Registered tools</div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {{ '→ Tool registry' if tool_count > 0 else 'No tools registered' }}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 4. Total Runs #}
+  <a href="/intelligence/runs" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Runs</span>
+      {% if run_stats.error_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-error)">⚠</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
+        <i data-lucide="activity" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ run_stats.total_runs }} total</div>
+        <div class="accent-card-sub">
+          {% if run_stats.error_count > 0 %}
+            <span style="color:var(--state-error)">{{ run_stats.error_count }} error{{ 's' if run_stats.error_count != 1 }}</span>
+          {% else %}
+            0 errors
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {% if run_stats.avg_latency_ms %}{{ run_stats.avg_latency_ms }}ms avg{% else %}→ View runs{% endif %}
+    </div>
+  </a>
+
+  <span class="flow-chevron">›</span>
+
+  {# 5. Experiments #}
+  <a href="/intelligence/experiments" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
+    <div class="accent-card-bar"></div>
+    <div class="accent-card-head">
+      <span class="accent-card-domain">Experiments</span>
+      {% if experiment_count > 0 %}
+        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      {% else %}
+        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+      {% endif %}
+    </div>
+    <div class="accent-card-body">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
+        <i data-lucide="flask-conical" style="width:16px;height:16px"></i>
+      </div>
+      <div class="accent-card-metric">
+        <div class="accent-card-primary">{{ experiment_count }} experiment{{ 's' if experiment_count != 1 }}</div>
+        <div class="accent-card-sub">
+          {% if leaderboard %}best: {{ leaderboard[0].primary_metric_name }}={{ leaderboard[0].primary_metric }}{% else %}no runs yet{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
+      {{ '→ View experiments' if experiment_count > 0 else 'No experiments' }}
+    </div>
+  </a>
+
+</div>
+
+{# ── Hub grid — ML + AI panels ────────────────────────────────────────────── #}
+<div class="hub-grid">
+
+  {# Panel 1: Model registry #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Model registry</span>
+      <a href="/intelligence/models" class="hub-panel-link">All models →</a>
+    </div>
+    {% if top_models %}
+      {% for m in top_models %}
+      <a href="/intelligence/models" class="hub-row" style="text-decoration:none">
+        <span class="sdot {{ 'ok' if m.stage == 'production' else 'warn' if m.stage == 'staging' else '' }}"></span>
+        <span class="hub-row-name mono">{{ m.name }}</span>
+        <span class="hub-row-meta">
+          {% if m.stage == 'production' %}<span class="pill success" style="height:14px;font-size:9px">prod</span>
+          {% elif m.stage == 'staging' %}<span class="pill warn" style="height:14px;font-size:9px">staging</span>
+          {% else %}<span class="pill" style="height:14px;font-size:9px">dev</span>
+          {% endif %}
+        </span>
+        <span class="hub-row-meta dim mono" style="font-size:10px">v{{ m.version }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No models registered</div>
+    {% endif %}
+  </div>
+
+  {# Panel 2: Agent status #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Agent status</span>
+      <a href="/intelligence/agents" class="hub-panel-link">All agents →</a>
+    </div>
+    {% if agent_statuses %}
+      {% for a in agent_statuses %}
+      <a href="/intelligence/agents" class="hub-row" style="text-decoration:none">
+        {% if a.circuit_state == 'open' %}
+          <span class="sdot error"></span>
+        {% elif a.circuit_state in ('half_open', 'probing') %}
+          <span class="sdot warn"></span>
+        {% else %}
+          <span class="sdot ok"></span>
+        {% endif %}
+        <span class="hub-row-name mono">{{ a.name }}</span>
+        <span class="hub-row-meta muted" style="font-size:10.5px">{{ a.model }}</span>
+        {% if a.circuit_state == 'open' %}
+          <span class="pill error" style="height:14px;font-size:9px">circuit open</span>
+        {% elif a.circuit_state in ('half_open', 'probing') %}
+          <span class="pill warn" style="height:14px;font-size:9px">recovering</span>
+        {% else %}
+          <span class="pill success" style="height:14px;font-size:9px">online</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No agents configured</div>
+    {% endif %}
+  </div>
+
+  {# Panel 3: Experiment leaderboard #}
+  <div class="hub-panel">
+    <div class="hub-panel-head">
+      <span class="hub-panel-title">Experiment leaderboard</span>
+      <a href="/intelligence/experiments" class="hub-panel-link">All experiments →</a>
+    </div>
+    {% if leaderboard %}
+      {% for r in leaderboard %}
+      <a href="/intelligence/experiments" class="hub-row" style="text-decoration:none">
+        <span class="sdot ok"></span>
+        <span class="hub-row-name mono" style="font-size:11px">{{ r.exp_name }}</span>
+        <span class="hub-row-meta dim mono" style="font-size:10px">{{ r.run_id[:8] if r.run_id else '—' }}</span>
+        <span class="hub-row-meta dim" style="font-size:10px">{{ r.primary_metric_name }}={{ r.primary_metric }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="hub-row" style="color:var(--text-4);font-style:italic">No experiment runs yet</div>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Recent agent runs feed ────────────────────────────────────────────────── #}
+<div class="hub-feed">
+  <div class="hub-feed-head">
+    <span class="hub-feed-title">Recent agent runs</span>
+    <div class="row" style="gap:12px;align-items:center">
+      {# Circuit breaker badge #}
+      {% if circuit_state == 'open' %}
+        <span class="pill error" style="height:16px;font-size:9px;letter-spacing:.04em">circuit open</span>
+      {% elif circuit_state == 'half_open' %}
+        <span class="pill warn" style="height:16px;font-size:9px;letter-spacing:.04em">recovering</span>
+      {% else %}
+        <span class="pill success" style="height:16px;font-size:9px;letter-spacing:.04em">circuit closed</span>
+      {% endif %}
+      <a href="/intelligence/runs" style="font-size:10.5px;color:var(--text-4);text-decoration:none">All runs →</a>
+    </div>
+  </div>
+  {% if recent_runs %}
+    {% for r in recent_runs %}
+    <a href="/intelligence/runs" class="feed-row" style="text-decoration:none">
+      <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent);color:var(--domain-intelligence)">
+        <i data-lucide="{{ 'check-circle' if r.status in ('ok','success','completed') else 'alert-circle' if r.status == 'error' else 'loader' }}" style="width:12px;height:12px"></i>
+      </div>
+      <div class="feed-body">
+        <div class="feed-desc mono">{{ r.agent }} · {{ r.task or '—' }}</div>
+        <div class="feed-sub">{{ r.tool_calls }} tool call{{ 's' if r.tool_calls != 1 }} · {{ r.run_id[:8] if r.run_id else '—' }}</div>
+      </div>
+      <div class="feed-right">
+        <span class="feed-badge {{ 'error' if r.status == 'error' else '' }} mono">
+          {% if r.latency_ms and r.latency_ms != '—' %}{{ r.latency_ms }}ms{% else %}—{% endif %}
+        </span>
+        <span class="feed-time">{{ r.timestamp }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  {% elif not agent_count and not model_count %}
+    <div class="feed-row" style="border-left:none;padding:24px 16px;justify-content:center">
+      <div style="text-align:center;max-width:440px">
+        <i data-lucide="brain-circuit" style="width:32px;height:32px;color:var(--domain-intelligence);opacity:.5;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto"></i>
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">No Intelligence activity yet</div>
+        <p class="muted" style="font-size:12px;margin:0 0 16px;line-height:1.6">Register a model, configure agents in dex.yaml, or run an experiment to see activity here.</p>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <a href="/intelligence/models" class="btn primary sm" style="text-decoration:none">
+            <i data-lucide="plus" style="width:12px;height:12px"></i> Register a model
+          </a>
+          <a href="/intelligence/experiments" class="btn ghost sm" style="text-decoration:none">
+            <i data-lucide="flask-conical" style="width:12px;height:12px"></i> Create experiment
+          </a>
+          <a href="/intelligence/agents" class="btn ghost sm" style="text-decoration:none">
+            <i data-lucide="cpu" style="width:12px;height:12px"></i> View agents
+          </a>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
+      No runs yet — invoke an agent to see activity here.
+    </div>
+  {% endif %}
+</div>
+
+</div>
+{% endblock %}

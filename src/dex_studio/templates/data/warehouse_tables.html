@@ -9,6 +9,7 @@
       <tr>
         <th class="sortable">Table</th>
         <th class="sortable num">Rows</th>
+        <th class="sortable num">Cols</th>
         <th class="sortable">Size</th>
         <th class="sortable">Updated</th>
       </tr>
@@ -20,6 +21,7 @@
           <a href="/data/catalog/{{ t.get('name','') }}" style="color:var(--accent-11);text-decoration:none">{{ t.get("name","") }}</a>
         </td>
         <td class="num" style="font-size:12px">{{ t.get("row_count","—") }}</td>
+        <td class="num" style="font-size:12px">{{ t.get("column_count","—") }}</td>
         <td style="font-size:12px">{{ t.get("size","—") }}</td>
         <td class="muted" style="font-size:12px">{{ t.get("updated_at","—") }}</td>
       </tr>

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Policies — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Policies{% endblock %}
+{% block page_sub %}Security policy rules{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:24px">
+  <div class="card-header"><h3>Global data governance</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td style="color:var(--text-3);width:200px">Enforcement mode</td><td>{{ "Block" if block_on_detect else "Warn" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Default PII action</td><td>{{ pii_action }}</td></tr>
+      <tr><td style="color:var(--text-3)">Guard enabled</td><td>{{ "Yes" if guard_enabled else "No" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Allow local providers</td><td>{{ "Yes" if allow_local else "No" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3>Policy Rules</h3></div>
+  {% if config_policies %}
+  <table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Rule</th><th>Severity</th><th>Tables</th></tr></thead>
+    <tbody>
+    {% for p in config_policies %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{{ p.description or "—" }}</td>
+      <td><code>{{ p.rule or "—" }}</code></td>
+      <td>{{ p.severity or "—" }}</td>
+      <td>{{ (p.tables or []) | join(", ") or "—" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
+    No policies configured.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

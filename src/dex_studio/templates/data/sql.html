@@ -49,25 +49,31 @@
   </div>
 
   {# ── Main split: schema rail + editor+results ─────────────────────────── #}
-  <div style="flex:1;display:grid;grid-template-columns:220px 1fr;min-height:0;overflow:hidden">
+  <div id="sql-main-split" style="flex:1;display:grid;grid-template-columns:220px 1fr;min-height:0;overflow:hidden">
 
-    {# ── Schema explorer ────────────────────────────────────────────────── #}
-    <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg)">
-      <div style="padding:10px;border-bottom:1px solid var(--border)">
-        <div class="input-icon">
+    {# ── Schema explorer (collapsible) ────────────────────────────────────── #}
+    <aside id="sql-schema-rail" style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg)">
+      <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center">
+        <div class="input-icon" style="flex:1">
           <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
-          <input class="input" placeholder="Filter tables…" style="font-size:11.5px;height:26px">
+          <input id="schema-filter" class="input" placeholder="Filter tables…" style="font-size:11.5px;height:26px"
+                 oninput="schemaFilter(this.value)">
         </div>
+        <button class="btn icon ghost sm" title="Collapse sidebar" onclick="toggleSchemaSidebar()"
+                id="schema-toggle-btn">
+          <i data-lucide="panel-left-close" style="width:12px;height:12px"></i>
+        </button>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:6px 0">
+      <div style="flex:1;overflow-y:auto;padding:6px 0" id="schema-tree">
         {% for layer in ['bronze', 'silver', 'gold'] %}
-        <div style="margin-bottom:6px">
+        <div class="schema-section" style="margin-bottom:6px" data-layer="{{ layer }}">
           <div class="row" style="padding:6px 10px;gap:6px">
             <i data-lucide="chevron-down" style="width:11px;height:11px;opacity:.4"></i>
             <span class="layer-chip {{ layer }}" style="height:16px;font-size:9.5px">{{ layer }}</span>
           </div>
           {% for t in catalog_entries | default([]) | selectattr('layer', 'equalto', layer) %}
-          <div class="schema-row row">
+          <div class="schema-row row schema-table-row" data-table="{{ t.name }}" data-layer="{{ layer }}"
+               style="cursor:pointer" onclick="insertTableName('{{ t.name }}')">
             <i data-lucide="table" style="width:10px;height:10px;opacity:.4"></i>
             <span class="mono" style="flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
             <span class="mono dim" style="font-size:9.5px">{{ t.column_count }}c</span>
@@ -79,6 +85,16 @@
         {% endfor %}
       </div>
     </aside>
+
+    {# Collapsed sidebar toggle button — shown when sidebar is hidden #}
+    <button id="schema-expand-btn" onclick="toggleSchemaSidebar()"
+            title="Show schema sidebar"
+            style="display:none;position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:10;
+                   width:20px;height:48px;border:none;border-right:1px solid var(--border);
+                   background:var(--bg-elev);cursor:pointer;color:var(--text-4);
+                   border-radius:0 4px 4px 0">
+      <i data-lucide="panel-left-open" style="width:11px;height:11px"></i>
+    </button>
 
     {# ── Editor + results split ─────────────────────────────────────────── #}
     <div style="display:grid;grid-template-rows:1fr 1fr;min-height:0">
@@ -367,6 +383,48 @@
 
   updateGutter();
   updatePos();
+
+  // ── Schema sidebar toggle ───────────────────────────────────────────────
+  let _sidebarOpen = true;
+  globalThis.toggleSchemaSidebar = function () {
+    const rail = document.getElementById('sql-schema-rail');
+    const split = document.getElementById('sql-main-split');
+    const expandBtn = document.getElementById('schema-expand-btn');
+    _sidebarOpen = !_sidebarOpen;
+    if (split) {
+      split.style.gridTemplateColumns = _sidebarOpen ? '220px 1fr' : '0 1fr';
+    }
+    if (rail) rail.style.display = _sidebarOpen ? '' : 'none';
+    if (expandBtn) expandBtn.style.display = _sidebarOpen ? 'none' : '';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  };
+
+  // ── Schema filter ───────────────────────────────────────────────────────
+  globalThis.schemaFilter = function (q) {
+    const lq = q.toLowerCase();
+    document.querySelectorAll('.schema-table-row').forEach(function (row) {
+      const name = (row.dataset.table || '').toLowerCase();
+      row.style.display = !lq || name.includes(lq) ? '' : 'none';
+    });
+    document.querySelectorAll('.schema-section').forEach(function (sec) {
+      const visible = Array.from(sec.querySelectorAll('.schema-table-row')).some(
+        r => r.style.display !== 'none'
+      );
+      sec.style.display = !lq || visible ? '' : 'none';
+    });
+  };
+
+  // ── Insert table name into editor ───────────────────────────────────────
+  globalThis.insertTableName = function (name) {
+    const ta = document.getElementById('sql-editor');
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const v = ta.value;
+    const insert = name;
+    ta.value = v.slice(0, s) + insert + v.slice(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + insert.length;
+    ta.focus();
+  };
 })();
 </script>
 {% endblock %}

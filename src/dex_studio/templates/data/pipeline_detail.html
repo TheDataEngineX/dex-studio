@@ -1,96 +1,323 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
 
-{% block title %}{{ pipeline_name }} — DEX Studio{% endblock %}
-{% block page_title %}
-<div style="display:flex;align-items:center;gap:8px">
-  <a href="/data/pipelines" style="color:var(--gray-9);text-decoration:none;font-size:14px;font-weight:400">Pipelines</a>
-  <i data-lucide="chevron-right" style="width:13px;height:13px;color:var(--gray-7)"></i>
-  <span style="font-family:'Fira Code',monospace;font-size:15px">{{ pipeline_name }}</span>
-</div>
-{% endblock %}
-{% block page_actions %}
-<form method="post" action="/data/pipelines/run/{{ pipeline_name }}" style="display:inline">
-  <button type="submit" class="rt-Button" data-variant="solid" data-color="green" data-size="2">
-    <i data-lucide="play" style="width:13px;height:13px"></i> Run Now
-  </button>
-</form>
-{% endblock %}
+{% block title %}{{ pipeline_name }} — Pipelines — DEX Studio{% endblock %}
+{% block content_class %}full-bleed{% endblock %}
 
-{% block content %}
-<!-- Meta -->
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">
-  <div class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px" x-data="{editing:false}">
-    <i data-lucide="clock" style="width:13px;height:13px;color:var(--gray-9)"></i>
-    <span style="font-size:12px;color:var(--gray-10)">Schedule:</span>
-    <span x-show="!editing" style="font-size:12px;font-weight:600;color:var(--gray-12);font-family:'Fira Code',monospace">{{ schedule or "—" }}</span>
-    <button x-show="!editing" @click="editing=true" class="rt-Button" data-variant="ghost" data-color="gray" data-size="1" title="Edit schedule" style="margin-left:2px">
-      <i data-lucide="pencil" style="width:11px;height:11px"></i>
-    </button>
-    <form x-show="editing" method="post" action="/data/pipelines/{{ pipeline_name }}/schedule" style="display:flex;gap:6px;align-items:center" @submit="editing=false">
-      <input type="text" name="schedule" value="{{ schedule or '' }}" placeholder="0 * * * *"
-             class="rt-TextFieldInput" style="width:140px;padding:4px 8px;font-family:'Fira Code',monospace;font-size:12px">
-      <button type="submit" class="rt-Button" data-variant="solid" data-color="indigo" data-size="1">Save</button>
-      <button type="button" @click="editing=false" class="rt-Button" data-variant="ghost" data-color="gray" data-size="1">Cancel</button>
-    </form>
+{% block full_bleed %}
+<div style="display:flex;flex-direction:column;height:100%;--domain-color:var(--domain-data)">
+
+  {# ── Breadcrumb ──────────────────────────────────────────────────────────── #}
+  <div class="inner-crumb">
+    <a href="/data/pipelines">Pipelines</a>
+    <span class="inner-crumb-sep">›</span>
+    <span>{{ pipeline_name }}</span>
   </div>
-  <a href="/data/sources/{{ source }}" class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px;text-decoration:none">
-    <i data-lucide="database" style="width:13px;height:13px;color:var(--gray-9)"></i>
-    <span style="font-size:12px;color:var(--gray-10)">Source:</span>
-    <span style="font-size:12px;font-weight:600;color:var(--indigo-11);font-family:'Fira Code',monospace">{{ source }}</span>
-  </a>
-  {% set _dest_layer = destination.split('.')[0] if '.' in destination else '' %}
-  <a href="{{ '/data/warehouse?layer=' + _dest_layer if _dest_layer else '/data/warehouse' }}" class="rt-Card" style="padding:12px 18px;display:flex;align-items:center;gap:8px;text-decoration:none">
-    <i data-lucide="arrow-right" style="width:13px;height:13px;color:var(--gray-9)"></i>
-    <span style="font-size:12px;color:var(--gray-10)">Destination:</span>
-    <span style="font-size:12px;font-weight:600;color:var(--indigo-11);font-family:'Fira Code',monospace">{{ destination }}</span>
-  </a>
-</div>
 
-{% if steps %}
-<div style="margin-bottom:24px">
-  <h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Steps</h3>
-  <div style="display:flex;flex-direction:column;gap:6px">
-    {% for s in steps %}
-    <div class="rt-Card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">
-      <span class="rt-Badge" data-accent-color="indigo" data-variant="soft" data-size="1">{{ s.type }}</span>
-      <span style="font-size:13px;font-weight:500">{{ s.name }}</span>
-      {% if s.sql %}<code style="font-size:11px;color:var(--gray-9);font-family:'Fira Code',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ s.sql[:80] }}{% if s.sql|length > 80 %}…{% endif %}</code>{% endif %}
+  {# ── Header ──────────────────────────────────────────────────────────────── #}
+  <div class="inner-header">
+    <div class="inner-header-left">
+      <div class="inner-domain-icon">
+        <i data-lucide="workflow" style="width:18px;height:18px"></i>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="inner-title-row">
+          <h1 class="inner-title">{{ pipeline_name }}</h1>
+          {% set run_status = recent_runs[0].status_class if recent_runs else 'idle' %}
+          <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;
+                       background:color-mix(in oklch,var(--state-{{ run_status }}) 12%,transparent);
+                       color:var(--state-{{ run_status }});text-transform:capitalize">
+            {{ recent_runs[0].status if recent_runs else 'idle' }}
+          </span>
+        </div>
+        <p class="inner-sub">
+          {{ source_info.name | default('—') }} →
+          {{ dest_info.table | default(pipeline_name) }} ·
+          {{ source_info.schedule | default('manual') }}
+        </p>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">
+          {% if recent_runs %}
+          <span class="stat-chip">
+            <i data-lucide="layers" style="width:10px;height:10px"></i>
+            {{ recent_runs[0].rows | default('—') }} rows
+          </span>
+          <span class="stat-chip">
+            <i data-lucide="clock" style="width:10px;height:10px"></i>
+            {{ recent_runs[0].duration | default('—') }}
+          </span>
+          {% endif %}
+          <span class="stat-chip">
+            <i data-lucide="database" style="width:10px;height:10px"></i>
+            {{ dest_info.layer | default('bronze') | capitalize }}
+          </span>
+        </div>
+      </div>
     </div>
-    {% endfor %}
+    <div class="inner-header-actions">
+      <form method="post" action="/data/pipelines/run/{{ pipeline_name }}" style="display:inline">
+        <button type="submit" class="btn sm primary">
+          <i data-lucide="play" style="width:12px;height:12px"></i> Run now
+        </button>
+      </form>
+      <a href="/data/pipelines/{{ pipeline_name }}/runs/detail" class="btn sm ghost">
+        <i data-lucide="history" style="width:12px;height:12px"></i> Full run history
+      </a>
+      <a href="/data/pipelines/{{ pipeline_name }}?tab=config" class="btn sm ghost">
+        <i data-lucide="settings" style="width:12px;height:12px"></i> Configure
+      </a>
+    </div>
   </div>
-</div>
-{% endif %}
 
-<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-10);margin:0 0 10px">Run History</h3>
-{% if history %}
-<div class="rt-Card" style="overflow:hidden">
-  <table class="rt-TableRoot dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="rt-TableColumnHeaderCell">Time</th>
-        <th class="rt-TableColumnHeaderCell">Status</th>
-        <th class="rt-TableColumnHeaderCell">Duration</th>
-        <th class="rt-TableColumnHeaderCell">Rows In</th>
-        <th class="rt-TableColumnHeaderCell">Rows Out</th>
-        <th class="rt-TableColumnHeaderCell">Error</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in history %}
-      <tr>
-        <td class="rt-TableCell" style="font-size:12px;color:var(--gray-10)">{{ r.timestamp }}</td>
-        <td class="rt-TableCell">{{ status_badge("success" if r.success else "failed") }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ r.duration_ms }}{% if r.duration_ms != "—" %}ms{% endif %}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ r.rows_input }}</td>
-        <td class="rt-TableCell" style="font-size:12px">{{ r.rows_output }}</td>
-        <td class="rt-TableCell" style="font-size:11px;color:var(--red-11);font-family:'Fira Code',monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.error }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {# ── Tabs ────────────────────────────────────────────────────────────────── #}
+  <div x-data="{ tab: '{{ request.query_params.get('tab', 'overview') }}' }">
+    <div class="domain-tabs">
+      <a href="#" class="domain-tab" :class="tab==='overview' ? 'active' : ''"
+         @click.prevent="tab='overview'">Overview</a>
+      <a href="#" class="domain-tab" :class="tab==='runs' ? 'active' : ''"
+         @click.prevent="tab='runs'">Run history</a>
+      <a href="#" class="domain-tab" :class="tab==='logs' ? 'active' : ''"
+         @click.prevent="tab='logs'">
+        Logs
+        {% if recent_runs and recent_runs[0].status_class == 'error' %}
+        <span class="tab-badge">!</span>
+        {% endif %}
+      </a>
+      <a href="#" class="domain-tab" :class="tab==='config' ? 'active' : ''"
+         @click.prevent="tab='config'">Config</a>
+      <a href="#" class="domain-tab" :class="tab==='quality' ? 'active' : ''"
+         @click.prevent="tab='quality'">Quality</a>
+    </div>
+
+    {# ── Overview tab ─────────────────────────────────────────────────────── #}
+    <div x-show="tab==='overview'" style="padding:16px 20px;flex:1;overflow-y:auto">
+
+      {# Stat cards row #}
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <div class="card" style="padding:12px 14px">
+          <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Rows ingested</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text)">{{ stats.rows_total | default('—') }}</div>
+          <div style="font-size:10.5px;color:var(--text-3)">last run</div>
+        </div>
+        <div class="card" style="padding:12px 14px">
+          <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Duration</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text)">{{ recent_runs[0].duration if recent_runs else '—' }}</div>
+          <div style="font-size:10.5px;color:var(--text-3)">last run</div>
+        </div>
+        <div class="card" style="padding:12px 14px">
+          <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Success rate</div>
+          <div style="font-size:22px;font-weight:700;color:var(--state-ok)">{{ stats.success_rate | default('—') }}</div>
+          <div style="font-size:10.5px;color:var(--text-3)">last 30 days</div>
+        </div>
+        <div class="card" style="padding:12px 14px">
+          <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Next run</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text)">{{ stats.next_run | default('—') }}</div>
+          <div style="font-size:10.5px;color:var(--text-3)">{{ source_info.schedule | default('manual') }}</div>
+        </div>
+      </div>
+
+      {# Two-column body #}
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:16px">
+
+        {# Left: recent runs table #}
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--shell-border);font-size:12px;font-weight:600;color:var(--text-2)">
+            Recent runs
+          </div>
+          <table class="tbl" style="width:100%">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Rows</th>
+                <th>Trigger</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in recent_runs %}
+              <tr>
+                <td><span class="sdot {{ r.status_class | default('idle') }}"></span></td>
+                <td class="mono" style="font-size:11.5px;color:var(--text-3)">{{ r.started | default('—') }}</td>
+                <td style="color:var(--text-3)">{{ r.duration | default('—') }}</td>
+                <td style="color:var(--text-2)">{{ r.rows | default('—') }}</td>
+                <td style="color:var(--text-4)">{{ r.trigger | default('manual') }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px">No runs yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# Right: steps + source + destination panels #}
+        <div style="display:flex;flex-direction:column;gap:12px">
+
+          {# Run steps timeline #}
+          <div class="card" style="padding:12px 14px">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px">Current run steps</div>
+            {% set steps_timeline = [('extract','link','Extract'),('validate','shield-check','Validate'),('load','database','Load'),('watermark','droplets','Watermark')] %}
+            {% for step_id, step_icon, step_label in steps_timeline %}
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <div style="width:20px;height:20px;border-radius:50%;
+                           background:color-mix(in oklch,var(--state-ok) 15%,transparent);
+                           border:1px solid color-mix(in oklch,var(--state-ok) 30%,transparent);
+                           display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="{{ step_icon }}" style="width:10px;height:10px;color:var(--state-ok)"></i>
+              </div>
+              <span style="font-size:12px;color:var(--text-2)">{{ step_label }}</span>
+            </div>
+            {% endfor %}
+          </div>
+
+          {# Source panel #}
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--shell-border)">
+              <div style="width:26px;height:26px;border-radius:var(--r-2);
+                          background:color-mix(in oklch,var(--domain-data) 12%,transparent);
+                          display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="link" style="width:13px;height:13px;color:var(--domain-data)"></i>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--text-2)">{{ source_info.name | default('—') }}</div>
+                <div style="font-size:10px;color:var(--text-4)">HTTP connector</div>
+              </div>
+              <span style="font-size:9.5px;padding:1px 6px;border-radius:3px;
+                           background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok);font-weight:600">LIVE</span>
+            </div>
+            <div style="padding:8px 12px">
+              {% set src_fields = [
+                ('Endpoint', source_info.endpoint, true),
+                ('Auth', source_info.auth, false),
+                ('Schedule', source_info.schedule, false),
+                ('Fetch mode', source_info.fetch_mode, false),
+                ('Watermark col', source_info.watermark_col, true),
+                ('Last watermark', source_info.last_watermark, true),
+              ] %}
+              {% for label, val, mono in src_fields %}
+              <div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid var(--shell-border)">
+                <span style="font-size:10.5px;color:var(--text-4);width:90px;flex-shrink:0">{{ label }}</span>
+                <span style="font-size:11px;color:var(--text-3);{{ 'font-family:var(--font-mono)' if mono }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ val | default('—') }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# Destination panel #}
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--shell-border)">
+              <div style="width:26px;height:26px;border-radius:var(--r-2);
+                          background:color-mix(in oklch,var(--domain-data) 12%,transparent);
+                          display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="database" style="width:13px;height:13px;color:var(--domain-data)"></i>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--text-2);font-family:var(--font-mono)">{{ dest_info.table }}</div>
+                <div style="font-size:10px;color:var(--text-4)">{{ dest_info.layer | capitalize }} layer</div>
+              </div>
+            </div>
+
+            {# SCD type callout #}
+            {% if dest_info.scd_type == 2 or dest_info.scd_type == 'type2' %}
+            <div style="margin:8px 10px;background:rgba(245,158,11,.06);
+                        border:1px solid rgba(245,158,11,.18);border-radius:6px;padding:8px 10px">
+              <div style="font-size:10px;font-weight:700;color:#f59e0b;margin-bottom:2px">SCD Type 2</div>
+              <div style="font-size:10.5px;color:var(--text-3)">New rows inserted on every change. Full history preserved with effective-date columns.</div>
+            </div>
+            {% elif dest_info.scd_type == 1 or dest_info.scd_type == 'type1' %}
+            <div style="margin:8px 10px;background:color-mix(in oklch,var(--blue-9) 6%,transparent);
+                        border:1px solid color-mix(in oklch,var(--blue-9) 18%,transparent);border-radius:6px;padding:8px 10px">
+              <div style="font-size:10px;font-weight:700;color:var(--blue-9);margin-bottom:2px">SCD Type 1</div>
+              <div style="font-size:10.5px;color:var(--text-3)">Existing rows overwritten on change. No history preserved.</div>
+            </div>
+            {% endif %}
+
+            {# Destination fields #}
+            <div style="padding:4px 12px 10px">
+              {% if dest_info.scd_type in (2, 'type2') %}
+              {% set dest_fields = [
+                ('Primary key', dest_info.pk_col),
+                ('Current flag', dest_info.current_flag),
+                ('Effective from', dest_info.effective_from),
+                ('Effective to', dest_info.effective_to),
+              ] %}
+              {% elif dest_info.scd_type in (1, 'type1') %}
+              {% set dest_fields = [('Primary key', dest_info.pk_col)] %}
+              {% else %}
+              {% set dest_fields = [] %}
+              {% endif %}
+              {% for label, val in dest_fields %}
+              <div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid var(--shell-border)">
+                <span style="font-size:10.5px;color:var(--text-4);width:90px;flex-shrink:0">{{ label }}</span>
+                <span style="font-size:11px;color:var(--text-3);font-family:var(--font-mono)">{{ val | default('—') }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>{# /overview #}
+
+    {# ── Run history tab ─────────────────────────────────────────────────── #}
+    <div x-show="tab==='runs'" style="padding:16px 20px">
+      <div class="card" style="padding:0;overflow:hidden">
+        <table class="tbl" style="width:100%">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th class="sortable">Started</th>
+              <th>Duration</th>
+              <th>Rows</th>
+              <th>Trigger</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in recent_runs %}
+            <tr>
+              <td><span class="sdot {{ r.status_class | default('idle') }}"></span> {{ r.status | default('—') }}</td>
+              <td class="mono" style="font-size:11.5px;color:var(--text-3)">{{ r.started | default('—') }}</td>
+              <td>{{ r.duration | default('—') }}</td>
+              <td>{{ r.rows | default('—') }}</td>
+              <td style="color:var(--text-4)">{{ r.trigger | default('manual') }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:24px">No runs yet</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── Logs tab ────────────────────────────────────────────────────────── #}
+    <div x-show="tab==='logs'" style="padding:16px 20px">
+      <div class="card" style="padding:12px 14px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-3);line-height:1.6">
+        {% if log_lines %}
+          {% for line in log_lines %}
+          <div style="border-bottom:1px solid var(--shell-border);padding:2px 0">{{ line }}</div>
+          {% endfor %}
+        {% else %}
+          <div style="color:var(--text-4);text-align:center;padding:20px">
+            No log output for this pipeline yet.
+            <a href="#" @click.prevent="tab='overview'" style="color:var(--domain-data)">Run it now →</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Config tab ──────────────────────────────────────────────────────── #}
+    <div x-show="tab==='config'" x-data="{ scdType: {{ dest_info.scd_type | default(1) }} }">
+      {% include "data/pipeline_config_tab.html" ignore missing %}
+    </div>
+
+    {# ── Quality tab ─────────────────────────────────────────────────────── #}
+    <div x-show="tab==='quality'"
+         hx-get="/data/pipelines/{{ pipeline_name }}/quality"
+         hx-trigger="intersect once"
+         hx-swap="innerHTML">
+      <div style="padding:40px 20px;text-align:center;color:var(--text-4)">
+        <i data-lucide="loader-2" style="width:20px;height:20px;animation:spin 1s linear infinite"></i>
+      </div>
+    </div>
+
+  </div>{# /alpine tab container #}
 </div>
-{% else %}
-{{ empty_state("history", "No run history yet", "Run the pipeline to see results here.") }}
-{% endif %}
 {% endblock %}

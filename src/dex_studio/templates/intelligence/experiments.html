@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, status_badge %}
+
+{% block title %}Experiments — Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Experiments{% endblock %}
+{% block page_sub %}
+  {{ experiments | length }} experiment{{ 's' if experiments | length != 1 else '' }}
+  · {{ total_runs }} total run{{ 's' if total_runs != 1 else '' }}
+  · {{ active_experiments }} active
+{% endblock %}
+{% block page_actions %}
+<button class="btn sm primary" x-data @click="$store.intExpModal.open=true">
+  <i data-lucide="plus" style="width:13px;height:13px"></i> New experiment
+</button>
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Metric strip ── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Experiments", experiments | length, "flask-conical", "violet", "tracked") }}
+  {{ metric_card("Total runs", total_runs, "play-circle", "violet", "logged" if total_runs > 0 else "no runs yet") }}
+  {{ metric_card("Active experiments", active_experiments, "activity", "violet", "with runs") }}
+  {% if best_run %}
+  {{ metric_card("Best run", best_run.primary_metric_val, "trophy", "orange", best_run.primary_metric_name or "primary metric") }}
+  {% else %}
+  {{ metric_card("Best run", "—", "trophy", "orange", "no runs yet") }}
+  {% endif %}
+</div>
+
+{# ── Three-column layout ── #}
+<div style="display:grid;grid-template-columns:220px 1fr 260px;gap:12px;align-items:start">
+
+  {# ── Left: experiment list ── #}
+  <div class="card bare" style="overflow:hidden">
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Experiments</span>
+    </div>
+    <div style="overflow-y:auto;max-height:480px">
+      {% if experiments %}
+        {% for exp in experiments %}
+        <a href="/intelligence/experiments?exp={{ exp.name }}"
+           style="display:flex;align-items:center;gap:8px;padding:9px 12px;text-decoration:none;
+                  border-bottom:1px solid var(--border);
+                  {% if exp.name == selected_exp %}background:color-mix(in oklch,var(--domain-intelligence) 8%,transparent);{% endif %}
+                  transition:background var(--d-fast)"
+           onmouseenter="this.style.background='var(--bg-hover)'"
+           onmouseleave="this.style.background='{{ 'color-mix(in oklch,var(--domain-intelligence) 8%,transparent)' if exp.name == selected_exp else 'transparent' }}'">
+          <i data-lucide="flask-conical"
+             style="width:12px;height:12px;flex-shrink:0;color:{{ 'var(--domain-intelligence)' if exp.name == selected_exp else 'var(--text-4)' }}"></i>
+          <span style="flex:1;font-size:12px;font-weight:{{ '600' if exp.name == selected_exp else '400' }};
+                       color:{{ 'var(--domain-intelligence)' if exp.name == selected_exp else 'var(--text-2)' }};
+                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ exp.name }}</span>
+          <span class="chip" style="font-size:9px;padding:1px 5px;flex-shrink:0">{{ exp.run_count }}</span>
+        </a>
+        {% endfor %}
+      {% else %}
+        <div style="padding:24px 12px;text-align:center;color:var(--text-4);font-size:12px">
+          No experiments yet
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Center: run table ── #}
+  <div class="card bare" style="overflow:hidden">
+    {% if selected_exp %}
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Runs</span>
+      <span class="mono" style="font-size:12px;color:var(--domain-intelligence);font-weight:500">{{ selected_exp }}</span>
+      <a href="/intelligence/experiments" class="btn icon ghost sm" style="margin-left:auto;text-decoration:none" title="Clear filter">
+        <i data-lucide="x" style="width:11px;height:11px"></i>
+      </a>
+    </div>
+    {% if runs %}
+    <table class="dex-table" id="int-runs-table">
+      <thead>
+        <tr>
+          <th class="sortable">#</th>
+          <th>Status</th>
+          <th class="sortable">Metric</th>
+          <th class="sortable">Started</th>
+          <th class="sortable">Ended</th>
+          <th style="width:32px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        {% set is_best = best_run and r.run_id == best_run.run_id %}
+        <tr style="{{ 'background:color-mix(in oklch,var(--state-ok) 6%,transparent)' if is_best else '' }}"
+            onclick="toggleIntRunDetail('{{ loop.index }}')" class="clickable">
+          <td class="mono dim" style="font-size:11px">{{ loop.index }}</td>
+          <td>{{ status_badge(r.status) }}</td>
+          <td>
+            {% if r.primary_metric_val is not none %}
+            <span class="mono" style="font-size:12px;font-weight:{{ '600' if is_best else '400' }};
+                                      color:{{ 'var(--state-ok)' if is_best else 'var(--text-2)' }}">
+              {{ r.primary_metric_val }}
+            </span>
+            <span class="muted" style="font-size:10px;margin-left:3px">{{ r.primary_metric_name or "" }}</span>
+            {% if is_best %}<span class="pill success" style="height:12px;font-size:8px;margin-left:4px">best</span>{% endif %}
+            {% else %}<span class="dim">—</span>{% endif %}
+          </td>
+          <td class="muted" style="font-size:12px">{{ r.started_at }}</td>
+          <td class="muted" style="font-size:12px">{{ r.ended_at or "—" }}</td>
+          <td>
+            <i data-lucide="chevron-down" style="width:12px;height:12px;opacity:.4" id="int-chev-{{ loop.index }}"></i>
+          </td>
+        </tr>
+        <tr id="int-run-detail-{{ loop.index }}" style="display:none;background:var(--bg-elev)">
+          <td colspan="6" style="padding:10px 16px">
+            <div class="muted" style="font-size:11px;margin-bottom:4px">Run ID: <span class="mono">{{ r.run_id }}</span></div>
+            {% if r.tags %}
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+              {% for k, v in r.tags.items() %}
+              <span class="chip" style="font-size:9px;padding:1px 5px">{{ k }}={{ v }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    {{ empty_state("play-circle", "No runs yet", "No runs recorded for " ~ selected_exp ~ " yet.") }}
+    {% endif %}
+    {% else %}
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Runs</span>
+    </div>
+    {% if experiments %}
+    {{ empty_state("mouse-pointer-click", "Select an experiment", "Click an experiment on the left to view its runs.") }}
+    {% else %}
+    {{ empty_state("flask-conical", "No experiments yet", "Create an experiment to start tracking runs.") }}
+    {% endif %}
+    {% endif %}
+  </div>
+
+  {# ── Right: best run card ── #}
+  <div style="display:flex;flex-direction:column;gap:12px">
+    {% if best_run %}
+    <div class="card bare" style="overflow:hidden">
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+        <div class="row" style="gap:6px">
+          <i data-lucide="trophy" style="width:12px;height:12px;color:var(--amber-9)"></i>
+          <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Best run</span>
+        </div>
+      </div>
+      <div style="padding:14px">
+        <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
+          {{ best_run.primary_metric_name or "Primary metric" }}
+        </div>
+        <div style="font-size:36px;font-weight:700;color:var(--domain-intelligence);line-height:1;margin-bottom:10px">
+          {{ best_run.primary_metric_val }}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div class="row" style="gap:6px">
+            <span class="muted" style="font-size:11px;min-width:52px">Run ID</span>
+            <span class="mono" style="font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ best_run.run_id }}</span>
+          </div>
+          <div class="row" style="gap:6px">
+            <span class="muted" style="font-size:11px;min-width:52px">Status</span>
+            {{ status_badge(best_run.status) }}
+          </div>
+          {% if best_run.started_at %}
+          <div class="row" style="gap:6px">
+            <span class="muted" style="font-size:11px;min-width:52px">Started</span>
+            <span style="font-size:11px;color:var(--text-2)">{{ best_run.started_at }}</span>
+          </div>
+          {% endif %}
+          {% if best_run.tags %}
+          <div style="margin-top:6px;display:flex;gap:3px;flex-wrap:wrap">
+            {% for k, v in best_run.tags.items() %}
+            <span class="chip" style="font-size:9px;padding:1px 5px">{{ k }}={{ v }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="card" style="padding:14px;text-align:center;color:var(--text-4)">
+      <i data-lucide="trophy" style="width:20px;height:20px;display:block;margin:0 auto 8px;opacity:.3"></i>
+      <div style="font-size:12px">No best run yet</div>
+    </div>
+    {% endif %}
+
+    {# ── Experiment summary ── #}
+    {% if experiments %}
+    <div class="card bare" style="overflow:hidden">
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Summary</span>
+      </div>
+      <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        {% for exp in experiments[:5] %}
+        <div class="row" style="gap:8px">
+          <span style="font-size:11px;color:var(--text-2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ exp.name }}</span>
+          <span class="mono muted" style="font-size:11px">{{ exp.run_count }} run{{ 's' if exp.run_count != 1 else '' }}</span>
+        </div>
+        {% endfor %}
+        {% if experiments | length > 5 %}
+        <div class="muted" style="font-size:10px;text-align:center">+{{ experiments | length - 5 }} more</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('intExpModal', { open: false });
+  });
+
+  globalThis.toggleIntRunDetail = function (idx) {
+    const row  = document.getElementById('int-run-detail-' + idx);
+    const chev = document.getElementById('int-chev-' + idx);
+    if (!row) return;
+    const open = row.style.display === '';
+    row.style.display = open ? 'none' : '';
+    if (chev) {
+      chev.setAttribute('data-lucide', open ? 'chevron-down' : 'chevron-up');
+      if (typeof lucide !== 'undefined') {
+        try { lucide.createIcons({ el: chev.parentElement }); } catch { lucide.createIcons(); }
+      }
+    }
+  };
+</script>
+
+{# ── New experiment modal ── #}
+<div x-data x-show="$store.intExpModal.open" x-cloak
+     style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)"
+     @keydown.escape.window="$store.intExpModal.open=false">
+  <div class="card" style="width:380px;padding:24px" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">New experiment</span>
+      <button class="btn icon ghost sm" style="margin-left:auto" @click="$store.intExpModal.open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    <form method="post" action="/intelligence/experiments/new" style="display:flex;flex-direction:column;gap:12px">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div>
+        <label for="int-exp-name" class="cap" style="display:block;margin-bottom:4px">Experiment name</label>
+        <input id="int-exp-name" class="input" name="exp_name" required
+               placeholder="e.g. rating_predictor_v2" style="width:100%">
+        <div class="muted" style="font-size:11px;margin-top:4px">Use snake_case. Runs will be grouped under this name.</div>
+      </div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:4px">
+        <button type="button" class="btn ghost" @click="$store.intExpModal.open=false">Cancel</button>
+        <button type="submit" class="btn primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -20,7 +20,7 @@
 {% endblock %}
 
 {% block content %}
-
+<div style="--domain-color: var(--domain-data)">
 <div class="card bare" style="padding:0;overflow:hidden;min-height:580px" id="lineage-wrap">
 
   {# ── Lane headers ────────────────────────────────────────────────────────── #}
@@ -75,12 +75,12 @@
     {% endfor %}
 
     {% if not lineage_nodes %}
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">
-      <span class="glyph lg" style="width:48px;height:48px;border-radius:12px">
-        <i data-lucide="git-branch" style="width:20px;height:20px"></i>
-      </span>
-      <div style="font-size:13px;font-weight:500;color:var(--text-2)">No lineage recorded yet</div>
-      <div class="muted" style="font-size:12px">Run pipelines to trace data flow end-to-end.</div>
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+      <div style="text-align:center;padding:48px 24px;color:var(--text-3)">
+        <i data-lucide="git-branch" style="width:32px;height:32px;margin:0 auto 12px;display:block;opacity:.4"></i>
+        <div style="font-size:14px;font-weight:500;color:var(--text-2);margin-bottom:4px">No lineage recorded yet</div>
+        <div style="font-size:12px">Run pipelines to trace data flow end-to-end.</div>
+      </div>
     </div>
     {% endif %}
 
@@ -92,6 +92,7 @@
   Hover a node to highlight upstream and downstream paths.
 </div>
 
+</div>
 {% endblock %}
 
 {% block scripts %}

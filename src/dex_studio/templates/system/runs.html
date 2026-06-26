@@ -15,6 +15,7 @@
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-system)">
 
 {# ── Filter bar ──────────────────────────────────────────────────────────── #}
 <div class="card" style="padding:12px;display:flex;flex-direction:column;gap:10px">
@@ -93,8 +94,9 @@
             data-run-status="{{ r.status }}"
             data-run-started="{{ r.started }}"
             data-run-duration="{{ r.duration }}"
-            data-run-trigger="{{ r.trigger }}"
-            data-run-io="{{ r.io }}"
+            data-run-trigger="{{ r.get('trigger', '—') }}"
+            data-run-io="{{ r.get('io', '—') }}"
+            data-run-error="{{ r.get('error', '') | e }}"
             style="cursor:pointer">
           <td class="mono" style="font-size:11px;color:var(--text-3)">{{ r.started }}</td>
           <td>
@@ -190,6 +192,10 @@
       <span class="mono" id="dr-io" style="font-size:12px">—</span>
     </div>
   </div>
+  <div id="dr-error-bar" style="display:none;margin:0 16px 0;padding:10px 12px;background:color-mix(in oklch,var(--red-9) 8%,transparent);border-left:3px solid var(--red-9);border-radius:4px">
+    <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Error</div>
+    <pre id="dr-error-msg" style="font-size:11px;color:var(--red-11);margin:0;white-space:pre-wrap;word-break:break-word"></pre>
+  </div>
 
   {# Tabs #}
   <div class="tabs" style="padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0">
@@ -221,6 +227,7 @@
   </div>
 </div>
 
+</div>{# /domain-color #}
 {% endblock %}
 
 {% block scripts %}
@@ -255,6 +262,7 @@
     const duration = row.dataset.runDuration || '—';
     const trigger  = row.dataset.runTrigger || '—';
     const io       = row.dataset.runIo || '—';
+    const error    = row.dataset.runError || '';
 
     // type tag
     const tagEl = document.getElementById('dr-type-tag');
@@ -281,6 +289,16 @@
     document.getElementById('dr-trigger').textContent = trigger;
     document.getElementById('dr-io').textContent = io;
     document.getElementById('dr-lineage-name').textContent = name;
+
+    // error bar
+    const errBar = document.getElementById('dr-error-bar');
+    const errMsg = document.getElementById('dr-error-msg');
+    if (error && status !== 'success' && status !== 'succeeded') {
+      errMsg.textContent = error;
+      errBar.style.display = '';
+    } else {
+      errBar.style.display = 'none';
+    }
 
     // re-init Lucide icons inside drawer
     if (globalThis.lucide) lucide.createIcons({ el: document.getElementById('run-drawer') });

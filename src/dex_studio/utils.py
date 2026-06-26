@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
+
+
+def _to_local_dt(ts: object) -> datetime | None:
+    """Parse a UTC ISO string and return a local-timezone datetime, or None."""
+    s = str(ts or "").strip()
+    if not s or s in ("-", "None"):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone()
+    except (ValueError, AttributeError):
+        return None
 
 
 def fmt_ts(ts: object) -> str:
-    """Format an ISO timestamp string to 'May 21 14:30', or '—' if absent."""
-    s = str(ts or "")
-    if not s or s in ("-", "None", ""):
-        return "—"
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        return dt.strftime("%b %d %H:%M")
-    except (ValueError, AttributeError):
-        return s
+    """Format an ISO timestamp string to 'May 21 14:30' in local time, or '—'."""
+    dt = _to_local_dt(ts)
+    return dt.strftime("%b %d %H:%M") if dt else "—"
+
+
+def fmt_ts_iso(ts: object) -> str:
+    """Format an ISO timestamp string to 'YYYY-MM-DD HH:MM' in local time, or '—'."""
+    dt = _to_local_dt(ts)
+    return dt.strftime("%Y-%m-%d %H:%M") if dt else "—"
 
 
 def fmt_cron(expr: str) -> str:
@@ -58,6 +70,28 @@ def fmt_bytes(n: int | None) -> str:
             return f"{n:.1f} {unit}"
         n //= 1024  # type: ignore[assignment]
     return f"{n:.1f} TB"
+
+
+def fmt_run_row(r: Any, **extra: Any) -> dict[str, Any]:
+    """Serialize a pipeline run record to a display dict.
+
+    Pass extra keyword arguments to merge additional fields (e.g. trigger, io).
+    """
+    dur_ms = getattr(r, "duration_ms", None)
+    if dur_ms is None:
+        dur_str = "—"
+    elif dur_ms >= 1000:
+        dur_str = f"{dur_ms / 1000:.1f}s"
+    else:
+        dur_str = f"{int(dur_ms)}ms"
+    return {
+        "type": "pipeline",
+        "name": r.pipeline_name,
+        "status": "success" if r.success else "error",
+        "started": fmt_ts_iso(r.timestamp),
+        "duration": dur_str,
+        **extra,
+    }
 
 
 def status_color(status: str) -> str:

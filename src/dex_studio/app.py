@@ -18,7 +18,8 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from dex_studio.logstore import structlog_capture_processor
+from dex_studio import __version__
+from dex_studio.logstore import install_stdlib_handler, structlog_capture_processor
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
 
 structlog.configure(
@@ -32,7 +33,7 @@ structlog.configure(
     logger_factory=structlog.PrintLoggerFactory(),
 )
 
-logger = structlog.getLogger()
+logger = structlog.getLogger().bind(src="app")
 
 
 class _SelectiveGZip:
@@ -46,7 +47,7 @@ class _SelectiveGZip:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "") if scope["type"] == "http" else ""
-        if path.endswith("/stream"):
+        if path.endswith("/stream") or "/stream" in path:
             await self._app(scope, receive, send)
         else:
             await self._gzip(scope, receive, send)
@@ -59,13 +60,24 @@ STATIC_DIR = _HERE / "static"
 
 def _session_secret() -> str:
     """Return or generate a persistent session signing secret."""
-    key_file = Path.home() / ".dex-studio" / "session.key"
+    data_dir = os.environ.get("DEX_STUDIO_DATA_DIR")
+    base = Path(data_dir) if data_dir else Path.home() / ".dex-studio"
+    key_file = base / "session.key"
     if key_file.exists():
         return key_file.read_text().strip()
     key = secrets.token_hex(32)
-    key_file.parent.mkdir(parents=True, exist_ok=True)
-    key_file.write_text(key)
-    key_file.chmod(0o600)
+    try:
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        key_file.write_text(key)
+        key_file.chmod(0o600)
+    except PermissionError:
+        # Fallback for read-only home dirs (e.g. containers)
+        key_file = Path("/tmp/.dex-studio/session.key")
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        if not key_file.exists():
+            key_file.write_text(key)
+            key_file.chmod(0o600)
+        return key_file.read_text().strip()
     return key
 
 
@@ -86,19 +98,39 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     import contextlib
 
     from dex_studio._engine import get_engine
+    from dex_studio.auth import setup_password
     from dex_studio.scheduler import start_scheduler, stop_scheduler
+
+    setup_password()
+    logger.info("DEX Studio starting up", version=__version__, port=7860)
+
+    # Mirror all stdlib logging (uvicorn, fastapi, libraries) into the log viewer.
+    # Must run here — AFTER uvicorn has configured its own logging handlers so we
+    # can also attach directly to uvicorn.access (which has propagate=False).
+    install_stdlib_handler()
 
     # Pre-warm: open SQLite WAL + run CREATE TABLE IF NOT EXISTS before the
     # first HTTP request. Suppressed so a missing/unconfigured project never
     # blocks startup.
+    eng = None
     with contextlib.suppress(Exception):
-        get_engine()
+        eng = get_engine()
+    if eng is not None:
+        project_name = ""
+        with contextlib.suppress(Exception):
+            project_name = str(eng.config.project.name)
+        logger.info("engine connected", project=project_name or "unknown")
+    else:
+        logger.warning("no engine at startup — waiting for project selection via onboarding")
 
     start_scheduler(_app)
+    logger.info("scheduler started")
     try:
         yield
     finally:
+        logger.info("DEX Studio shutting down")
         await stop_scheduler(_app)
+        logger.info("scheduler stopped")
         with contextlib.suppress(Exception):
             from dex_studio.jobs import _EXECUTOR
 
@@ -108,32 +140,80 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
             if _ENGINE is not None:
                 _ENGINE.close()
+                logger.info("engine closed")
+
+
+def _register_exception_handlers(app: FastAPI) -> None:
+    from fastapi import Request
+    from fastapi.responses import RedirectResponse
+
+    from dex_studio.auth import RequiresEngine, RequiresLogin, has_password
+
+    @app.exception_handler(RequiresLogin)
+    async def _handle_requires_login(request: Request, exc: RequiresLogin) -> RedirectResponse:
+        if not has_password():
+            return RedirectResponse(url="/setup", status_code=303)
+        return RedirectResponse(url="/login", status_code=303)
+
+    @app.exception_handler(RequiresEngine)
+    async def _handle_requires_engine(request: Request, exc: RequiresEngine) -> Any:
+        from dex_studio.routers._deps import _has_project_config, base_ctx, render
+
+        if _has_project_config():
+            try:
+                ctx = base_ctx(request)
+                return render(request, "system/offline.html", ctx)
+            except Exception as e:
+                logger.error("failed to render offline page", error=str(e))
+        return RedirectResponse(url="/onboarding", status_code=303)
+
+    @app.exception_handler(Exception)
+    async def _handle_server_error(request: Request, exc: Exception) -> Any:
+        import html as _html
+        import traceback
+
+        from fastapi.responses import HTMLResponse
+
+        tb = traceback.format_exc()
+        req_id = getattr(request.state, "request_id", "")
+        logger.error(
+            "unhandled exception",
+            path=request.url.path,
+            method=request.method,
+            request_id=req_id,
+            error=str(exc),
+            traceback=tb,
+        )
+        safe_path = _html.escape(request.url.path)
+        body = (
+            "<!doctype html><html><head><title>500 — DEX Studio</title>"
+            "<style>body{font-family:monospace;padding:40px;background:#0f1117;color:#e2e8f0}"
+            "h2{color:#f87171}pre{background:#1e2533;padding:16px;border-radius:6px;"
+            "overflow:auto;font-size:12px;color:#94a3b8}a{color:#60a5fa}</style></head><body>"
+            f"<h2>500 — Internal Server Error</h2>"
+            f"<p><b>{safe_path}</b> — An unexpected error occurred."
+            " Check application logs for details.</p>"
+            "<p><a href='/system/logs'>View application logs</a>"
+            " &nbsp;·&nbsp; <a href='javascript:history.back()'>Go back</a></p>"
+            "</body></html>"
+        )
+        return HTMLResponse(body, status_code=500)
 
 
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
-    from fastapi import Request
-    from fastapi.responses import RedirectResponse
-
-    from dex_studio.auth import RequiresEngine, RequiresLogin
-    from dex_studio.routers import ai, data, ml, root, secops, system
+    from dex_studio.routers import api, data, intelligence, root, secops, system
 
     app = FastAPI(
         title="DEX Studio",
         description="DataEngineX control plane",
-        version="0.3.0",
+        version=__version__,
         docs_url="/api/docs",
         redoc_url=None,
         lifespan=_lifespan,
     )
 
-    @app.exception_handler(RequiresLogin)
-    async def _handle_requires_login(request: Request, exc: RequiresLogin) -> RedirectResponse:
-        return RedirectResponse(url="/login", status_code=303)
-
-    @app.exception_handler(RequiresEngine)
-    async def _handle_requires_engine(request: Request, exc: RequiresEngine) -> RedirectResponse:
-        return RedirectResponse(url="/onboarding", status_code=303)
+    _register_exception_handlers(app)
 
     # ── Session middleware ────────────────────────────────────────────────────
     secret = os.environ.get("DEX_STUDIO_SESSION_SECRET") or _session_secret()
@@ -142,11 +222,23 @@ def create_app() -> FastAPI:
         SessionMiddleware,
         secret_key=secret,
         session_cookie="dex_session",
+        max_age=2592000,  # 30 days — persist across browser restarts
         https_only=https_only,
+        same_site="lax",
     )
 
     # ── Compression (bandwidth) + request timing (latency observability) ──────
     app.add_middleware(_SelectiveGZip, minimum_size=1024)
+
+    @app.middleware("http")
+    async def _correlation_id(request: Any, call_next: Any) -> Any:
+        import uuid
+
+        req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        request.state.request_id = req_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = req_id
+        return response
 
     @app.middleware("http")
     async def _security_headers(request: Any, call_next: Any) -> Any:
@@ -161,6 +253,7 @@ def create_app() -> FastAPI:
                 # Alpine.js v3 requires unsafe-eval (uses new Function() for expressions)
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                 "style-src 'self' 'unsafe-inline'; "
+                "font-src 'self'; "
                 "img-src 'self' data: blob:; "
                 "connect-src 'self'; "
                 "frame-ancestors 'none';"
@@ -193,10 +286,10 @@ def create_app() -> FastAPI:
     # ── Routers ──────────────────────────────────────────────────────────────
     app.include_router(root.router)
     app.include_router(data.router, prefix="/data")
-    app.include_router(ml.router, prefix="/ml")
-    app.include_router(ai.router, prefix="/ai")
+    app.include_router(intelligence.router, prefix="/intelligence")
     app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
+    app.include_router(api.router, prefix="/api")
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> FileResponse:
@@ -215,7 +308,3 @@ def create_app() -> FastAPI:
 
 
 # ── Template helpers used across routers ────────────────────────────────────
-
-
-def get_templates(app: Any) -> Jinja2Templates:
-    return app.state.templates  # type: ignore[no-any-return]

@@ -20,24 +20,29 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Observability
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │                      Routers                              │    │
-│  │  root · data · ml · ai · secops · system                  │    │
+│  │  root · data · intelligence · secops · system · api       │    │
 │  └────────────────────┬─────────────────────────────────────┘    │
 │                        │ Jinja2 templates + HTMX                  │
 │  ┌─────────────────────┴───────────────────────────────────┐     │
 │  │              Studio Core                                 │     │
-│  │  app.py · config.py · auth.py · _engine.py · utils.py  │     │
+│  │  app.py · nav.py · config.py · auth.py · _engine.py     │     │
+│  │  studio_db.py · scheduler.py · watermark.py · backfill  │     │
+│  │  compaction.py · schema_evolution.py · quality.py · utils│     │
 │  └────────────────────┬────────────────────────────────────┘     │
 └───────────────────────┼───────────────────────────────────────────┘
                         │  direct import (same process)
                         ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    DexEngine (dataenginex)                         │
-│  Config · DexStore · Data · ML · AI · Orchestration               │
+│  Config · DexStore · Data (incl. pipeline DAG) · ML · AI          │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 Studio mounts `dataenginex` via `DexEngine` (see `src/dex_studio/_engine.py`).
 No separate DEX server process is required.
+
+> **Note:** Pipeline DAG resolution (`build_dag`, `root_pipelines`, `downstream_of`) lives in
+> `dataenginex.data.pipeline.dag` — Studio's scheduler imports from there directly.
 
 ### Why FastAPI + Jinja2 + HTMX
 
@@ -60,7 +65,7 @@ dex-studio/
 │       ├── app.py                  # FastAPI factory — mounts routers, templates, static
 │       ├── cli.py                  # CLI entry (dex-studio --host --port --config)
 │       ├── config.py               # StudioPrefs + ProjectEntry (projects.yaml, prefs.yaml)
-│       ├── auth.py                 # Session-based auth (cookie + optional API key)
+│       ├── auth.py                 # Session-based auth (PBKDF2 password + rate limiter)
 │       ├── _engine.py              # DexEngine singleton (get_engine / set_engine)
 │       ├── utils.py                # Shared template helpers
 │       ├── audit.py                # Audit logging
@@ -68,17 +73,19 @@ dex-studio/
 │       ├── routers/
 │       │   ├── root.py             # Home, project selector, health
 │       │   ├── data.py             # Data domain routes
-│       │   ├── ml.py               # ML domain routes
-│       │   ├── ai.py               # AI domain routes
+│       │   ├── intelligence.py     # Intelligence domain routes
 │       │   ├── secops.py           # SecOps domain routes
 │       │   ├── system.py           # System domain routes
+│       │   ├── api.py              # API routes
 │       │   └── _deps.py            # Shared FastAPI deps (engine, auth, render)
 │       ├── templates/
 │       │   ├── base.html           # Layout shell (sidebar, nav)
+│       │   ├── components/         # Macros and shared components
 │       │   ├── data/               # Data domain templates
-│       │   ├── ml/                 # ML domain templates
-│       │   ├── ai/                 # AI domain templates
-│       │   └── system/             # System domain templates
+│       │   ├── intelligence/       # Intelligence domain templates
+│       │   ├── secops/             # SecOps domain templates
+│       │   ├── system/             # System domain templates
+│       │   └── partials/           # HTMX fragments
 │       └── static/
 │           └── studio.css          # Styles
 ├── tests/
@@ -109,7 +116,6 @@ Key environment variables:
 | --- | --- | --- |
 | `DEX_STUDIO_HOST` | `0.0.0.0` | Bind address |
 | `DEX_STUDIO_PORT` | `7860` | Port |
-| `DEX_STUDIO_API_KEY` | — | Enables auth; unset = no auth |
 | `DEX_STUDIO_SESSION_SECRET` | auto-generated | Cookie signing key |
 
 ## 5. Development Model
@@ -119,9 +125,8 @@ Each Studio page calls `DexEngine` methods directly. When Studio needs data that
 
 | Studio Domain | DexEngine Methods Used |
 | --- | --- |
-| Data | `run_pipeline`, `source_schema`, `source_sample`, `warehouse_layers`, `warehouse_tables` |
-| ML | `model_registry.list_models`, `model_registry.predict` |
-| AI | `agents[name].chat` |
+| Data | `run_pipeline`, `source_schema`, `source_sample`, `warehouse_layers`, `warehouse_tables`, `quality_checks` |
+| Intelligence | `model_registry.list_models`, `model_registry.predict`, `agents[name].chat`, `drift_detector`, `embedding_search` |
 | System | `health`, `config`, `store.list_pipeline_runs` |
 
 ### Rule
@@ -178,7 +183,27 @@ ArgoCD from [TheDataEngineX/infradex](https://github.com/TheDataEngineX/infradex
 - Config editor
 - Multi-instance support
 
-## 9. Non-Goals
+## 9. Screenshots
+
+| Domain | Preview |
+| --- | --- |
+| Hub | ![Hub](../docs/screenshots/hub.png) |
+| Data — Pipelines | ![Pipelines](../docs/screenshots/data-pipelines.png) |
+| Data — Sources | ![Sources](../docs/screenshots/data-sources.png) |
+| Data — SQL Console | ![SQL Console](../docs/screenshots/data-sql.png) |
+| Data — Quality | ![Quality](../docs/screenshots/data-quality.png) |
+| Data — Lineage | ![Lineage](../docs/screenshots/data-lineage.png) |
+| Intelligence — Playground | ![Playground](../docs/screenshots/intelligence-playground.png) |
+| Intelligence — Models | ![Models](../docs/screenshots/intelligence-models.png) |
+| Intelligence — Agents | ![Agents](../docs/screenshots/intelligence-agents.png) |
+| Intelligence — Traces | ![Traces](../docs/screenshots/intelligence-traces.png) |
+| SecOps — Overview | ![SecOps](../docs/screenshots/secops-overview.png) |
+| System — Status | ![Status](../docs/screenshots/system-status.png) |
+| System — Logs | ![Logs](../docs/screenshots/system-logs.png) |
+| System — Scheduler | ![Scheduler](../docs/screenshots/system-scheduler.png) |
+| System — Runs | ![Runs](../docs/screenshots/system-runs.png) |
+
+## 10. Non-Goals
 
 - **Cloud deployment** — Studio is local-first; no hosted SaaS version
 - **Multi-user auth** — single-user or small-team use

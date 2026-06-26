@@ -10,13 +10,8 @@ import os
 import threading
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from dataenginex.engine import DexBackend, DexEngine
-
-# Re-export so existing imports from dex_studio._engine still work
-from dataenginex.engine import DexBackend, DexEngine  # noqa: F401
+from dataenginex.engine import DexEngine
 
 _ENGINE: DexEngine | None = None
 # Protects _ENGINE mutation. DexEngine.__init__ is synchronous and potentially
@@ -71,10 +66,6 @@ def get_engine() -> DexEngine | None:
     if starter:
         return init_engine(starter)
     return None
-
-
-def get_backend() -> DexEngine | None:
-    return get_engine()
 
 
 def find_user_projects() -> list[tuple[str, Path]]:
@@ -132,7 +123,7 @@ def validate_config_file(config_path: str | Path) -> tuple[list[str], list[str]]
     from dataenginex.config.loader import ConfigError  # type: ignore[attr-defined]
 
     try:
-        config = load_config(Path(config_path))
+        config = load_config(Path(config_path))  # noqa: S603
     except ConfigError as exc:
         return ([str(exc)], [])
     except FileNotFoundError as exc:

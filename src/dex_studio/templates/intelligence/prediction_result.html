@@ -1,0 +1,63 @@
+{% if error %}
+{# ── Error banner ── #}
+<div class="card" style="padding:12px 14px;border-color:var(--red-6);background:color-mix(in oklch,var(--red-9) 8%,transparent);margin-bottom:12px">
+  <div class="row" style="gap:8px;margin-bottom:4px">
+    <i data-lucide="alert-circle" style="width:14px;height:14px;color:var(--red-9);flex-shrink:0"></i>
+    <span class="pill error" style="font-size:10px">Error</span>
+  </div>
+  <div style="font-size:12px;color:var(--red-11);line-height:1.5;margin-top:6px">{{ error }}</div>
+</div>
+
+{% elif prediction is not none %}
+{# ── Success — numeric result ── #}
+<div class="card" style="padding:14px 16px;border-color:color-mix(in oklch,var(--domain-intelligence) 40%,transparent);
+     background:color-mix(in oklch,var(--domain-intelligence) 6%,transparent);margin-bottom:12px">
+  <div class="row" style="gap:8px;margin-bottom:8px">
+    <i data-lucide="check-circle" style="width:14px;height:14px;color:var(--domain-intelligence);flex-shrink:0"></i>
+    <span class="pill success" style="font-size:10px">Success</span>
+  </div>
+  <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
+    {{ prediction_label or "Predicted value" }}
+  </div>
+  <div style="font-size:44px;font-weight:700;color:var(--domain-intelligence);line-height:1.1;margin-bottom:4px">
+    {{ prediction }}{% if prediction_unit %}<span style="font-size:18px;font-weight:400;color:var(--text-3);margin-left:5px">{{ prediction_unit }}</span>{% endif %}
+  </div>
+</div>
+
+{% if prediction_context %}
+<div class="card" style="padding:10px 12px;margin-bottom:12px;
+     background:color-mix(in oklch,var(--domain-intelligence) 5%,transparent);
+     border-color:color-mix(in oklch,var(--domain-intelligence) 16%,transparent)">
+  <div style="font-size:12px;line-height:1.5;color:var(--text-2)">{{ prediction_context }}</div>
+</div>
+{% elif model_desc %}
+<div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">{{ model_desc }}</div>
+{% endif %}
+
+{# ── Raw output collapsible ── #}
+{% if output %}
+<details style="margin-top:8px">
+  <summary class="muted" style="font-size:11px;cursor:pointer;user-select:none">
+    <i data-lucide="code-2" style="width:11px;height:11px;vertical-align:-1px;margin-right:4px"></i>
+    Raw output
+  </summary>
+  <pre class="card bare" style="margin-top:8px;padding:10px;font-family:var(--font-mono);font-size:11px;overflow:auto;max-height:300px;background:var(--bg-elev-2)">{{ output }}</pre>
+</details>
+{% endif %}
+
+{% elif output %}
+{# ── Non-numeric output ── #}
+<div class="card" style="padding:10px 14px;border-color:color-mix(in oklch,var(--domain-intelligence) 40%,transparent);
+     background:color-mix(in oklch,var(--domain-intelligence) 6%,transparent);margin-bottom:10px">
+  <span class="pill success" style="font-size:10px;margin-bottom:8px;display:inline-block">Success</span>
+</div>
+<pre class="card bare" style="padding:12px;font-family:var(--font-mono);font-size:12px;overflow:auto;max-height:400px;margin:0">{{ output }}</pre>
+
+{% else %}
+{# ── Idle / waiting state ── #}
+<div style="color:var(--text-4);font-size:13px;text-align:center;padding:48px 0">
+  <i data-lucide="zap" style="width:28px;height:28px;display:block;margin:0 auto 10px;opacity:.3;color:var(--domain-intelligence)"></i>
+  <div style="font-weight:500;margin-bottom:4px;color:var(--text-3)">Ready to predict</div>
+  <div class="muted" style="font-size:12px">Adjust the inputs and hit Run prediction</div>
+</div>
+{% endif %}

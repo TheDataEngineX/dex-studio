@@ -8,7 +8,7 @@
     <span style="font-size:12px;color:var(--text-3)">{{ sql_results|length }} row{{ "s" if sql_results|length != 1 else "" }}</span>
     {% if exec_ms is not none %}<span style="font-size:11px;color:var(--text-4)">{{ "%.1f"|format(exec_ms) }}ms</span>{% endif %}
   </div>
-  <table class="tbl dex-table" style="width:100%;min-width:400px">
+  <table class="dex-table" style="width:100%;min-width:400px">
     <thead>
       <tr>{% for col in sql_columns %}<th>{{ col }}</th>{% endfor %}</tr>
     </thead>

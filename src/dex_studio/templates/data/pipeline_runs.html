@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}{% if pipeline_name %}{{ pipeline_name }} Runs{% else %}Pipeline Runs{% endif %} — DEX Studio{% endblock %}
+
+{% block page_title %}{% if pipeline_name %}{{ pipeline_name }}{% else %}Pipeline Runs{% endif %}{% endblock %}
+{% block page_sub %}{% if pipeline_name %}run history for this pipeline{% else %}unified run history across all pipelines{% endif %}{% endblock %}
+
+{% block page_actions %}
+{% if pipeline_name %}
+<a href="/data/pipelines/{{ pipeline_name }}" class="btn sm ghost">
+  <i data-lucide="arrow-left" style="width:12px;height:12px"></i> Back to pipeline
+</a>
+{% else %}
+<a href="/data/pipelines" class="btn sm ghost">
+  <i data-lucide="arrow-left" style="width:12px;height:12px"></i> All pipelines
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-data)">
+
+{# ── Filter bar ───────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  {% set ok_ct  = runs | selectattr('success') | list | length %}
+  {% set err_ct = runs | rejectattr('success') | list | length %}
+  <button class="chip active" id="f-all"     onclick="setFilter('all',this)">All <span class="count">{{ runs | length }}</span></button>
+  <button class="chip" id="f-success" onclick="setFilter('success',this)" style="color:var(--green-9)">Success <span class="count">{{ ok_ct }}</span></button>
+  <button class="chip" id="f-failed"  onclick="setFilter('failed',this)"  style="color:var(--red-9)">Failed <span class="count">{{ err_ct }}</span></button>
+  {% if not pipeline_name %}
+  <div class="div-x" style="height:22px"></div>
+  <select class="input sm" id="f-pipe" style="height:26px;font-size:11.5px;font-family:var(--font-mono)" onchange="applyFilters()">
+    <option value="all">all pipelines</option>
+    {% for name in runs | map(attribute='pipeline_name') | unique | sort %}
+    <option value="{{ name }}">{{ name }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+  <div style="flex:1"></div>
+  <div class="input-icon" style="width:240px">
+    <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
+    <input class="input" id="f-search" placeholder="search…" style="height:26px;font-size:12px;font-family:var(--font-mono)" oninput="applyFilters()">
+  </div>
+</div>
+
+{# ── Runs table ───────────────────────────────────────────────────────────── #}
+<div class="card bare" style="margin-top:16px">
+  <table class="tbl dex-table" id="runs-table">
+    <thead>
+      <tr>
+        <th style="width:130px">Started</th>
+        {% if not pipeline_name %}<th>Pipeline</th>{% endif %}
+        <th style="width:100px">Status</th>
+        <th style="width:90px" class="num">Duration</th>
+        <th style="width:90px">Trigger</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if runs %}
+        {% for r in runs %}
+        <tr class="run-row"
+            data-status="{{ 'success' if r.success else 'failed' }}"
+            data-pipe="{{ r.pipeline_name }}"
+            style="cursor:pointer"
+            onclick="openDetail(this)">
+          <td class="mono" style="font-size:11px;color:var(--text-3)">{{ r.started or r.timestamp }}</td>
+          {% if not pipeline_name %}<td class="mono" style="font-size:12px">{{ r.pipeline_name }}</td>{% endif %}
+          <td>
+            {% if r.success %}<span class="pill success">success</span>
+            {% elif r.status == 'running' %}<span class="pill running">running</span>
+            {% else %}<span class="pill error">failed</span>{% endif %}
+          </td>
+          <td class="num mono dim">{{ r.duration or '—' }}</td>
+          <td class="muted" style="font-size:12px">{{ r.get('trigger', '—') if r is mapping else '—' }}</td>
+          <td class="muted mono" style="font-size:11px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{ r.error or '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="dex-empty-state" style="padding:48px 24px">
+              <i data-lucide="list" style="width:32px;height:32px;opacity:.3;margin-bottom:12px"></i>
+              <div style="font-weight:500;margin-bottom:4px">No runs recorded yet</div>
+              <div class="muted" style="font-size:var(--text-xs)">Run a pipeline manually or wait for the scheduler.</div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+<div style="padding:8px 4px;font-size:12px;color:var(--text-3)">
+  Showing <span id="shown-count">{{ runs | length }}</span> of {{ total_count }} runs
+</div>
+
+{# ── Error detail drawer ──────────────────────────────────────────────────── #}
+<button class="drawer-mask" id="detail-mask" onclick="closeDetail()"></button>
+<dialog class="drawer" id="detail-drawer">
+  <div class="drawer-hd">
+    <div class="col" style="gap:2px;flex:1">
+      <div class="row" style="gap:8px">
+        <span class="run-type-tag run-type-pipeline"><i data-lucide="git-branch" style="width:11px;height:11px"></i> pipeline</span>
+        <span id="det-pill" class="pill" style="height:18px;font-size:10px"></span>
+      </div>
+      <div class="mono" id="det-name" style="font-size:14px;font-weight:600;margin-top:4px"></div>
+    </div>
+    <button class="btn sm ghost" onclick="closeDetail()"><i data-lucide="x" style="width:14px;height:14px"></i></button>
+  </div>
+  <div class="drawer-meta">
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Started</span>
+      <span class="mono" id="det-started" style="font-size:12px">—</span>
+    </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Duration</span>
+      <span class="mono" id="det-duration" style="font-size:12px">—</span>
+    </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Trigger</span>
+      <span class="mono" id="det-trigger" style="font-size:12px">—</span>
+    </div>
+  </div>
+  <div id="det-error-wrap" style="display:none;margin:12px 16px 0;padding:10px 12px;background:color-mix(in oklch,var(--red-9) 8%,transparent);border-left:3px solid var(--red-9);border-radius:4px">
+    <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Error</div>
+    <pre id="det-error-msg" style="font-size:11px;color:var(--red-11);margin:0;white-space:pre-wrap;word-break:break-word"></pre>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn sm ghost" onclick="closeDetail()">Close</button>
+  </div>
+</dialog>
+
+</div>{# /domain-color #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  let statusFilter = 'all';
+
+  function applyFilters() {
+    const q    = (document.getElementById('f-search').value || '').toLowerCase();
+    const pipe = (document.getElementById('f-pipe') || {}).value || 'all';
+    let shown  = 0;
+    document.querySelectorAll('#runs-table tbody tr.run-row').forEach(function (row) {
+      const okStatus = statusFilter === 'all' || row.dataset.status === statusFilter;
+      const okPipe   = pipe === 'all' || row.dataset.pipe === pipe;
+      const okSearch = !q || row.textContent.toLowerCase().includes(q);
+      row.style.display = (okStatus && okPipe && okSearch) ? '' : 'none';
+      if (okStatus && okPipe && okSearch) shown++;
+    });
+    const sc = document.getElementById('shown-count');
+    if (sc) sc.textContent = shown;
+  }
+
+  globalThis.setFilter = function (f, btn) {
+    statusFilter = f;
+    document.querySelectorAll('[id^="f-"]').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    applyFilters();
+  };
+
+  globalThis.applyFilters = applyFilters;
+
+  globalThis.openDetail = function (row) {
+    const cells = row.querySelectorAll('td');
+    let idx = 0;
+    const started  = cells[idx++] ? cells[idx - 1].textContent.trim() : '—';
+    const hasPipe  = row.dataset.pipe !== undefined && {{ 'false' if pipeline_name else 'true' }};
+    if (hasPipe) idx++;  // skip pipeline name column
+    idx++;  // skip status cell
+    const duration = cells[idx] ? cells[idx++].textContent.trim() : '—';
+    const trigger  = cells[idx] ? cells[idx++].textContent.trim() : '—';
+    const errText  = cells[idx] ? cells[idx].textContent.trim() : '';
+
+    const pipe    = row.dataset.pipe || '';
+    const status  = row.dataset.status || '';
+
+    document.getElementById('det-name').textContent = pipe;
+    document.getElementById('det-started').textContent = started;
+    document.getElementById('det-duration').textContent = duration;
+    document.getElementById('det-trigger').textContent = trigger;
+
+    const pill = document.getElementById('det-pill');
+    pill.textContent = status === 'success' ? 'success' : 'failed';
+    pill.className   = 'pill ' + (status === 'success' ? 'success' : 'error');
+    pill.style.cssText = 'height:18px;font-size:10px';
+
+    const errWrap = document.getElementById('det-error-wrap');
+    const errMsg  = document.getElementById('det-error-msg');
+    if (errText && status !== 'success') {
+      errMsg.textContent = errText;
+      errWrap.style.display = '';
+    } else {
+      errWrap.style.display = 'none';
+    }
+
+    if (typeof lucide !== 'undefined') lucide.createIcons({ el: document.getElementById('detail-drawer') });
+    document.getElementById('detail-mask').classList.add('open');
+    document.getElementById('detail-drawer').classList.add('open');
+
+    document.querySelectorAll('#runs-table tr').forEach(function (r) { r.classList.remove('active'); });
+    row.classList.add('active');
+  };
+
+  globalThis.closeDetail = function () {
+    document.getElementById('detail-mask').classList.remove('open');
+    document.getElementById('detail-drawer').classList.remove('open');
+    document.querySelectorAll('#runs-table tr').forEach(function (r) { r.classList.remove('active'); });
+  };
+
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
+}());
+</script>
+{% endblock %}

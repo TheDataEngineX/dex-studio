@@ -3,14 +3,17 @@
 
 {% block title %}Warehouse — DEX Studio{% endblock %}
 {% block page_title %}Warehouse{% endblock %}
+{% block page_sub %}Business-ready Gold layer — aggregated tables for BI and reporting{% endblock %}
 
 {% block content %}
-<p style="font-size:13px;color:var(--gray-10);margin:0 0 20px">
-  Business-ready Gold layer — highly structured, aggregated tables optimized for BI and reporting.
+<div style="--domain-color: var(--domain-data)">
+<p style="font-size:13px;color:var(--text-3);margin:0 0 20px">
+  Highly structured, aggregated tables optimized for BI and reporting.
   <a href="/data/lakehouse" style="color:var(--indigo-9);text-decoration:none;margin-left:6px">View full Lakehouse →</a>
 </p>
 
 <div id="warehouse-tables">
   {% include "data/warehouse_tables.html" %}
+</div>
 </div>
 {% endblock %}

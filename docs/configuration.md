@@ -7,7 +7,6 @@ DEX Studio is configured entirely via environment variables. There is no `.dex-s
 | Variable | Default | Description |
 | --- | --- | --- |
 | `DEX_CONFIG_PATH` | — | Absolute path to the project's `dex.yaml` (required to auto-load an engine on startup) |
-| `DEX_STUDIO_API_KEY` | auto | API key for the login gate. Auto-generated on first boot if unset, saved to `~/.dex-studio/api.key` |
 | `DEX_STUDIO_SESSION_SECRET` | auto | Secret used to sign session cookies. Auto-generated and saved to `~/.dex-studio/session.key` |
 | `DEX_STUDIO_HOST` | `0.0.0.0` | Bind host |
 | `DEX_STUDIO_PORT` | `7860` | Bind port |

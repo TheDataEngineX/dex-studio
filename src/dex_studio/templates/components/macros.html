@@ -31,11 +31,13 @@
 </div>
 {% endmacro %}
 
+{# empty_state — icon, bold title, muted subtitle. Optional caller block for a CTA. #}
 {% macro empty_state(icon, title, subtitle="") %}
 <div style="text-align:center;padding:48px 24px;color:var(--text-3)">
   <i data-lucide="{{ icon }}" style="width:32px;height:32px;margin:0 auto 12px;display:block;opacity:.4"></i>
   <div style="font-size:14px;font-weight:500;color:var(--text-2);margin-bottom:4px">{{ title }}</div>
   {% if subtitle %}<div style="font-size:12px">{{ subtitle }}</div>{% endif %}
+  {% if caller is defined %}{{ caller() }}{% endif %}
 </div>
 {% endmacro %}
 
@@ -50,11 +52,55 @@
 </table>
 {% endmacro %}
 
+{#
+  modal_shell — standardized Alpine.js overlay modal.
+  Trigger with: @click="$dispatch('{{ event_name }}')"
+  Content via caller block.
+#}
+{% macro modal_shell(event_name, title, width="440px") %}
+<div x-data="{open:false}"
+     @{{ event_name }}.window="open=true"
+     x-show="open" x-cloak class="dex-modal-overlay"
+     @click.self="open=false"
+     x-transition:enter="transition-opacity duration-150"
+     x-transition:enter-start="opacity-0">
+  <div class="card" style="width:{{ width }};padding:24px;max-height:90vh;overflow-y:auto" @click.stop>
+    <div class="row" style="margin-bottom:16px">
+      <span style="font-weight:700;font-size:14px">{{ title }}</span>
+      <button type="button" class="btn icon ghost sm" style="margin-left:auto" @click="open=false">
+        <i data-lucide="x" style="width:13px;height:13px"></i>
+      </button>
+    </div>
+    {% if caller is defined %}{{ caller() }}{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{# form_field — labelled input row for use inside modals and forms #}
+{% macro form_field(name, label, type="text", placeholder="", value="", required=false, mono=false) %}
+<div>
+  <label class="cap" for="ff-{{ name }}" style="display:block;margin-bottom:4px">
+    {{ label }}{% if required %} *{% endif %}
+  </label>
+  <input id="ff-{{ name }}"
+         type="{{ type }}"
+         name="{{ name }}"
+         class="input"
+         style="width:100%;{% if mono %}font-family:var(--font-mono);font-size:12px;{% endif %}"
+         placeholder="{{ placeholder }}"
+         value="{{ value }}"
+         {% if required %}required{% endif %}>
+</div>
+{% endmacro %}
+
+{# confirm_dialog — inline Alpine confirm, wraps a trigger button #}
 {% macro confirm_dialog(id, title, body, action_url, method="post", action_label="Delete", color="red") %}
 <div id="{{ id }}" x-data="{open:false}" style="display:inline">
   <slot></slot>
   <div x-show="open" x-cloak class="dex-modal-overlay"
-       @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
+       @click.self="open=false"
+       x-transition:enter="transition-opacity duration-150"
+       x-transition:enter-start="opacity-0">
     <div class="card" style="width:380px;padding:24px">
       <h3 style="font-size:15px;font-weight:700;margin:0 0 8px">{{ title }}</h3>
       <p style="font-size:13px;color:var(--text-2);margin:0 0 20px">{{ body }}</p>
@@ -67,4 +113,45 @@
     </div>
   </div>
 </div>
+{% endmacro %}
+
+{# inline_error — compact error/warning banner #}
+{% macro inline_error(message, kind="error") %}
+{% if message %}
+{% set bg  = "var(--red-3)"   if kind == "error" else "var(--amber-3)" %}
+{% set clr = "var(--red-9)"   if kind == "error" else "var(--amber-9)" %}
+{% set ico = "alert-circle"   if kind == "error" else "alert-triangle" %}
+<div style="padding:10px 14px;background:{{ bg }};border:1px solid {{ clr }};border-radius:var(--r-2);
+            font-size:12px;color:{{ clr }};display:flex;align-items:center;gap:8px">
+  <i data-lucide="{{ ico }}" style="width:13px;height:13px;flex-shrink:0"></i>
+  {{ message }}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# filter_empty_state — table row shown when search yields no results #}
+{% macro filter_empty_state() %}
+<tr class="filter-empty" style="display:none">
+  <td colspan="99" style="text-align:center;padding:36px 24px;color:var(--text-4)">
+    <i data-lucide="search-x" style="width:20px;height:20px;opacity:.4;display:block;margin:0 auto 8px"></i>
+    No results — try a different search term.
+  </td>
+</tr>
+{% endmacro %}
+
+{# circuit_badge — shows Ollama / LLM backend circuit-breaker state #}
+{% macro circuit_badge(state) %}
+{% if state == "open" %}
+<span class="pill error" style="font-size:10px" title="LLM backend unreachable — circuit open">
+  <i data-lucide="wifi-off" style="width:10px;height:10px"></i> backend down
+</span>
+{% elif state == "half-open" %}
+<span class="pill warn" style="font-size:10px" title="LLM backend recovering">
+  <i data-lucide="refresh-cw" style="width:10px;height:10px"></i> recovering
+</span>
+{% else %}
+<span class="pill success" style="font-size:10px">
+  <i data-lucide="wifi" style="width:10px;height:10px"></i> LLM online
+</span>
+{% endif %}
 {% endmacro %}

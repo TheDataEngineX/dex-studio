@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy — SecOps — DEX Studio{% endblock %}
+{% block page_title %}Privacy{% endblock %}
+{% block page_sub %}Data privacy configuration{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:24px">
+  <div class="card-header"><h3>Detection settings</h3></div>
+  <table class="table">
+    <tbody>
+      <tr><td style="color:var(--text-3);width:200px">PII scan enabled</td><td>{{ "Yes" if pii_scan else "No" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Action on detect</td><td>{{ pii_action }}</td></tr>
+      <tr><td style="color:var(--text-3)">Patterns</td><td>{{ pii_patterns | join(", ") if pii_patterns else "—" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Guard enabled</td><td>{{ "Yes" if guard_enabled else "No" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Block on detect</td><td>{{ "Yes" if block_on_detect else "No" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Local targets</td><td>{{ guard_local_targets | join(", ") if guard_local_targets else "—" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3>Masking strategy</h3></div>
+  <table class="table">
+    <thead><tr><th>Field</th><th>Strategy</th></tr></thead>
+    <tbody>
+    {% if pii_masking and pii_masking.fields %}
+      {% for field, strategy in pii_masking.fields.items() %}
+      <tr><td>{{ field }}</td><td>{{ strategy }}</td></tr>
+      {% endfor %}
+    {% endif %}
+    {% for pii_type, strategy in guard_strategies.items() %}
+      <tr><td>{{ pii_type }}</td><td>{{ strategy }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
