@@ -31,7 +31,7 @@ jobs:
       short_sha: ${{ steps.vars.outputs.short_sha }}
       branch_slug: ${{ steps.vars.outputs.branch_slug }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set image vars
         id: vars
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: preview
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
@@ -190,7 +190,7 @@ jobs:
       contents: read
     environment: stage
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
@@ -225,7 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
