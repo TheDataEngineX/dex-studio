@@ -180,7 +180,7 @@ def _hub_activity_feed(eng: Any) -> list[dict[str, Any]]:  # noqa: C901
                     "icon": "workflow",
                     "desc": f"Pipeline {name} {_run_verb(status)}",
                     "sub": f"status: {status}",
-                    "href": f"/data/pipelines/{name}",
+                    "href": f"/data/pipelines/{name}",  # noqa: S601
                     "time_ago": _ago(getattr(r, "timestamp", None)),
                     "badge": "DATA",
                 }

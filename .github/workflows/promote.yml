@@ -24,6 +24,9 @@ on:
         type: number
         default: 20
 
+permissions:
+  contents: read
+
 jobs:
   promote:
     runs-on: ubuntu-latest

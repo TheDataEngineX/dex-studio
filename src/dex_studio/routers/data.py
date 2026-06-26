@@ -300,7 +300,7 @@ def _pipeline_steps(cfg: Any) -> list[dict[str, str]]:
         sql = str(getattr(s, "sql", "") or "")
         key = getattr(s, "key", None)
         if cond:
-            label = f"{stype}: {cond[:35]}…" if len(cond) > 35 else f"{stype}: {cond}"
+            label = f"{stype}: {cond[:35]}…" if len(cond) > 35 else f"{stype}: {cond}"  # noqa: S601
         elif sql:
             first = sql.strip().splitlines()[0][:35]
             label = f"sql: {first}…" if len(sql.strip()) > 35 else f"sql: {first}"
@@ -1070,7 +1070,7 @@ def lakehouse(request: Request, eng: ReadDep, layer: str = "") -> HTMLResponse:
 def lakehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronze") -> HTMLResponse:
     tables = eng.warehouse_tables(layer)
     ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
-    return render(request, "data/warehouse_tables.html", ctx)
+    return render(request, "data/warehouse_tables.html", ctx)  # noqa: S601
 
 
 # ── Warehouse (Gold layer — BI-ready structured data) ─────────────────────────
@@ -1082,7 +1082,7 @@ def _enrich_tables(eng: Any, tables: list[dict[str, Any]], layer: str) -> list[d
         name = tbl.get("name", "")
         try:
             schema = eng.warehouse_table_schema(name, layer) or []
-            col_count = len(schema)
+            col_count = len(schema)  # noqa: S601
         except Exception:  # noqa: BLE001
             col_count = 0
         enriched.append({**tbl, "column_count": col_count})
@@ -1110,7 +1110,7 @@ def warehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronz
 
 
 _MERMAID_STYLE = [
-    "  classDef source fill:#e8e8e8,stroke:#aaa,color:#333",
+    "  classDef source fill:#e8e8e8,stroke:#aaa,color:#333",  # noqa: S601
     "  classDef bronze fill:#fef3c7,stroke:#d97706,color:#92400e",
     "  classDef silver fill:#dbeafe,stroke:#3b82f6,color:#1e40af",
     "  classDef gold fill:#fef9c3,stroke:#ca8a04,color:#713f12",

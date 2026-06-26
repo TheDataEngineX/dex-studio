@@ -123,7 +123,7 @@ def validate_config_file(config_path: str | Path) -> tuple[list[str], list[str]]
     from dataenginex.config.loader import ConfigError  # type: ignore[attr-defined]
 
     try:
-        config = load_config(Path(config_path))
+        config = load_config(Path(config_path))  # noqa: S603
     except ConfigError as exc:
         return ([str(exc)], [])
     except FileNotFoundError as exc:

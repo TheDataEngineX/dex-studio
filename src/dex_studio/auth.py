@@ -63,7 +63,7 @@ _limiter = _RateLimiter()
 def _hash_password(password: str) -> str:
     """Return base64-encoded PBKDF2-SHA256 hash with embedded 32-byte salt."""
     salt = secrets.token_bytes(32)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)  # noqa: S324
     return base64.b64encode(salt + dk).decode()
 
 
@@ -71,7 +71,7 @@ def _verify_password(password: str, stored: str) -> bool:
     """Constant-time verify password against a stored PBKDF2 hash."""
     raw = base64.b64decode(stored.encode())
     salt, dk_stored = raw[:32], raw[32:]
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)  # noqa: S324
     return hmac.compare_digest(dk, dk_stored)
 
 

@@ -11,6 +11,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
   dispatch:
     runs-on: ubuntu-latest
