@@ -67,7 +67,6 @@ def perf_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[Te
     hash_file = tmp_path / "auth.hash"
     hash_file.write_text(_hash_password(_API_KEY))
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-def perf_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Authenticated TestClient for each performance test."""
     _reset_rate_limiter()
     hash_file = tmp_path / "auth.hash"
@@ -139,9 +138,7 @@ class TestBaselineLatency:
 
         assert resp.status_code == 200
         assert elapsed_ms < _LATENCY_LIMIT_MS, f"Login page took {elapsed_ms:.1f}ms"
-        assert elapsed_ms < _LATENCY_LIMIT_MS, (
-            f"Login page took {elapsed_ms:.1f}ms"
-        )
+        assert elapsed_ms < _LATENCY_LIMIT_MS, f"Login page took {elapsed_ms:.1f}ms"
 
 
 # ── Sequential throughput ─────────────────────────────────────────────────────
@@ -188,9 +185,7 @@ class TestSequentialThroughput:
         elapsed = time.perf_counter() - start
 
         assert elapsed < _SEQUENTIAL_50_LIMIT_S, f"{n} login page requests took {elapsed:.2f}s"
-        assert elapsed < _SEQUENTIAL_50_LIMIT_S, (
-            f"{n} login page requests took {elapsed:.2f}s"
-        )
+        assert elapsed < _SEQUENTIAL_50_LIMIT_S, f"{n} login page requests took {elapsed:.2f}s"
 
 
 # ── Concurrent requests ───────────────────────────────────────────────────────
@@ -276,9 +271,7 @@ class TestConcurrentRequests:
 
         assert not errors, f"Concurrent login page errors: {errors}"
         assert all(s == 200 for s in results), f"Some login page requests failed: {results}"
-        assert all(s == 200 for s in results), (
-            f"Some login page requests failed: {results}"
-        )
+        assert all(s == 200 for s in results), f"Some login page requests failed: {results}"
 
 
 # ── Memory safety ─────────────────────────────────────────────────────────────
@@ -309,6 +302,4 @@ class TestMemorySafety:
                 failed.append((i, resp.status_code))
 
         assert not failed, f"JSON endpoint requests failed at indices: {failed[:5]}"
-        assert not failed, (
-            f"JSON endpoint requests failed at indices: {failed[:5]}"
-        )
+        assert not failed, f"JSON endpoint requests failed at indices: {failed[:5]}"

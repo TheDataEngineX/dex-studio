@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import contextlib
 from html import escape as _html_escape
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from dex_studio.logstore import log_store
 from dex_studio.routers._deps import ReadDep, base_ctx, render, stub_page
+from dex_studio.studio_db import get_studio_db
 
 router = APIRouter()
 
@@ -65,6 +67,51 @@ def _sys_metrics() -> dict[str, Any]:
 
 
 def _parse_components(health: dict[str, Any]) -> list[dict[str, Any]]:
+    components: list[dict[str, Any]] = []
+    for name, val in health.get("components", {}).items():
+        available = bool(val) if not isinstance(val, bool) else val
+        components.append(
+            {
+                "name": name.replace("_", " ").title(),
+                "available": available,
+                "status": "ok" if available else "offline",
+                "message": "" if available else "Not initialized",
+            }
+        )
+    return components
+
+
+def _health_banner(overall: str, dead: int, failures: int) -> tuple[bool, str, str]:
+    is_healthy = overall in ("ok", "healthy")
+    health_class = "ok" if is_healthy else ("warn" if overall == "degraded" else "error")
+    if dead > 0:
+        label = f"{dead} pipeline(s) dead-lettered — check scheduler"
+    elif failures > 0:
+        label = f"{failures} recent pipeline failure(s)"
+    elif is_healthy:
+        label = "All Systems Operational"
+    elif overall == "degraded":
+        label = "System Degraded"
+    else:
+        label = "System Error — Check Components"
+    return is_healthy, health_class, label
+
+
+def _pipeline_health_overlay(eng: Any) -> tuple[int, int]:
+    """Return (dead_letter_count, recent_failure_count) from StudioDb."""
+    dead = 0
+    failures = 0
+    with contextlib.suppress(Exception):
+        sdb = get_studio_db(eng)
+        if sdb is not None:
+            dead = len(sdb.get_dead_letter())
+            recent = sdb.get_runs(None, limit=20)
+            failures = sum(
+                1 for r in recent if r.get("status", "") in ("failed", "failure", "error")
+            )
+    return dead, failures
+
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 

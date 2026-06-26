@@ -77,9 +77,8 @@ def _verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(dk, dk_stored)
 
 
-def has_password() -> bool:
-    """Return True if a password is configured (hash file exists with content)."""
-    return _HASH_FILE.exists() and bool(_HASH_FILE.read_text().strip())
+def _generate_password() -> str:
+    return "-".join(secrets.token_urlsafe(8) for _ in range(3))
 
 
 def has_password() -> bool:
@@ -114,21 +113,6 @@ def setup_password() -> None:
     _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
     _HASH_FILE.write_text(_hash_password(password))
     _HASH_FILE.chmod(0o600)
-
-
-def reset_password() -> None:
-    """Unlink the password hash file, clearing all authentication."""
-    _HASH_FILE.unlink(missing_ok=True)
-
-
-def setup_password() -> None:
-    """Ensure hash file directory exists. Call once at app startup.
-
-    On first boot with no password set, the /setup route handles password creation.
-    """
-    if _HASH_FILE.exists() and _HASH_FILE.read_text().strip():
-        return
-    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 def is_authenticated(request: HTTPConnection) -> bool:

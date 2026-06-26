@@ -215,56 +215,6 @@ def create_app() -> FastAPI:
 
     _register_exception_handlers(app)
 
-    @app.exception_handler(Exception)
-    async def _handle_server_error(request: Request, exc: Exception) -> Any:
-        import html as _html
-        import traceback
-
-        from fastapi.responses import HTMLResponse
-
-        tb = traceback.format_exc()
-        req_id = getattr(request.state, "request_id", "")
-        logger.error(
-            "unhandled exception",
-            path=request.url.path,
-            method=request.method,
-            request_id=req_id,
-            error=str(exc),
-            traceback=tb,
-        )
-        safe_path = _html.escape(request.url.path)
-        safe_msg = _html.escape(str(exc))
-        safe_tb = _html.escape(tb)
-        body = (
-            "<!doctype html><html><head><title>500 — DEX Studio</title>"
-            "<style>body{font-family:monospace;padding:40px;background:#0f1117;color:#e2e8f0}"
-            "h2{color:#f87171}pre{background:#1e2533;padding:16px;border-radius:6px;"
-            "overflow:auto;font-size:12px;color:#94a3b8}a{color:#60a5fa}</style></head><body>"
-            f"<h2>500 — Internal Server Error</h2>"
-            f"<p><b>{safe_path}</b> — An unexpected error occurred."
-            " Check application logs for details.</p>"
-            "<p><a href='/system/logs'>View application logs</a>"
-            " &nbsp;·&nbsp; <a href='javascript:history.back()'>Go back</a></p>"
-            "</body></html>"
-        )
-        return HTMLResponse(body, status_code=500)
-
-
-def create_app() -> FastAPI:
-    """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import api, data, intelligence, root, secops, system
-
-    app = FastAPI(
-        title="DEX Studio",
-        description="DataEngineX control plane",
-        version=__version__,
-        docs_url="/api/docs",
-        redoc_url=None,
-        lifespan=_lifespan,
-    )
-
-    _register_exception_handlers(app)
-
     # ── Session middleware ────────────────────────────────────────────────────
     secret = os.environ.get("DEX_STUDIO_SESSION_SECRET") or _session_secret()
     https_only = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")

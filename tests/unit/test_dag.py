@@ -8,8 +8,6 @@ from dataenginex.data.pipeline.dag import (
     topological_order,
 )
 
-from dex_studio.dag import build_dag, downstream_of, root_pipelines, topological_order
-
 
 def _cfg(**kwargs: list[str]):
     """Minimal pipeline config stub with depends_on."""

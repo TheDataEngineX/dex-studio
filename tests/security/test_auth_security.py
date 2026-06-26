@@ -73,12 +73,6 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generato
     hash_file = tmp_path / "auth.hash"
     hash_file.write_text(_hash_password(_API_KEY))
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
-    """Client with API key set but no session — every request is unauthenticated."""
-    _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -91,12 +85,6 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 
 @pytest.fixture
 def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
-    """Client with a valid session (logged in via POST /login)."""
-    _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     _reset_rate_limiter()
     hash_file = tmp_path / "auth.hash"
@@ -209,9 +197,6 @@ class TestBruteForce:
         assert "/login" in resp.headers.get("location", "")
 
     def test_wrong_password_three_times_stays_at_login(self, unauthed_client: TestClient) -> None:
-    def test_wrong_password_three_times_stays_at_login(
-        self, unauthed_client: TestClient
-    ) -> None:
         for _ in range(3):
             resp = unauthed_client.post("/login", data={"passphrase": "bad-attempt"})
             assert resp.status_code in (302, 303)
@@ -350,9 +335,6 @@ class TestCookieSecurity:
         return resp.headers.get("set-cookie", "")
 
     def test_session_cookie_is_set_after_login(self, unauthed_client: TestClient) -> None:
-    def test_session_cookie_is_set_after_login(
-        self, unauthed_client: TestClient
-    ) -> None:
         cookie = self._get_session_cookie(unauthed_client)
         assert cookie, "Set-Cookie header must be present after login"
 
@@ -414,7 +396,7 @@ class TestSQLInjection:
         "'; DROP TABLE users; --",
         "1 OR 1=1",
         '" OR ""="',
-        "\" OR \"\"=\"",
+        '" OR ""="',
         "1; SELECT * FROM information_schema.tables",
         "' UNION SELECT NULL, NULL --",
     ]
@@ -456,11 +438,6 @@ class TestXSSEscaping:
         hash_file = tmp_path / "auth.hash"
         hash_file.write_text(_hash_password(_API_KEY))
         monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text(_hash_password(_API_KEY))
-        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
         xss_name = "<script>alert(1)</script>"
@@ -480,20 +457,6 @@ class TestXSSEscaping:
             assert resp.status_code in (302, 303)
 
             # Fetch the pipelines page — the XSS name should be HTML-escaped.
-            resp = client.get("/data/pipelines")
-            assert resp.status_code == 200
-            # Jinja2 auto-escapes in HTML body context.
-            assert "&lt;script&gt;alert(1)&lt;/script&gt;" in resp.text, (
-                "XSS payload was not escaped by the template engine in HTML body"
-            )
-
-    def test_xss_source_name_escaped_in_catalog(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text(_hash_password(_API_KEY))
-        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-            # Fetch the pipelines page — the XSS name should not appear raw.
             resp = client.get("/data/pipelines")
             assert resp.status_code == 200
             # Jinja2 auto-escapes in HTML body context.
