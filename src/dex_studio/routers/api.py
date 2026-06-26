@@ -198,15 +198,12 @@ def api_pipelines(eng: ReadDep) -> list[PipelineOut]:
 
 @router.post("/pipelines/{name}/run", summary="Ad-hoc pipeline run")
 def api_pipeline_run(eng: WriteDep, name: str) -> dict[str, str]:
-    import contextlib
 
     try:
         eng.run_pipeline(name)
         return {"status": "success", "pipeline": name}
-    except Exception as exc:
-        with contextlib.suppress(Exception):
-            pass
-        return {"status": "error", "pipeline": name, "error": str(exc)}
+    except Exception:
+        return {"status": "error", "pipeline": name, "error": "An error occurred"}
 
 
 @router.post("/pipelines/{name}/backfill", summary="Trigger pipeline backfill")

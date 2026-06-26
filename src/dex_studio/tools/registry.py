@@ -119,6 +119,9 @@ class ToolRegistry:
                 safe = str(val).replace("'", "''")
                 sql = sql.replace(f"{{{param.name}}}", safe)
         # Fallback: replace any remaining {placeholders} with empty string
+        # Cap length before regex to prevent ReDoS on unbounded user-supplied input
+        if len(sql) > 65536:
+            raise ValueError("SQL template exceeds maximum allowed length")
         sql = re.sub(r"\{[^}]+\}", "", sql)
 
         try:

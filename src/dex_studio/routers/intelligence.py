@@ -1409,8 +1409,8 @@ async def native_call(request: Request, eng: JsonReadDep) -> Any:
         return JSONResponse(
             {"result": result, "tool": tool_name, "duration_ms": round(duration_ms, 1)}
         )
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "An error occurred executing the tool"}, status_code=500)
 
 
 @router.get("/context")

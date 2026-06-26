@@ -35,6 +35,12 @@ router = APIRouter()
 log = structlog.get_logger().bind(src="router.data")
 
 
+def _safe_pipeline_name(name: str) -> str:
+    """Sanitize pipeline_name for use in redirect URLs — strip path traversal chars."""
+    import re as _re
+    return _re.sub(r"[^A-Za-z0-9_\-]", "", name)[:128]
+
+
 def _fmt_dur_s(dur_s: float | None) -> str:
     if dur_s is None:
         return "—"
@@ -1896,7 +1902,7 @@ def add_quality_rule_route(
     if db is not None:
         db.add_quality_rule(pipeline_name, col_name, rule_type, config, on_failure)
     return RedirectResponse(
-        f"/data/pipelines/{pipeline_name}?tab=quality",
+        f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
         status_code=303,
     )
 
@@ -1929,7 +1935,7 @@ def delete_quality_rule_route(
     if db is not None:
         db.delete_quality_rule(rule_id)
     return RedirectResponse(
-        f"/data/pipelines/{pipeline_name}?tab=quality",
+        f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
         status_code=303,
     )
 
@@ -1940,4 +1946,5 @@ def run_quality_checks(
     pipeline_name: str,
     _: WriteDep,
 ) -> RedirectResponse:
-    return RedirectResponse(f"/data/pipelines/{pipeline_name}?tab=quality", status_code=303)
+    safe = _safe_pipeline_name(pipeline_name)
+    return RedirectResponse(f"/data/pipelines/{safe}?tab=quality", status_code=303)

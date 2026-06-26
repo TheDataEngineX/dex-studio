@@ -885,7 +885,7 @@
         .then(function (rows) {
           if (!rows) return;
           rows.forEach(function (p) {
-            var el = document.querySelector('.pipe-item[data-name="' + p.name.replace(/"/g, '\\"') + '"]');
+            var el = document.querySelector('.pipe-item[data-name=' + JSON.stringify(p.name) + ']');
             if (!el) return;
             el.dataset.status = p.status;
             // Status pill

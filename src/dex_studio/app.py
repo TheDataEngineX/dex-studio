@@ -174,16 +174,14 @@ def _register_exception_handlers(app: FastAPI) -> None:
             traceback=tb,
         )
         safe_path = _html.escape(request.url.path)
-        safe_msg = _html.escape(str(exc))
-        safe_tb = _html.escape(tb)
         body = (
             "<!doctype html><html><head><title>500 — DEX Studio</title>"
             "<style>body{font-family:monospace;padding:40px;background:#0f1117;color:#e2e8f0}"
             "h2{color:#f87171}pre{background:#1e2533;padding:16px;border-radius:6px;"
             "overflow:auto;font-size:12px;color:#94a3b8}a{color:#60a5fa}</style></head><body>"
             f"<h2>500 — Internal Server Error</h2>"
-            f"<p><b>{safe_path}</b> — {safe_msg}</p>"
-            f"<pre>{safe_tb}</pre>"
+            f"<p><b>{safe_path}</b> — An unexpected error occurred."
+            " Check application logs for details.</p>"
             "<p><a href='/system/logs'>View application logs</a>"
             " &nbsp;·&nbsp; <a href='javascript:history.back()'>Go back</a></p>"
             "</body></html>"
