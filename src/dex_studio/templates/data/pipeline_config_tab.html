@@ -1,0 +1,165 @@
+{# Config tab — included inside pipeline_detail.html's Alpine scdType scope #}
+<form method="post" action="/data/pipelines/{{ pipeline_name }}/config?_csrf={{ csrf_token }}"
+      style="padding:16px 20px;display:flex;flex-direction:column;gap:0">
+
+  {# Sticky warning bar #}
+  <div style="background:color-mix(in oklch,var(--state-warn) 8%,transparent);
+              border:1px solid color-mix(in oklch,var(--state-warn) 20%,transparent);
+              border-radius:var(--r-2);padding:8px 12px;margin-bottom:16px;
+              font-size:11.5px;color:var(--state-warn);display:flex;align-items:center;gap:6px">
+    <i data-lucide="info" style="width:13px;height:13px;flex-shrink:0"></i>
+    Changes take effect on the next pipeline run.
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+    {# Left column #}
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      {# General #}
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">General</div>
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Pipeline name</label>
+          <input name="name" value="{{ pipeline_name }}" class="input" style="width:100%">
+        </div>
+        <div>
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Schedule</label>
+          <select name="schedule" class="input" style="width:100%">
+            {% for opt in [('manual', 'Manual only'), ('*/5 * * * *', 'Every 5 min'), ('*/15 * * * *', 'Every 15 min'),
+                            ('0 * * * *', 'Hourly'), ('0 6 * * *', 'Daily at 06:00')] %}
+            <option value="{{ opt[0] }}" {{ 'selected' if source_info.schedule == opt[0] }}>{{ opt[1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {# Source section #}
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Source</div>
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Connector</label>
+          <select name="source" class="input" style="width:100%">
+            {% for src_name, src_cfg in (all_sources or {}).items() %}
+            <option value="{{ src_name }}" {{ 'selected' if src_name == source_info.name }}>{{ src_name }}</option>
+            {% else %}
+            <option value="{{ source_info.name }}" selected>{{ source_info.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Fetch mode</label>
+          <select name="fetch_mode" class="input" style="width:100%">
+            <option value="incremental" {{ 'selected' if source_info.fetch_mode == 'incremental' }}>Incremental</option>
+            <option value="full" {{ 'selected' if source_info.fetch_mode == 'full' }}>Full load</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Watermark column</label>
+          <input name="watermark_col" value="{{ source_info.watermark_col | default('') }}" class="input" style="width:100%" placeholder="e.g. updated_at">
+          <div style="font-size:10.5px;color:var(--text-4);margin-top:3px">Used to track incremental progress</div>
+        </div>
+      </div>
+
+    </div>
+
+    {# Right column — Destination #}
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Destination</div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Target table</label>
+          <input name="target_table" value="{{ dest_info.table }}" class="input" style="width:100%">
+        </div>
+
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Data layer</label>
+          <select name="layer" class="input" style="width:100%">
+            {% for l in ['bronze', 'silver', 'gold'] %}
+            <option value="{{ l }}" {{ 'selected' if dest_info.layer == l }}>{{ l | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Write mode radio cards #}
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:6px">Write mode</label>
+          <div style="display:flex;flex-direction:column;gap:6px">
+
+            {% for mode_val, mode_label, mode_desc in [
+              (0, 'Append', 'New rows only — no deduplication'),
+              (1, 'SCD Type 1', 'Overwrite existing rows — no history'),
+              (2, 'SCD Type 2', 'Insert with effective dates — full history')
+            ] %}
+            <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;
+                          border-radius:var(--r-2);cursor:pointer;
+                          border:1px solid var(--shell-border);
+                          transition:border-color var(--d-fast),background var(--d-fast)"
+                   :style="scdType==={{ mode_val }} ? 'border-color:var(--domain-data);background:color-mix(in oklch,var(--domain-data) 6%,transparent)' : ''"
+                   @click="scdType==={{ mode_val }}">
+              <input type="radio" name="scd_type" value="{{ mode_val }}"
+                     {{ 'checked' if (dest_info.scd_type | int) == mode_val }}
+                     @change="scdType={{ mode_val }}"
+                     style="margin-top:2px;flex-shrink:0">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-2)">{{ mode_label }}</div>
+                <div style="font-size:10.5px;color:var(--text-4)">{{ mode_desc }}</div>
+              </div>
+            </label>
+            {% endfor %}
+
+          </div>
+        </div>
+
+        {# SCD Type 2 conditional fields #}
+        <div x-show="scdType===2" style="display:flex;flex-direction:column;gap:8px;
+                                          padding:10px;margin-top:4px;
+                                          background:rgba(245,158,11,.04);
+                                          border:1px solid rgba(245,158,11,.14);
+                                          border-radius:var(--r-2)">
+          <div style="font-size:10px;font-weight:700;color:#f59e0b;margin-bottom:2px">SCD Type 2 columns</div>
+          {% for field_name, field_label, field_val in [
+            ('pk_col', 'Primary key', dest_info.pk_col),
+            ('current_flag', 'Current flag', dest_info.current_flag),
+            ('effective_from', 'Effective from', dest_info.effective_from),
+            ('effective_to', 'Effective to', dest_info.effective_to),
+          ] %}
+          <div>
+            <label style="display:block;font-size:10.5px;color:var(--text-4);margin-bottom:3px">{{ field_label }}</label>
+            <input name="{{ field_name }}" value="{{ field_val | default('') }}" class="input"
+                   style="width:100%;font-family:var(--font-mono);font-size:12px">
+          </div>
+          {% endfor %}
+        </div>
+
+        <div style="margin-top:10px">
+          <label style="display:block;font-size:11.5px;color:var(--text-3);margin-bottom:4px">Partition by</label>
+          <input name="partition_by" class="input" style="width:100%;font-family:var(--font-mono);font-size:12px"
+                 placeholder="e.g. year, month">
+        </div>
+      </div>
+    </div>
+
+  </div>{# /grid #}
+
+  {# Sticky action bar #}
+  <div style="position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--shell-border);
+              padding:10px 0;margin-top:16px;display:flex;align-items:center;gap:8px">
+    <a href="/data/pipelines/{{ pipeline_name }}" class="btn ghost">Cancel</a>
+    <div style="flex:1"></div>
+    <button type="button" class="btn danger"
+            onclick="dexConfirm(document.getElementById('delete-pipeline-form'), 'Delete pipeline?', 'This will remove the pipeline configuration. Existing data is not deleted.')">
+      <i data-lucide="trash-2" style="width:12px;height:12px"></i> Delete
+    </button>
+    <button type="submit" class="btn primary">
+      <i data-lucide="save" style="width:12px;height:12px"></i> Save changes
+    </button>
+  </div>
+
+</form>
+
+{# Hidden delete form #}
+<form id="delete-pipeline-form" method="post"
+      action="/data/pipelines/{{ pipeline_name }}/delete?_csrf={{ csrf_token }}"
+      style="display:none"></form>

@@ -1,11 +1,14 @@
-"""DEX Studio auth — API-key gate using signed session cookies."""
+"""DEX Studio auth — password gate using signed session cookies."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import os
 import secrets
+import threading
+import time
 from pathlib import Path
 
 from fastapi import Request
@@ -13,7 +16,11 @@ from fastapi.responses import RedirectResponse
 from starlette.requests import HTTPConnection
 
 SESSION_COOKIE = "dex_session"
-_KEY_FILE = Path.home() / ".dex-studio" / "api.key"
+_DATA_DIR = Path(os.environ.get("DEX_STUDIO_DATA_DIR", "")) or Path.home() / ".dex-studio"
+_HASH_FILE = _DATA_DIR / "auth.hash"
+
+_PBKDF2_ITERS = 600_000
+MIN_PASSWORD_LEN = 8
 
 
 class RequiresLogin(Exception):
@@ -24,67 +31,121 @@ class RequiresEngine(Exception):
     """Raised by engine_dep — app exception handler redirects to /onboarding."""
 
 
-def _generate_and_save_key() -> str:
-    """Generate a new API key, persist it, and print it to stdout once."""
-    key = secrets.token_urlsafe(32)
-    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _KEY_FILE.write_text(key)
-    _KEY_FILE.chmod(0o600)
-    print(  # noqa: T201 — intentional: must be visible on first boot
-        "\n"
-        "┌─────────────────────────────────────────────────────────┐\n"
-        "│  DEX Studio — API key generated (shown once)            │\n"
-        f"│  Key: {key:<51} │\n"
-        "│  Saved to: ~/.dex-studio/api.key                        │\n"
-        "│  Set DEX_STUDIO_API_KEY env var to override.            │\n"
-        "└─────────────────────────────────────────────────────────┘\n",
-        flush=True,
-    )
-    return key
+class _RateLimiter:
+    """Per-IP rate limiter: 5 failures → locked out for 5 minutes."""
+
+    _WINDOW_S = 300.0
+    _MAX_FAILS = 5
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._failures: dict[str, list[float]] = {}
+
+    def _clean(self, ip: str, now: float) -> None:
+        self._failures[ip] = [t for t in self._failures.get(ip, []) if now - t < self._WINDOW_S]
+
+    def is_blocked(self, ip: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            self._clean(ip, now)
+            return len(self._failures.get(ip, [])) >= self._MAX_FAILS
+
+    def record_failure(self, ip: str) -> None:
+        with self._lock:
+            self._failures.setdefault(ip, []).append(time.monotonic())
+
+    def clear(self, ip: str) -> None:
+        with self._lock:
+            self._failures.pop(ip, None)
 
 
-def _expected_key() -> str:
-    """Return the configured API key, auto-generating one on first run.
+_limiter = _RateLimiter()
 
-    Auth is always enabled — there is no auth-disabled mode.
-    Override via DEX_STUDIO_API_KEY env var (e.g. for Docker / CI).
+
+def _hash_password(password: str) -> str:
+    """Return base64-encoded PBKDF2-SHA256 hash with embedded 32-byte salt."""
+    salt = secrets.token_bytes(32)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)  # noqa: S324
+    return base64.b64encode(salt + dk).decode()
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """Constant-time verify password against a stored PBKDF2 hash."""
+    raw = base64.b64decode(stored.encode())
+    salt, dk_stored = raw[:32], raw[32:]
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERS)  # noqa: S324
+    return hmac.compare_digest(dk, dk_stored)
+
+
+def has_password() -> bool:
+    """Return True if a password is configured (hash file exists with content)."""
+    return _HASH_FILE.exists() and bool(_HASH_FILE.read_text().strip())
+
+
+def set_password(password: str) -> None:
+    """Hash and persist a user-chosen password to the hash file."""
+    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _HASH_FILE.write_text(_hash_password(password))
+    _HASH_FILE.chmod(0o600)
+
+
+def reset_password() -> None:
+    """Unlink the password hash file, clearing all authentication."""
+    _HASH_FILE.unlink(missing_ok=True)
+
+
+def setup_password() -> None:
+    """Ensure hash file directory exists. Call once at app startup.
+
+    On first boot with no password set, the /setup route handles password creation.
     """
-    env = os.environ.get("DEX_STUDIO_API_KEY", "").strip()
-    if env:
-        return env
-    if _KEY_FILE.exists():
-        key = _KEY_FILE.read_text().strip()
-        if key:
-            return key
-    return _generate_and_save_key()
-
-
-def _make_token(api_key: str) -> str:
-    return hashlib.sha256(f"dex-session:{api_key}".encode()).hexdigest()
+    if _HASH_FILE.exists() and _HASH_FILE.read_text().strip():
+        return
+    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 def is_authenticated(request: HTTPConnection) -> bool:
-    """Return True if the session carries a valid token."""
-    key = _expected_key()
-    token = request.session.get("token", "")
-    return hmac.compare_digest(token, _make_token(key))
+    return request.session.get("authenticated") is True
 
 
 def auth_required(request: Request) -> RedirectResponse | None:
-    """Return a redirect to /login if session is invalid, else None. (Legacy — prefer auth_dep.)"""
+    if not has_password():
+        return RedirectResponse(url="/setup", status_code=303)
     if is_authenticated(request):
         return None
     return RedirectResponse(url="/login", status_code=303)
 
 
-def validate_and_login(request: Request, submitted_key: str) -> bool:
-    """Validate the submitted API key and set the session token if correct."""
-    key = _expected_key()
-    if submitted_key.strip() == key:
-        request.session["token"] = _make_token(key)
-        return True
-    return False
+def validate_and_login(request: Request, submitted: str) -> bool:
+    """Verify submitted password against stored PBKDF2 hash; set session on success."""
+    submitted = submitted.strip()
+    ok = False
+    if _HASH_FILE.exists():
+        stored = _HASH_FILE.read_text().strip()
+        ok = bool(stored) and _verify_password(submitted, stored)
+    if ok:
+        request.session["authenticated"] = True
+    return ok
 
 
 def logout(request: Request) -> None:
     request.session.clear()
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def rate_limit_blocked(ip: str) -> bool:
+    return _limiter.is_blocked(ip)
+
+
+def record_failed_login(ip: str) -> None:
+    _limiter.record_failure(ip)
+
+
+def clear_rate_limit(ip: str) -> None:
+    _limiter.clear(ip)

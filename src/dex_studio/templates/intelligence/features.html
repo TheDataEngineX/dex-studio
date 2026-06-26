@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import empty_state, metric_card, status_badge %}
+
+{% block title %}Features — DEX Studio{% endblock %}
+{% block page_title %}Feature Store{% endblock %}
+{% block page_sub %}
+  {% if feature_groups %}
+    <p class="page-sub">{{ feature_groups | length }} group{{ 's' if feature_groups | length != 1 }} · training-serving consistency · intelligence domain</p>
+  {% else %}
+    <p class="page-sub">training-serving consistency · computed feature groups · powered by gold layer pipelines</p>
+  {% endif %}
+{% endblock %}
+{% block page_actions %}
+<a href="/data/pipelines" class="btn sm ghost">
+  <i data-lucide="git-branch" style="width:12px;height:12px"></i> Browse pipelines
+</a>
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Metric strip ── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Feature groups", feature_groups | length, "layers", "violet", "from gold layer") }}
+  {{ metric_card("Total features", total_features if total_features else "—", "list", "violet", "across all groups") }}
+  {{ metric_card("Total rows", total_rows if total_rows else "—", "database", "orange", "across all groups") }}
+  {% if consistency %}
+  {% set ok_count = consistency | selectattr('status', 'equalto', 'ok') | list | length %}
+  {% set total_ck = consistency | length %}
+  {{ metric_card("Consistency", ok_count ~ "/" ~ total_ck, "shield-check", "violet", "models checked") }}
+  {% endif %}
+</div>
+
+{# ── Two-column layout ── #}
+{% if feature_groups or consistency %}
+<div class="grid" style="grid-template-columns:{% if consistency %}1fr 1fr{% else %}1fr{% endif %};gap:16px;align-items:start">
+
+{# ── Left: Feature groups table ── #}
+{% if feature_groups %}
+<div>
+  <div class="section-h">
+    <h2>Feature groups</h2>
+    <div class="input-icon" style="width:180px">
+      <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+      <input class="input dex-table-filter" placeholder="Filter groups…"
+             data-table="features-tbl" style="font-size:12px;height:26px">
+    </div>
+  </div>
+  <div class="card bare" style="overflow:hidden">
+    <table class="dex-table" id="features-tbl" style="width:100%">
+      <thead>
+        <tr>
+          <th class="sortable">Name</th>
+          <th class="sortable num">Columns</th>
+          <th class="sortable num">Rows</th>
+          <th>Preview</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in feature_groups %}
+        <tr>
+          <td class="mono" style="font-size:12px;font-weight:600;color:var(--accent-11)">{{ g.name }}</td>
+          <td class="mono num" style="font-size:12px">{{ g.columns | length if g.columns is defined and g.columns else 0 }}</td>
+          <td class="mono num" style="font-size:12px">{{ g.row_count | default('—') }}</td>
+          <td style="font-size:11px;color:var(--text-3);max-width:220px">
+            {% if g.columns is defined and g.columns %}
+              <span style="word-break:break-all">{{ g.columns[:5] | join(', ') }}{% if g.columns | length > 5 %} <span class="muted">+{{ g.columns | length - 5 }} more</span>{% endif %}</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Right: Model feature consistency ── #}
+{% if consistency %}
+<div>
+  <div class="section-h">
+    <h2>Model feature consistency</h2>
+    {% set missing_ct = consistency | selectattr('status', 'equalto', 'warn') | list | length %}
+    {% if missing_ct > 0 %}
+    <span class="pill error" style="font-size:10px">{{ missing_ct }} gap{{ 's' if missing_ct != 1 }}</span>
+    {% else %}
+    <span class="pill success" style="font-size:10px">all matched</span>
+    {% endif %}
+  </div>
+  <div class="card bare" style="overflow:hidden">
+    <table class="dex-table" style="width:100%">
+      <thead>
+        <tr>
+          <th class="sortable">Model</th>
+          <th class="sortable num">Required</th>
+          <th class="sortable num">Missing</th>
+          <th style="width:80px">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in consistency %}
+        <tr>
+          <td class="mono" style="font-size:12px;font-weight:500">{{ c.model }}</td>
+          <td class="mono num" style="font-size:12px">{{ c.required | length }}</td>
+          <td class="mono num" style="font-size:12px">
+            {% if c.missing %}
+              <span style="color:var(--red-11)">{{ c.missing | length }}</span>
+            {% else %}
+              <span class="muted">0</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.status == 'ok' %}
+              {{ status_badge("ok") }}
+            {% else %}
+              <span class="pill error" style="font-size:10px">{{ c.missing | length }} missing</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+</div>{# /grid #}
+
+{% else %}
+{{ empty_state("layers", "No feature groups yet", "Feature groups are built from pipeline outputs. Run a pipeline to ingest data first.") }}
+{% endif %}
+
+</div>
+{% endblock %}

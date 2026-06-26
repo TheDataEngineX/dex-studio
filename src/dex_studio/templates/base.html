@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}DEX Studio{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <!-- Fonts: system stack — no external font requests -->
   <link rel="stylesheet" href="/static/studio.css?v={{ css_v }}">
 
   <!-- Theme init — runs before body to prevent flash -->
@@ -20,7 +21,6 @@
   <script src="/static/vendor/htmx.min.js"></script>
   <script src="/static/vendor/htmx-sse.js"></script>
 
-  <!-- CSRF: token injected server-side, read by HTMX config below -->
   {% if csrf_token is defined %}
   <meta name="csrf-token" content="{{ csrf_token }}">
   {% endif %}
@@ -30,146 +30,95 @@
 <body>
 <script>
   (function () {
-    // Send CSRF token as a header on every HTMX request.
     var meta = document.querySelector('meta[name="csrf-token"]');
     if (meta) {
-      document.body.setAttribute(
-        'hx-headers',
-        JSON.stringify({'X-CSRF-Token': meta.getAttribute('content')})
-      );
+      document.body.setAttribute('hx-headers', JSON.stringify({'X-CSRF-Token': meta.getAttribute('content')}));
     }
-    // For native form POSTs (browsers cannot set custom headers), append _csrf
-    // as a query param on submit so verify_csrf() can find it server-side.
     document.addEventListener('DOMContentLoaded', function () {
       var token = meta ? meta.getAttribute('content') : '';
       if (!token) return;
-      document.querySelectorAll('form[method="post"],form[method="POST"]')
-        .forEach(function (form) {
-          form.addEventListener('submit', function () {
-            var action = form.action || '';
-            if (!action.includes('_csrf=')) {
-              form.action = action + (action.includes('?') ? '&' : '?') + '_csrf=' + encodeURIComponent(token);
-            }
-          });
+      document.querySelectorAll('form[method="post"],form[method="POST"]').forEach(function (form) {
+        form.addEventListener('submit', function () {
+          var action = form.action || '';
+          if (!action.includes('_csrf=')) {
+            form.action = action + (action.includes('?') ? '&' : '?') + '_csrf=' + encodeURIComponent(token);
+          }
         });
+      });
     });
   })();
 </script>
 
-{# ── Breadcrumb derivation ──────────────────────────────────────────────── #}
-{% set ns = namespace(crumbs=[]) %}
-{% if current_path == '/' %}
-  {% set ns.crumbs = [['Home', '/']] %}
-{# INGEST #}
-{% elif current_path.startswith('/data/sources') %}
-  {% set ns.crumbs = [['Ingest', none], ['Sources', '/data/sources']] %}
-{% elif current_path.startswith('/data/streaming') %}
-  {% set ns.crumbs = [['Ingest', none], ['Streaming', '/data/streaming']] %}
-{# LAKEHOUSE #}
-{% elif current_path.startswith('/data/catalog') %}
-  {% set ns.crumbs = [['Lakehouse', none], ['Catalog', '/data/catalog']] %}
-{% elif current_path.startswith('/data/lineage') %}
-  {% set ns.crumbs = [['Lakehouse', none], ['Lineage', '/data/lineage']] %}
-{% elif current_path.startswith('/data/quality') %}
-  {% set ns.crumbs = [['Lakehouse', none], ['Quality', '/data/quality']] %}
-{% elif current_path.startswith('/data/lakehouse') %}
-  {% set ns.crumbs = [['Lakehouse', none], ['Browse', '/data/lakehouse']] %}
-{# COMPUTE #}
-{% elif current_path.startswith('/data/pipelines') %}
-  {% set ns.crumbs = [['Compute', none], ['Pipelines', '/data/pipelines']] %}
-{% elif current_path.startswith('/data/transforms') %}
-  {% set ns.crumbs = [['Compute', none], ['Transforms', '/data/transforms']] %}
-{% elif current_path.startswith('/data/sql') %}
-  {% set ns.crumbs = [['Compute', none], ['SQL Console', '/data/sql']] %}
-{# WAREHOUSE #}
-{% elif current_path.startswith('/data/warehouse') %}
-  {% set ns.crumbs = [['Warehouse', '/data/warehouse']] %}
-{# ML #}
-{% elif current_path.startswith('/ml/experiments') %}
-  {% set ns.crumbs = [['ML', none], ['Experiments', '/ml/experiments']] %}
-{% elif current_path.startswith('/ml/models') %}
-  {% set ns.crumbs = [['ML', none], ['Models', '/ml/models']] %}
-{% elif current_path.startswith('/ml/features') %}
-  {% set ns.crumbs = [['ML', none], ['Features', '/ml/features']] %}
-{% elif current_path.startswith('/ml/predictions') %}
-  {% set ns.crumbs = [['ML', none], ['Predictions', '/ml/predictions']] %}
-{# AI #}
-{% elif current_path.startswith('/ai/playground') %}
-  {% set ns.crumbs = [['AI', none], ['Playground', '/ai/playground']] %}
-{% elif current_path.startswith('/ai/agents') %}
-  {% set ns.crumbs = [['AI', none], ['Agents', '/ai/agents']] %}
-{% elif current_path.startswith('/ai/workflows') %}
-  {% set ns.crumbs = [['AI', none], ['Workflows', '/ai/workflows']] %}
-{% elif current_path.startswith('/ai/memory') %}
-  {% set ns.crumbs = [['AI', none], ['Memory', '/ai/memory']] %}
-{# SECOPS #}
-{% elif current_path.startswith('/secops/audit') %}
-  {% set ns.crumbs = [['SecOps', '/secops'], ['Audit log', '/secops/audit']] %}
-{% elif current_path.startswith('/secops/alerts') %}
-  {% set ns.crumbs = [['SecOps', '/secops'], ['Alerts', '/secops/alerts']] %}
-{% elif current_path.startswith('/secops') %}
-  {% set ns.crumbs = [['SecOps', '/secops']] %}
-{# SYSTEM #}
-{% elif current_path.startswith('/system/runs') %}
-  {% set ns.crumbs = [['System', none], ['Runs', '/system/runs']] %}
-{% elif current_path.startswith('/system/costs') %}
-  {% set ns.crumbs = [['System', none], ['Costs', '/system/costs']] %}
-{% elif current_path.startswith('/system/logs') %}
-  {% set ns.crumbs = [['System', none], ['Logs', '/system/logs']] %}
-{% elif current_path.startswith('/system/status') or current_path.startswith('/system/components') %}
-  {% set ns.crumbs = [['System', none], ['Components', '/system/status']] %}
-{% else %}
-  {% set ns.crumbs = [['Home', '/']] %}
-{% endif %}
+<div class="two-rail-shell" id="shell" x-data="dexApp()">
 
-<div class="app" id="shell" data-sidebar="labeled" x-data="dexApp()">
+  {# ── Icon rail (44px) ──────────────────────────────────────────────── #}
+  <nav class="rail" aria-label="Domain navigation">
 
-  {# ── Sidebar ────────────────────────────────────────────────────────────── #}
-  <aside class="side" :class="{'side--open': Alpine.store('shell').sidebarOpen}" aria-label="Main navigation">
+    {# Logo — links to hub #}
+    <a href="/" class="rail-logo" style="text-decoration:none" data-tip="DEX Studio">D</a>
 
-    {# Logo #}
-    <a href="/" class="logo-row" style="text-decoration:none;color:inherit">
-      <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true" style="flex-shrink:0;display:block">
-        <rect x="2"  y="18" width="18" height="6" rx="1.6" fill="var(--layer-bronze)" />
-        <rect x="4"  y="11" width="18" height="6" rx="1.6" fill="var(--layer-silver)" />
-        <rect x="6"  y="4"  width="18" height="6" rx="1.6" fill="var(--accent-9)" />
-        <rect x="20" y="11" width="2"  height="6" fill="var(--bg-elev)" opacity="0.18" />
-      </svg>
-      <span class="brandname">DEX <span style="color:var(--text-3);font-weight:400">Studio</span></span>
-      <span class="ver" style="font-size:9.5px;color:var(--text-4);letter-spacing:.06em;text-transform:uppercase;margin-left:auto;flex-shrink:0">v0.5</span>
+    {# Hub icon (always visible above separator) #}
+    <a href="/" class="rail-icon {{ 'active' if current_path == '/' else '' }}"
+       style="--rail-icon-color: var(--domain-hub)"
+       data-tip="Hub">
+      <i data-lucide="home" style="width:16px;height:16px"></i>
     </a>
 
-    {# Project switcher #}
-    <div style="padding:0 8px 4px;flex-shrink:0">
+    <div class="rail-sep"></div>
+
+    {# Domain icons #}
+    {% for dom in nav_rail %}
+    <a href="{{ dom.href }}"
+       class="rail-icon {{ 'active' if dom.active else '' }}"
+       style="--rail-icon-color: {{ dom.color }}"
+       data-tip="{{ dom.label }}">
+      <i data-lucide="{{ dom.icon }}" style="width:16px;height:16px"></i>
+    </a>
+    {% endfor %}
+
+    {# Footer icons #}
+    <div class="rail-foot">
+      <a href="/system/status" class="rail-icon" data-tip="System health">
+        <i data-lucide="heart-pulse" style="width:15px;height:15px"></i>
+      </a>
+      <a href="/logout" class="rail-icon" data-tip="Sign out">
+        <i data-lucide="log-out" style="width:15px;height:15px"></i>
+      </a>
+    </div>
+
+  </nav>
+
+  {# ── Page panel (156px) ─────────────────────────────────────────────── #}
+  <aside class="page-panel" style="--domain-color: {{ nav_domain_color }}" aria-label="Page navigation">
+
+    {# Project name + switcher at top #}
+    <div style="padding:8px 8px 6px;flex-shrink:0;border-bottom:1px solid var(--shell-border)">
       {% if all_projects and all_projects | length > 1 %}
       <div x-data="{open:false}">
-        <button @click="open=!open" class="project" style="width:100%;cursor:pointer;border:none;text-align:left"
-                :style="open ? 'background:var(--accent-3);border-color:var(--accent-6)' : ''">
-          <span class="glyph" style="width:24px;height:24px;border-radius:6px;background:var(--accent-3);color:var(--accent-11);border-color:var(--accent-4);flex-shrink:0">
-            <i data-lucide="box" style="width:13px;height:13px"></i>
-          </span>
-          <div style="flex:1;min-width:0">
-            <div class="name">{{ project_name }}</div>
-            <div class="env">local · {{ current_env | default('main') }}</div>
-          </div>
-          <i data-lucide="chevrons-up-down" class="chev" style="width:11px;height:11px;color:var(--text-4)"></i>
+        <button @click="open=!open"
+                style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;
+                       cursor:pointer;padding:4px 4px;border-radius:var(--r-2);
+                       transition:background var(--d-fast)"
+                onmouseenter="this.style.background='var(--bg-hover)'"
+                onmouseleave="this.style.background='none'">
+          <span style="font-size:11.5px;font-weight:600;color:var(--text-2);flex:1;text-align:left;
+                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ project_name }}</span>
+          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--text-4);flex-shrink:0"></i>
         </button>
         <div x-show="open" x-cloak @click.outside="open=false"
-             style="position:absolute;left:8px;right:8px;z-index:9000;border-radius:var(--r-3);
-                    overflow:hidden;box-shadow:var(--shadow-xl);border:1px solid var(--border);
-                    background:var(--bg-elev);margin-top:2px">
+             style="position:absolute;left:52px;z-index:9000;min-width:180px;
+                    border-radius:var(--r-3);overflow:hidden;box-shadow:var(--shadow-xl);
+                    border:1px solid var(--shell-border);background:var(--bg-elev);margin-top:2px">
           {% for p in all_projects %}
-          <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--border)">
-            <form method="post" action="/projects/switch" @submit="open=false" style="flex:1;min-width:0">
-              <input type="hidden" name="config_path" value="{{ p.config_path }}">
-              <button type="submit"
-                      class="proj-switch-btn {{ 'active' if p.config_path == current_config else '' }}">
-                <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
-                   style="width:12px;height:12px;flex-shrink:0"></i>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
-              </button>
-            </form>
-          </div>
+          <form method="post" action="/projects/switch" @submit="open=false">
+            <input type="hidden" name="config_path" value="{{ p.config_path }}">
+            <button type="submit" class="proj-switch-btn {{ 'active' if p.config_path == current_config else '' }}"
+                    style="width:100%">
+              <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
+                 style="width:12px;height:12px;flex-shrink:0"></i>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+            </button>
+          </form>
           {% endfor %}
           <a href="/onboarding" @click="open=false" class="proj-new-link">
             <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
@@ -177,189 +126,126 @@
         </div>
       </div>
       {% else %}
-      <div class="project">
-        <span class="glyph" style="width:24px;height:24px;border-radius:6px;background:var(--accent-3);color:var(--accent-11);border-color:var(--accent-4);flex-shrink:0">
-          <i data-lucide="box" style="width:13px;height:13px"></i>
-        </span>
-        <div style="flex:1;min-width:0">
-          <div class="name">{{ project_name }}</div>
-          <div class="env">local · {{ current_env | default('main') }}</div>
-        </div>
-        <a href="/onboarding" style="color:var(--text-4)" data-tip="Switch project">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 4px">
+        <span style="font-size:11.5px;font-weight:600;color:var(--text-2);
+                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ project_name }}</span>
+        <a href="/onboarding" style="color:var(--text-4);display:flex;align-items:center">
           <i data-lucide="chevrons-up-down" style="width:11px;height:11px"></i>
         </a>
       </div>
       {% endif %}
     </div>
 
-    {# Nav #}
-    <nav class="nav">
+    {# Domain name + colored dot #}
+    {% if nav_domain_label and nav_domain_label != 'DEX Studio' %}
+    <div class="panel-domain-name">
+      <span class="panel-domain-dot"></span>
+      {{ nav_domain_label }}
+    </div>
+    {% endif %}
 
-      {# ── Home ───────────────────────────────────────────────────────── #}
-      <a href="/" class="nav-item {{ 'active' if current_path == '/' else '' }}" style="text-decoration:none;margin:0 4px 2px">
-        <i data-lucide="home" class="icon" style="width:15px;height:15px"></i>
-        <span class="label">Home</span>
+    {# Page groups (Monitor · Explore · Build) #}
+    {% for grp in nav_page_groups %}
+    <div class="panel-group-label">{{ grp.label }}</div>
+    {% for item in grp['items'] %}
+    <a href="{{ item.href }}"
+       class="panel-item {{ 'active' if item.active else '' }}"
+       style="text-decoration:none">
+      <i data-lucide="{{ item.icon }}" style="width:13px;height:13px;flex-shrink:0"></i>
+      <span>{{ item.label }}</span>
+    </a>
+    {% endfor %}
+    {% endfor %}
+
+    {# Fallback: show the existing nav for the Hub (no domain selected) #}
+    {% if not nav_page_groups %}
+    <div style="padding:8px 0">
+      {% for group in nav_groups %}
+      {% if group.label %}
+      <div class="panel-group-label">{{ group.label }}</div>
+      {% endif %}
+      {% for item in group['items'] %}
+      {% set is_active = (current_path == item.href) if item.get('exact') else
+                         (current_path == item.href or (item.href != '/' and current_path.startswith(item.href))) %}
+      <a href="{{ item.href }}"
+         class="panel-item {{ 'active' if is_active else '' }}"
+         style="text-decoration:none">
+        <i data-lucide="{{ item.icon }}" style="width:13px;height:13px;flex-shrink:0"></i>
+        <span>{{ item.label }}</span>
       </a>
+      {% endfor %}
+      {% endfor %}
+    </div>
+    {% endif %}
 
-      {# ── Ingest ──────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">Ingest</div>
-        {% for label, href, icon in [
-          ('Sources',   '/data/sources',   'link'),
-          ('Streaming', '/data/streaming', 'radio'),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-        </a>
-        {% endfor %}
+    {# Engine + system metrics at foot #}
+    <div style="margin-top:auto;border-top:1px solid var(--shell-border);flex-shrink:0">
+      {# Engine status row #}
+      <div style="padding:6px 8px;display:flex;align-items:center;gap:6px">
+        {% if engine_ready %}
+          {% set _hs = health_status | default('ok') %}
+          {% if _hs in ('ok', 'healthy') %}
+            <span class="sdot ok"></span>
+            <span style="font-size:10.5px;color:var(--text-4);flex:1">Engine ready</span>
+          {% elif _hs == 'degraded' %}
+            <span class="sdot warn"></span>
+            <span style="font-size:10.5px;color:var(--state-warn);flex:1">Degraded</span>
+          {% else %}
+            <span class="sdot error"></span>
+            <span style="font-size:10.5px;color:var(--state-error);flex:1">Engine error</span>
+          {% endif %}
+        {% else %}
+          {% if engine_offline %}
+          <span class="sdot error"></span>
+          <span style="font-size:10.5px;color:var(--state-error);flex:1">Offline</span>
+          {% else %}
+          <span class="sdot idle"></span>
+          <span style="font-size:10.5px;color:var(--text-4);flex:1">No project</span>
+          {% endif %}
+        {% endif %}
       </div>
-
-      {# ── Lakehouse ───────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">Lakehouse</div>
-        {% for label, href, icon, badge in [
-          ('Catalog', '/data/catalog',  'table',         table_count | default('')),
-          ('Lineage', '/data/lineage',  'share-2',       ''),
-          ('Quality', '/data/quality',  'check-circle',  ''),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-          {% if badge %}<span class="badge">{{ badge }}</span>{% endif %}
-        </a>
-        {% endfor %}
+      {# CPU / MEM live metrics #}
+      <div id="sys-metrics-foot" style="padding:4px 8px 8px;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:9.5px;color:var(--text-4);width:28px;flex-shrink:0">CPU</span>
+          <div style="flex:1;height:3px;background:var(--border);border-radius:999px;overflow:hidden">
+            <div id="cpu-bar" style="height:100%;width:0%;background:var(--accent-9);border-radius:999px;transition:width .5s ease"></div>
+          </div>
+          <span id="cpu-pct" style="font-size:9.5px;color:var(--text-4);width:28px;text-align:right">—</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:9.5px;color:var(--text-4);width:28px;flex-shrink:0">MEM</span>
+          <div style="flex:1;height:3px;background:var(--border);border-radius:999px;overflow:hidden">
+            <div id="mem-bar" style="height:100%;width:0%;background:var(--green-9);border-radius:999px;transition:width .5s ease"></div>
+          </div>
+          <span id="mem-pct" style="font-size:9.5px;color:var(--text-4);width:28px;text-align:right">—</span>
+        </div>
       </div>
-
-      {# ── Compute ─────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">Compute</div>
-        {% for label, href, icon, badge in [
-          ('Pipelines',  '/data/pipelines',  'workflow', pipeline_count | default('')),
-          ('Transforms', '/data/transforms', 'code',     ''),
-          ('SQL',        '/data/sql',        'hash',     ''),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-          {% if badge %}<span class="badge">{{ badge }}</span>{% endif %}
-        </a>
-        {% endfor %}
-      </div>
-
-      {# ── Warehouse ───────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">Warehouse</div>
-        <a href="/data/warehouse" class="nav-item {{ 'active' if current_path.startswith('/data/warehouse') else '' }}" style="text-decoration:none">
-          <i data-lucide="database" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">BI Tables</span>
-        </a>
-      </div>
-
-      {# ── ML ──────────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">ML</div>
-        {% for label, href, icon in [
-          ('Experiments', '/ml/experiments', 'flask-conical'),
-          ('Models',      '/ml/models',      'box'),
-          ('Features',    '/ml/features',    'layers'),
-          ('Predictions', '/ml/predictions', 'zap'),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-        </a>
-        {% endfor %}
-      </div>
-
-      {# ── AI ──────────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">AI</div>
-        {% for label, href, icon in [
-          ('Playground', '/ai/playground', 'message-square'),
-          ('Agents',     '/ai/agents',     'bot'),
-          ('Workflows',  '/ai/workflows',  'git-branch'),
-          ('Memory',     '/ai/memory',     'brain'),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-          {% if label == 'Playground' %}<span class="badge" style="background:color-mix(in oklch,var(--green-9) 18%,transparent);color:var(--green-9)">live</span>{% endif %}
-          {% if label == 'Agents' and agent_count is defined and agent_count %}<span class="badge">{{ agent_count }}</span>{% endif %}
-        </a>
-        {% endfor %}
-      </div>
-
-      {# ── SecOps ──────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">SecOps</div>
-        {% for label, href, icon in [
-          ('Privacy',   '/secops',         'shield-check'),
-          ('Audit log', '/secops/audit',   'file-text'),
-          ('Alerts',    '/secops/alerts',  'bell'),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-        </a>
-        {% endfor %}
-      </div>
-
-      {# ── System ──────────────────────────────────────────────────────── #}
-      <div class="nav-group">
-        <div class="cap">System</div>
-        {% for label, href, icon in [
-          ('Runs',       '/system/runs',   'list'),
-          ('Costs',      '/system/costs',  'bar-chart-2'),
-          ('Logs',       '/system/logs',   'scroll'),
-          ('Components', '/system/status', 'cpu'),
-        ] %}
-        <a href="{{ href }}" class="nav-item {{ 'active' if current_path == href or (href != '/' and current_path.startswith(href)) else '' }}" style="text-decoration:none">
-          <i data-lucide="{{ icon }}" class="icon" style="width:15px;height:15px"></i>
-          <span class="label">{{ label }}</span>
-        </a>
-        {% endfor %}
-      </div>
-
-    </nav>
-
-    {# Side-foot: engine status #}
-    <div class="side-foot">
-      <span class="dot" title="Engine connected"></span>
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Engine ready</span>
-      <span class="mono" style="font-size:10px;color:var(--text-4)">{{ engine_latency_ms | default('—') }} ms</span>
-      <a href="https://thedataenginex.org/docs" target="_blank"
-         style="color:var(--text-4);display:flex;align-items:center" data-tip="Docs">
-        <i data-lucide="book-open" style="width:12px;height:12px"></i>
-      </a>
-      <a href="/logout" style="color:var(--text-4);display:flex;align-items:center" data-tip="Sign out">
-        <i data-lucide="log-out" style="width:12px;height:12px"></i>
-      </a>
     </div>
 
-  </aside>{# .side #}
+  </aside>
 
-  {# ── Main column ──────────────────────────────────────────────────────────── #}
-  <div class="main">
+  {# ── Main content column ─────────────────────────────────────────────── #}
+  <div class="main-col">
 
-    {# ── Topbar ──────────────────────────────────────────────────────────────── #}
-    <div class="topbar">
+    {# ── Topbar ──────────────────────────────────────────────────────────── #}
+    <div class="topbar" style="border-bottom:1px solid var(--shell-border)">
 
       {# Breadcrumb #}
       <div class="pages-crumb crumb">
-        {% for crumb in ns.crumbs %}
-        {% if not loop.first %}
-          <span class="sep"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></span>
-        {% endif %}
-        {% if crumb[1] and not loop.last %}
-          <a href="{{ crumb[1] }}">{{ crumb[0] }}</a>
-        {% else %}
-          <span class="{{ 'leaf' if loop.last else '' }}">{{ crumb[0] }}</span>
-        {% endif %}
+        {% for label, href in nav_breadcrumbs %}
+          {% if not loop.first %}
+            <span class="sep"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></span>
+          {% endif %}
+          {% if href %}
+            <a href="{{ href }}">{{ label }}</a>
+          {% else %}
+            <span class="{{ 'leaf' if loop.last else '' }}">{{ label }}</span>
+          {% endif %}
         {% endfor %}
       </div>
 
-      {# Global search — ⌘K opens command palette #}
+      {# Global search #}
       <div class="global-search">
         <div class="input-icon" style="width:100%">
           <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
@@ -379,25 +265,32 @@
         <button class="btn icon ghost" data-tip="Toggle theme" onclick="toggleTheme()">
           <i id="dex-theme-icon" data-lucide="moon" style="width:15px;height:15px"></i>
         </button>
+        <form method="post" action="/system/reload-config" style="display:contents">
+          <button type="submit" class="btn icon ghost" data-tip="Reload config from disk"
+                  id="reload-cfg-btn" style="position:relative">
+            <i data-lucide="refresh-cw" style="width:15px;height:15px"></i>
+          </button>
+        </form>
+        <button class="btn icon ghost" id="ai-sidebar-btn" data-tip="Dex AI (⌘/)" onclick="dexAiToggle()"
+                style="position:relative">
+          <i data-lucide="zap" style="width:15px;height:15px;color:var(--accent-11)"></i>
+        </button>
         <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
         <a href="/logout" data-tip="Sign out" style="text-decoration:none">
-          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">
-            JM
-          </div>
+          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
         </a>
       </div>
     </div>
 
-    {# ── Content ────────────────────────────────────────────────────────────── #}
-    <div class="content {% block content_class %}{% endblock %}" id="main-content">
+    {# ── Content ──────────────────────────────────────────────────────────── #}
+    {%- set _cc %}{% block content_class %}{% endblock %}{% endset -%}
+    <div class="content {{ _cc }}" id="main-content">
 
-      {% if self.full_bleed() | trim %}
-        {# Full-bleed pages (SQL Console, Playground, Logs) fill height, no inner padding #}
+      {% if 'full-bleed' in _cc %}
         {% block full_bleed %}{% endblock %}
       {% else %}
       <div class="content-inner">
 
-        {# Page header #}
         {% block page_header %}
         <div class="page-header">
           <div>
@@ -431,16 +324,89 @@
       {% endif %}
 
     </div>
-  </div>{# .main #}
+  </div>
 
-</div>{# .app #}
+  {# ── Dex AI pane — rightmost flex child, width transitions 0↔340px ── #}
+  <div class="dex-ai-pane" id="dex-ai-pane">
+    <div class="dex-ai-pane-inner">
 
-{# ── Command palette ──────────────────────────────────────────────────────── #}
+      {# Header #}
+      <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;
+                  border-bottom:1px solid var(--shell-border);flex-shrink:0">
+        <i data-lucide="zap" style="width:14px;height:14px;color:var(--accent-11);flex-shrink:0"></i>
+        <span style="font-size:13px;font-weight:600;flex:1">Dex AI</span>
+        <select id="dex-ai-agent-select"
+                onchange="dexAiAgentChange(this.value)"
+                style="font-size:10px;background:var(--bg-input);border:1px solid var(--border);
+                       border-radius:var(--r-2);color:var(--text);padding:2px 4px;max-width:110px;
+                       cursor:pointer;outline:none">
+          <option value="">— agent —</option>
+        </select>
+        <button onclick="dexAiClose()"
+                style="background:none;border:none;cursor:pointer;padding:2px;color:var(--text-4);
+                       display:flex;align-items:center;border-radius:var(--r-1)"
+                onmouseenter="this.style.color='var(--text)'"
+                onmouseleave="this.style.color='var(--text-4)'"
+                data-tip="Close (⌘/)">
+          <i data-lucide="x" style="width:14px;height:14px"></i>
+        </button>
+      </div>
+
+      {# Context pill #}
+      <div id="dex-ai-ctx"
+           style="font-size:10.5px;color:var(--text-4);padding:6px 14px;flex-shrink:0;
+                  border-bottom:1px solid var(--shell-border);line-height:1.4;
+                  min-height:28px;display:flex;align-items:flex-start;gap:6px">
+        <i data-lucide="info" style="width:11px;height:11px;color:var(--accent-11);flex-shrink:0;margin-top:1px"></i>
+        <span id="dex-ai-ctx-text">Loading context…</span>
+      </div>
+
+      {# Messages #}
+      <div id="dex-ai-msgs"
+           style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <div data-empty style="text-align:center;color:var(--text-4);font-size:12px;margin-top:auto;padding:20px 0;line-height:1.6">
+          Ask anything about your data,<br>pipelines, models, or system.
+        </div>
+      </div>
+
+      {# Input #}
+      <div style="padding:10px 12px;border-top:1px solid var(--shell-border);flex-shrink:0">
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <textarea id="dex-ai-input"
+                    placeholder="Ask Dex AI…"
+                    rows="2"
+                    style="flex:1;resize:none;background:var(--bg-input);border:1px solid var(--border);
+                           border-radius:var(--r-2);padding:8px 10px;font-size:12.5px;
+                           color:var(--text);font-family:inherit;line-height:1.5;
+                           outline:none;transition:border-color var(--d-fast)"
+                    onfocus="this.style.borderColor='var(--accent-9)'"
+                    onblur="this.style.borderColor='var(--border)'"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();dexAiSend();}"></textarea>
+          <button onclick="dexAiSend()" id="dex-ai-send"
+                  style="flex-shrink:0;padding:8px 12px;background:var(--accent-9);color:#fff;
+                         border:none;border-radius:var(--r-2);cursor:pointer;font-size:12px;
+                         display:flex;align-items:center;gap:5px;transition:opacity var(--d-fast)"
+                  onmouseenter="this.style.opacity='.85'"
+                  onmouseleave="this.style.opacity='1'">
+            <i data-lucide="send" style="width:13px;height:13px"></i>
+          </button>
+        </div>
+        <div style="font-size:10px;color:var(--text-4);margin-top:5px;padding-left:2px">
+          Shift+Enter for newline · ⌘/ to toggle · powered by Ollama
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>{# .two-rail-shell #}
+
+{# ── Command palette — driven by nav_cmd_pages from nav.py ───────────────────── #}
+<script id="nav-data" type="application/json">{{ nav_cmd_pages | tojson }}</script>
 <div id="cmd-palette" style="display:none" x-data="cmdPalette()"
      @open-cmd.window="open()" @keydown.window.meta.k.prevent="open()" @keydown.window.ctrl.k.prevent="open()">
   <div class="cmd-overlay" @click="close()" x-show="isOpen">
     <div class="cmd-modal fade-in" @click.stop>
-
       <div class="cmd-input-row">
         <i data-lucide="search" style="width:14px;height:14px;color:var(--text-4);flex-shrink:0"></i>
         <input x-ref="input" x-model="q" @keydown.escape="close()" @keydown.enter="goFirst()"
@@ -448,7 +414,6 @@
                placeholder="Jump to a page, table, action…" style="width:100%" />
         <span class="kbd">esc</span>
       </div>
-
       <div class="cmd-results">
         <template x-for="(group, gi) in filteredGroups()" :key="gi">
           <div>
@@ -473,7 +438,6 @@
           No results.
         </div>
       </div>
-
       <div class="cmd-footer">
         <div class="row"><span class="kbd">↑</span><span class="kbd">↓</span> navigate</div>
         <div class="row"><span class="kbd">↵</span> open</div>
@@ -484,7 +448,27 @@
   </div>
 </div>
 
-{# ── Toast container ────────────────────────────────────────────────────────── #}
+{# ── Confirm dialog ────────────────────────────────────────────────────────────── #}
+<dialog id="dex-confirm-dialog" style="border-radius:var(--r-3);border:1px solid var(--border);background:var(--bg-elev);padding:24px;min-width:320px;max-width:420px;color:var(--text)">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <span style="width:32px;height:32px;border-radius:var(--r-2);background:color-mix(in oklch,var(--red-9) 15%,transparent);
+                   border:1px solid color-mix(in oklch,var(--red-9) 30%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i data-lucide="trash-2" style="width:15px;height:15px;color:var(--red-9)"></i>
+      </span>
+      <div>
+        <div style="font-weight:600;font-size:14px" id="confirm-title">Delete?</div>
+        <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.5" id="confirm-body">This action cannot be undone.</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn ghost" onclick="document.getElementById('dex-confirm-dialog').close()">Cancel</button>
+      <button class="btn" id="confirm-ok-btn" style="background:var(--red-9);color:#fff;border-color:var(--red-9)" onclick="dexConfirmExecute()">Delete</button>
+    </div>
+  </div>
+</dialog>
+
+{# ── Toast container ──────────────────────────────────────────────────────────── #}
 <div id="toast-container" x-data="toastStore()"
      @show-toast.window="add($event.detail.msg, $event.detail.kind)"
      style="position:fixed;bottom:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
@@ -510,7 +494,6 @@
 </script>
 {% endif %}
 
-{# Top page loader — thin accent bar driven by HTMX and form submit events #}
 <div id="top-loader"></div>
 
 {# Lucide #}
@@ -558,35 +541,9 @@ function toastStore() {
   };
 }
 
-// ── Command palette ──────────────────────────────────────────────────────────
+// ── Command palette — data injected from nav.py via #nav-data ────────────────
 function cmdPalette() {
-  const ALL_PAGES = [
-    { g: 'Home',      icon: 'home',          label: 'Home',          sub: 'Project overview & recent runs', href: '/' },
-    { g: 'Ingest',    icon: 'link',          label: 'Sources',       sub: 'Connectors and ingest configs',  href: '/data/sources' },
-    { g: 'Ingest',    icon: 'radio',         label: 'Streaming',     sub: 'Kafka topics and consumer lag',  href: '/data/streaming' },
-    { g: 'Lakehouse', icon: 'table',         label: 'Catalog',       sub: 'Browse bronze/silver/gold',      href: '/data/catalog' },
-    { g: 'Lakehouse', icon: 'share-2',       label: 'Lineage',       sub: 'Trace data flow end-to-end',     href: '/data/lineage' },
-    { g: 'Lakehouse', icon: 'check-circle',  label: 'Quality',       sub: 'Data quality tests and scores',  href: '/data/quality' },
-    { g: 'Compute',   icon: 'workflow',      label: 'Pipelines',     sub: 'DAG runner — bronze → gold',     href: '/data/pipelines' },
-    { g: 'Compute',   icon: 'code',          label: 'Transforms',    sub: 'SQL + Python transforms',        href: '/data/transforms' },
-    { g: 'Compute',   icon: 'hash',          label: 'SQL Console',   sub: 'Ad-hoc query editor',            href: '/data/sql' },
-    { g: 'Warehouse', icon: 'database',      label: 'BI Tables',     sub: 'Gold layer — BI-ready data',     href: '/data/warehouse' },
-    { g: 'ML',        icon: 'flask-conical', label: 'Experiments',   sub: 'Track and compare ML runs',      href: '/ml/experiments' },
-    { g: 'ML',        icon: 'box',           label: 'Models',        sub: 'Model registry and deployment',  href: '/ml/models' },
-    { g: 'ML',        icon: 'layers',        label: 'Features',      sub: 'Feature store and groups',       href: '/ml/features' },
-    { g: 'ML',        icon: 'zap',           label: 'Predictions',   sub: 'Run inference against models',   href: '/ml/predictions' },
-    { g: 'AI',        icon: 'message-square',label: 'Playground',    sub: 'Chat over your data',            href: '/ai/playground' },
-    { g: 'AI',        icon: 'bot',           label: 'Agents',        sub: 'Autonomous AI agents',           href: '/ai/agents' },
-    { g: 'AI',        icon: 'git-branch',    label: 'Workflows',     sub: 'Multi-step agent chains',        href: '/ai/workflows' },
-    { g: 'AI',        icon: 'brain',         label: 'Memory',        sub: 'Vector + episodic memory',       href: '/ai/memory' },
-    { g: 'SecOps',    icon: 'shield-check',  label: 'Privacy',       sub: 'PrivacyGuard — PII protection',  href: '/secops' },
-    { g: 'SecOps',    icon: 'file-text',     label: 'Audit log',     sub: 'Immutable event record',         href: '/secops/audit' },
-    { g: 'SecOps',    icon: 'bell',          label: 'Alerts',        sub: 'Alert rules and firings',        href: '/secops/alerts' },
-    { g: 'System',    icon: 'list',          label: 'Runs',          sub: 'Unified run history',            href: '/system/runs' },
-    { g: 'System',    icon: 'bar-chart-2',   label: 'Costs',         sub: 'API spend tracking',             href: '/system/costs' },
-    { g: 'System',    icon: 'scroll',        label: 'Logs',          sub: 'Structured log viewer',          href: '/system/logs' },
-    { g: 'System',    icon: 'cpu',           label: 'Components',    sub: 'Engine component health',        href: '/system/status' },
-  ];
+  const ALL_PAGES = JSON.parse(document.getElementById('nav-data').textContent);
 
   return {
     isOpen: false,
@@ -610,14 +567,18 @@ function cmdPalette() {
       filtered.forEach(p => { (groups[p.g] = groups[p.g] || []).push(p); });
       return Object.entries(groups).map(([label, items]) => ({ label, items }));
     },
-    goFirst() {
-      const groups = this.filteredGroups();
-      if (groups.length && groups[0].items.length) {
-        window.location.href = groups[0].items[0].href;
-        this.close();
-      }
+    move(dir) {
+      const flat = this.filteredGroups().flatMap(g => g.items);
+      if (!flat.length) return;
+      const cur = flat.findIndex(p => p.focused);
+      const next = cur === -1 ? (dir > 0 ? 0 : flat.length - 1) : Math.max(0, Math.min(flat.length - 1, cur + dir));
+      flat.forEach((p, i) => { p.focused = i === next; });
     },
-    move(dir) { /* keyboard navigation — future enhancement */ },
+    goFirst() {
+      const flat = this.filteredGroups().flatMap(g => g.items);
+      const target = flat.find(p => p.focused) || flat[0];
+      if (target) { window.location.href = target.href; this.close(); }
+    },
   };
 }
 
@@ -629,14 +590,10 @@ function cmdPalette() {
   function done()  { el.classList.remove('active'); el.classList.add('done'); setTimeout(() => el.classList.remove('done'), 500); }
   document.addEventListener('htmx:beforeRequest', start);
   document.addEventListener('htmx:afterRequest',  done);
-  // Non-HTMX form submits
   document.addEventListener('submit', (e) => {
     start();
     const btn = e.submitter || e.target.querySelector('[type="submit"]');
-    if (btn && !btn.dataset.noLoading) {
-      btn.classList.add('loading');
-      btn.setAttribute('aria-busy', 'true');
-    }
+    if (btn && !btn.dataset.noLoading) { btn.classList.add('loading'); btn.setAttribute('aria-busy', 'true'); }
   });
 })();
 
@@ -650,7 +607,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
   } catch {}
 });
 
-// ── Sortable + paginated tables (global utility) ──────────────────────────────
+// ── Sortable + paginated tables ───────────────────────────────────────────────
 (function () {
   function initSortable(table) {
     if (table.dataset.sortInit) return;
@@ -705,7 +662,6 @@ document.addEventListener('htmx:afterRequest', (e) => {
       pg.style.display = 'flex';
       const start = (page - 1) * pageSize + 1;
       const end   = Math.min(page * pageSize, total);
-      // Page number buttons (up to 5 around current)
       let btnHtml = '';
       const lo = Math.max(1, page - 2), hi = Math.min(pages, page + 2);
       if (lo > 1) btnHtml += `<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="1">1</button>${lo > 2 ? '<span style="color:var(--text-4)">…</span>' : ''}`;
@@ -758,16 +714,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
 })();
 </script>
 
-{# Mobile sidebar overlay #}
-<style>
-  @media (max-width: 767px) {
-    .app { grid-template-columns: 0 1fr; }
-    .side { position: fixed; top:0; left:0; height:100vh; z-index:200; width:var(--sidebar-w);
-            transform: translateX(-100%); transition: transform var(--d-normal) var(--ease-out-expo); }
-    .side--open { transform: translateX(0); }
-    #mobile-menu-btn { display: flex !important; }
-  }
-</style>
+{# Mobile overlay — two-rail shell handles mobile via CSS in studio.css #}
 <button onclick="Alpine.store('shell').sidebarOpen = !Alpine.store('shell').sidebarOpen"
         id="mobile-menu-btn"
         style="display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--bg-elev);
@@ -777,5 +724,342 @@ document.addEventListener('htmx:afterRequest', (e) => {
 </button>
 
 {% block scripts %}{% endblock %}
+
+<script>
+// ── Dex AI pane ───────────────────────────────────────────────────────────────
+(function () {
+  let _open = false;
+  let _agent = '';
+
+  const pane  = () => document.getElementById('dex-ai-pane');
+  const msgs  = () => document.getElementById('dex-ai-msgs');
+  const ctxTx = () => document.getElementById('dex-ai-ctx-text');
+  const sel   = () => document.getElementById('dex-ai-agent-select');
+  const inp   = () => document.getElementById('dex-ai-input');
+  const btn   = () => document.getElementById('ai-sidebar-btn');
+
+  function _loadCtx() {
+    fetch('/intelligence/context?page=' + encodeURIComponent(window.location.pathname))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) { ctxTx().textContent = 'No context available.'; return; }
+        const lines = (data.context || '').split('\n').filter(Boolean);
+        ctxTx().textContent = lines.slice(0, 4).join(' · ') || 'Ready';
+
+        // populate agent dropdown
+        const s = sel();
+        if (!s) return;
+        const agents = data.agents || [];
+        s.innerHTML = '';
+        agents.forEach(a => {
+          const o = document.createElement('option');
+          o.value = a;
+          const model = (data.agent_models || {})[a] || '';
+          o.textContent = model ? `${a} (${model.split(':')[0]})` : a;
+          s.appendChild(o);
+        });
+        if (!agents.length) {
+          const o = document.createElement('option');
+          o.value = 'bot'; o.textContent = 'bot';
+          s.appendChild(o);
+        }
+        _agent = data.agent || agents[0] || 'bot';
+        s.value = _agent;
+      })
+      .catch(() => { ctxTx().textContent = 'Context unavailable.'; });
+  }
+
+  function _msg(role, text) {
+    const m = msgs();
+    m.querySelectorAll('[data-empty]').forEach(e => e.remove());
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:10px;font-weight:600;color:var(--text-4);text-transform:uppercase;letter-spacing:.5px';
+    lbl.textContent = role === 'user' ? 'You' : (_agent || 'Dex AI');
+    const bub = document.createElement('div');
+    bub.style.cssText = role === 'user'
+      ? 'background:color-mix(in oklch,var(--accent-9) 12%,transparent);border:1px solid color-mix(in oklch,var(--accent-9) 20%,transparent);border-radius:var(--r-2);padding:8px 10px;font-size:12.5px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word'
+      : 'background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-2);padding:8px 10px;font-size:12.5px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word';
+    bub.textContent = text;
+    wrap.appendChild(lbl); wrap.appendChild(bub);
+    m.appendChild(wrap); m.scrollTop = m.scrollHeight;
+    return bub;
+  }
+
+  globalThis.dexAiAgentChange = function (val) { _agent = val; };
+
+  globalThis.dexAiToggle = function () { _open ? dexAiClose() : dexAiOpen(); };
+  globalThis.aiSidebarToggle = dexAiToggle; // legacy alias
+
+  globalThis.dexAiOpen = function () {
+    if (_open) return;
+    _open = true;
+    pane().classList.add('open');
+    if (btn()) btn().style.background = 'color-mix(in oklch,var(--accent-9) 15%,transparent)';
+    lucide.createIcons({ el: pane() });
+    _loadCtx();
+    setTimeout(() => { const i = inp(); if (i) i.focus(); }, 220);
+  };
+
+  globalThis.dexAiClose = function () {
+    if (!_open) return;
+    _open = false;
+    pane().classList.remove('open');
+    if (btn()) btn().style.background = '';
+  };
+
+  function _renderResultTable(result, parent) {
+    if (result.columns && result.rows) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:5px;overflow-x:auto;border-radius:var(--r-2);border:1px solid var(--border)';
+      const table = document.createElement('table');
+      table.style.cssText = 'width:100%;border-collapse:collapse;font-size:11px';
+      const cols = result.columns.slice(0, 6);
+      const thead = table.createTHead();
+      const hrow = thead.insertRow();
+      cols.forEach(col => {
+        const th = document.createElement('th');
+        th.style.cssText = 'padding:4px 6px;border-bottom:1px solid var(--border);text-align:left;color:var(--text-3);font-weight:600;white-space:nowrap;background:var(--bg-elev-2)';
+        th.textContent = col;
+        hrow.appendChild(th);
+      });
+      if (result.columns.length > 6) {
+        const th = document.createElement('th');
+        th.style.cssText = 'padding:4px 6px;border-bottom:1px solid var(--border);color:var(--text-4);background:var(--bg-elev-2)';
+        th.textContent = '+' + (result.columns.length - 6);
+        hrow.appendChild(th);
+      }
+      const tbody = table.createTBody();
+      const rows = Array.isArray(result.rows) ? result.rows.slice(0, 8) : [];
+      rows.forEach(row => {
+        const vals = Array.isArray(row) ? row : Object.values(row);
+        const tr = tbody.insertRow();
+        vals.slice(0, 6).forEach(val => {
+          const td = tr.insertCell();
+          td.style.cssText = 'padding:3px 6px;border-bottom:1px solid var(--border);color:var(--text);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          const s = String(val ?? '—');
+          td.title = s;
+          td.textContent = s;
+        });
+      });
+      wrap.appendChild(table);
+      if ((result.row_count || rows.length) > 8) {
+        const more = document.createElement('div');
+        more.style.cssText = 'font-size:10px;color:var(--text-4);padding:3px 6px;border-top:1px solid var(--border)';
+        more.textContent = (result.row_count || rows.length) + ' rows total, showing 8';
+        wrap.appendChild(more);
+      }
+      parent.appendChild(wrap);
+    } else if (result.text) {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px;color:var(--text-3);margin-top:4px;padding:5px 7px;border-left:2px solid var(--border);border-radius:0 var(--r-1) var(--r-1) 0';
+      note.textContent = result.text;
+      parent.appendChild(note);
+    }
+    msgs().scrollTop = msgs().scrollHeight;
+  }
+
+  globalThis.dexAiSend = function () {
+    const i = inp();
+    if (!i) return;
+    const msg = i.value.trim();
+    if (!msg) return;
+    i.value = '';
+    _msg('user', msg);
+    const bub = _msg('assistant', '');
+    bub.style.color = 'var(--text-4)';
+    bub.textContent = '…';
+    const agent = (sel() && sel().value) || _agent || 'bot';
+
+    // Long messages (>1500 chars) → POST chat (no streaming, but handles full agent loop)
+    if (msg.length > 1500) {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      fetch('/intelligence/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ agent, message: msg }),
+      })
+        .then(r => r.json())
+        .then(d => {
+          bub.style.color = d.error ? 'var(--red-9)' : '';
+          bub.textContent = d.error ? 'Error: ' + d.error : (d.content || '(no response)');
+          msgs().scrollTop = msgs().scrollHeight;
+        })
+        .catch(e => { bub.style.color = 'var(--red-9)'; bub.textContent = 'Failed: ' + e.message; });
+      return;
+    }
+
+    // SSE streaming — tokens + SQL tool call + result table
+    const url = '/intelligence/stream?agent=' + encodeURIComponent(agent) + '&message=' + encodeURIComponent(msg);
+    const es = new EventSource(url);
+    let textBuf = '';
+
+    es.onmessage = function (e) {
+      let d;
+      try { d = JSON.parse(e.data); } catch { return; }
+
+      if (d.token) {
+        textBuf += d.token;
+        bub.style.color = '';
+        bub.textContent = textBuf;
+        msgs().scrollTop = msgs().scrollHeight;
+      }
+
+      if (d.tool_call === 'query' && d.sql) {
+        const sqlCard = document.createElement('div');
+        sqlCard.style.cssText = 'background:var(--bg-elev-2);border:1px solid var(--border);border-radius:var(--r-2);padding:5px 8px;margin-top:5px;font-family:var(--font-mono);font-size:10.5px;color:var(--text-3);white-space:pre-wrap;overflow-x:auto;opacity:.85';
+        sqlCard.textContent = '▷ ' + d.sql.slice(0, 300);
+        bub.parentElement.appendChild(sqlCard);
+        msgs().scrollTop = msgs().scrollHeight;
+      }
+
+      if (d.tool_result) {
+        _renderResultTable(d.tool_result, bub.parentElement);
+      }
+
+      if (d.error) {
+        bub.style.color = 'var(--red-9)';
+        if (!textBuf) bub.textContent = 'Error: ' + d.error;
+        es.close();
+      }
+
+      if (d.done) {
+        es.close();
+        const parts = [];
+        if (d.latency_ms) parts.push(Math.round(d.latency_ms) + 'ms');
+        if (d.tool_calls) parts.push(d.tool_calls + ' tool call' + (d.tool_calls !== 1 ? 's' : ''));
+        if (parts.length) {
+          const meta = document.createElement('div');
+          meta.style.cssText = 'font-size:9.5px;color:var(--text-4);margin-top:3px;text-align:right';
+          meta.textContent = parts.join(' · ');
+          bub.parentElement.appendChild(meta);
+        }
+        msgs().scrollTop = msgs().scrollHeight;
+      }
+    };
+
+    es.onerror = function () {
+      if (!textBuf) {
+        bub.style.color = 'var(--red-9)';
+        bub.textContent = 'Connection error — check Ollama is running.';
+      }
+      es.close();
+    };
+  };
+
+  // ⌘/ toggle
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); dexAiToggle(); }
+  });
+}());
+
+// ── Relative time helper (shared — used by pipelines, scheduler, etc.) ───────
+globalThis.relativeTime = function (iso) {
+  if (!iso) return '—';
+  const diff = new Date(iso) - Date.now();
+  if (diff < 0) return 'soon';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return 'in ' + mins + 'm';
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return 'in ' + hrs + 'h' + (rem ? ' ' + rem + 'm' : '');
+};
+
+// ── data-ts live ticker — updates all [data-ts] spans every 30s ───────────
+(function () {
+  function _tickTs() {
+    document.querySelectorAll('[data-ts]').forEach(function (el) {
+      el.textContent = relativeTime(el.dataset.ts);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', _tickTs);
+  setInterval(_tickTs, 30000);
+  document.addEventListener('htmx:afterSwap', function () {
+    _tickTs();
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  });
+}());
+
+// ── System metrics poll (CPU / MEM bars) ──────────────────────────────────────
+(function () {
+  function _updateMetrics() {
+    fetch('/system/metrics-live')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        const cpuPct = d.cpu_pct || 0;
+        const memPct = d.mem_pct || 0;
+        const cpuBar = document.getElementById('cpu-bar');
+        const memBar = document.getElementById('mem-bar');
+        const cpuTxt = document.getElementById('cpu-pct');
+        const memTxt = document.getElementById('mem-pct');
+        if (cpuBar) cpuBar.style.width = cpuPct + '%';
+        if (memBar) memBar.style.width = memPct + '%';
+        if (cpuTxt) cpuTxt.textContent = cpuPct + '%';
+        if (memTxt) memTxt.textContent = memPct + '%';
+        // colour the bar red if high
+        if (cpuBar) cpuBar.style.background = cpuPct > 80 ? 'var(--red-9)' : 'var(--accent-9)';
+        if (memBar) memBar.style.background = memPct > 85 ? 'var(--red-9)' : 'var(--green-9)';
+      })
+      .catch(() => {});
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    _updateMetrics();
+    setInterval(_updateMetrics, 5000);
+  });
+}());
+</script>
+
+<script>
+// ── Sidebar collapse ──────────────────────────────────────────────────────────
+(function () {
+  const KEY = 'dex-sidebar';
+  function _applySidebar(mode) {
+    const shell = document.getElementById('shell');
+    if (!shell) return;
+    shell.setAttribute('data-sidebar', mode);
+    const icon  = document.getElementById('sidebar-toggle-icon');
+    const label = document.getElementById('sidebar-toggle-label');
+    const collapsed = mode === 'icons';
+    if (icon)  icon.dataset.lucide = collapsed ? 'panel-left-open' : 'panel-left-close';
+    if (label) label.style.display = collapsed ? 'none' : '';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+  globalThis.toggleSidebar = function () {
+    const shell = document.getElementById('shell');
+    const next = (shell?.getAttribute('data-sidebar') === 'icons') ? 'labeled' : 'icons';
+    localStorage.setItem(KEY, next);
+    _applySidebar(next);
+  };
+  document.addEventListener('DOMContentLoaded', function () {
+    const saved = localStorage.getItem(KEY);
+    if (saved && saved !== 'labeled') _applySidebar(saved);
+  });
+}());
+
+// ── Global confirm dialog ─────────────────────────────────────────────────────
+(function () {
+  let _pendingForm = null;
+  globalThis.dexConfirm = function (form, title, body) {
+    _pendingForm = form;
+    const dlg = document.getElementById('dex-confirm-dialog');
+    if (!dlg) { form.submit(); return; }
+    document.getElementById('confirm-title').textContent = title || 'Delete?';
+    document.getElementById('confirm-body').innerHTML    = body  || 'This action cannot be undone.';
+    lucide.createIcons({ el: dlg });
+    dlg.showModal();
+  };
+  globalThis.dexConfirmExecute = function () {
+    const dlg = document.getElementById('dex-confirm-dialog');
+    if (dlg) dlg.close();
+    if (_pendingForm) {
+      const f = _pendingForm; _pendingForm = null;
+      if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }
+    }
+  };
+}());
+</script>
 </body>
 </html>

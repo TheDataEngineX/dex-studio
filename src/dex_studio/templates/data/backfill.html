@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Backfill — Ingest — DEX Studio{% endblock %}
+
+{% block page_title %}Backfill{% endblock %}
+{% block page_sub %}reset ingestion watermarks · re-ingest historical data · clear dedup state{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-data)">
+
+  {# ── Metric strip ── #}
+  {% if pipelines %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    {{ metric_card("Pipelines", pipelines | length, "workflow", "indigo") }}
+    {{ metric_card("With Watermark", pipelines | selectattr('watermark') | list | length, "droplets", "blue") }}
+    {{ metric_card("No Watermark", pipelines | rejectattr('watermark') | list | length, "minus-circle", "indigo", "fresh ingest") }}
+  </div>
+  {% endif %}
+
+  {# ── Warning ── #}
+  <div class="card" style="margin-bottom:20px;border-color:var(--amber-6);background:color-mix(in oklch,var(--amber-9) 6%,transparent)">
+    <div style="padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
+      <i data-lucide="alert-triangle" style="width:15px;height:15px;color:var(--amber-9);flex-shrink:0;margin-top:1px"></i>
+      <div style="font-size:12px;line-height:1.6;color:var(--amber-11)">
+        <strong>Backfill resets the watermark cursor and dedup hashes for the source.</strong>
+        The next pipeline run will re-ingest <em>all</em> historical data from that source.
+        For large sources this may take a significant amount of time and storage.
+      </div>
+    </div>
+  </div>
+
+  {# ── Pipeline table ── #}
+  <div class="card bare" style="overflow:hidden">
+    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
+      <h2 style="font-size:13px">Pipelines</h2>
+    </div>
+    <table class="dex-table">
+      <thead>
+        <tr>
+          <th>Pipeline</th>
+          <th>Source</th>
+          <th>Current watermark</th>
+          <th style="text-align:right;width:140px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pipelines %}
+        <tr>
+          <td class="mono" style="font-size:12px;font-weight:500">{{ p.pipeline }}</td>
+          <td class="muted mono" style="font-size:12px">{{ p.source or '—' }}</td>
+          <td>
+            {% if p.watermark %}
+            <span class="mono" style="font-size:12px;color:var(--accent-11)">
+              {{ p.watermark[:19] | replace('T', ' ') }}
+            </span>
+            {% else %}
+            <span class="muted" style="font-size:12px">no watermark</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right">
+            <form method="post" action="/data/backfill/{{ p.pipeline }}/trigger"
+                  onsubmit="event.preventDefault();dexConfirm(this,'Queue backfill for {{ p.pipeline }}?','The next pipeline run will re-ingest <strong>all</strong> historical data from source: <code>{{ p.source or 'n/a' }}</code>. This cannot be undone.')">
+              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px;color:var(--amber-9);border-color:var(--amber-6)">
+                <i data-lucide="rewind" style="width:11px;height:11px"></i> Queue backfill
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4">
+            {% call empty_state("database", "No pipelines configured.", "Add a data source and configure a pipeline to enable backfill.") %}
+            <a href="/data/sources" class="btn primary" style="text-decoration:none;margin-top:16px">
+              <i data-lucide="database" style="width:13px;height:13px"></i> Add a data source
+            </a>
+            {% endcall %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

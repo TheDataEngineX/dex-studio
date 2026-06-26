@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
 
 {% block title %}{{ table_name }} — Catalog — DEX Studio{% endblock %}
 
@@ -15,29 +16,20 @@
 <a href="/data/lineage" class="btn sm ghost">
   <i data-lucide="share-2" style="width:12px;height:12px"></i> Lineage
 </a>
+<a href="/data/quality" class="btn sm ghost">
+  <i data-lucide="shield-check" style="width:12px;height:12px"></i> Quality rules
+</a>
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-data)">
 
 {# ── Stats row ────────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:16px">
-  {% for stat in [
-    {'label': 'Layer',   'value': layer,                                           'mono': false},
-    {'label': 'Rows',    'value': row_count | string | replace('None', '—'),       'mono': true},
-    {'label': 'Columns', 'value': column_count | string,                           'mono': true},
-    {'label': 'Size',    'value': size,                                            'mono': true},
-  ] %}
-  <div class="card" style="padding:14px 16px">
-    <div class="muted" style="font-size:11px;margin-bottom:4px">{{ stat.label }}</div>
-    <div style="font-size:15px;font-weight:600{% if stat.mono %};font-family:var(--font-mono){% endif %}">
-      {% if stat.label == 'Layer' %}
-        <span class="layer-chip {{ layer }}" style="font-size:12px">{{ layer }}</span>
-      {% else %}
-        {{ stat.value }}
-      {% endif %}
-    </div>
-  </div>
-  {% endfor %}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Layer", layer | title, "layers", "indigo") }}
+  {{ metric_card("Rows", row_count | string | replace('None', '—'), "list", "blue") }}
+  {{ metric_card("Columns", column_count | string, "columns", "indigo") }}
+  {{ metric_card("Size", size, "hard-drive", "green") }}
 </div>
 
 <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;align-items:start">
@@ -49,7 +41,7 @@
       <span class="badge" style="margin-left:6px;font-weight:400">{{ schema | length }}</span>
     </div>
     {% if schema %}
-    <table class="tbl dex-table" style="font-size:12px">
+    <table class="dex-table" style="font-size:12px">
       <thead>
         <tr>
           <th>#</th>
@@ -76,7 +68,7 @@
       </tbody>
     </table>
     {% else %}
-    <div class="muted" style="padding:24px;text-align:center;font-size:12px">No schema available</div>
+    {{ empty_state("table", "No schema available") }}
     {% endif %}
   </div>
 
@@ -125,7 +117,7 @@
     <span class="muted" style="font-weight:400;margin-left:6px">first {{ preview_rows | length }} rows</span>
   </div>
   <div style="overflow-x:auto">
-    <table class="tbl dex-table" style="font-size:11px;white-space:nowrap">
+    <table class="dex-table" style="font-size:11px;white-space:nowrap">
       <thead>
         <tr>
           {% for col in preview_cols %}
@@ -148,5 +140,7 @@
   </div>
 </div>
 {% endif %}
+
+</div>
 
 {% endblock %}

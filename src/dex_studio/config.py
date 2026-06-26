@@ -79,11 +79,11 @@ def save_projects(projects: list[ProjectEntry]) -> None:
     _PROJECTS_FILE.write_text(yaml.safe_dump(data, default_flow_style=False))
 
 
-def add_project(name: str, config_path: Path) -> list[ProjectEntry]:
+def add_project(name: str, config_path: str | Path) -> list[ProjectEntry]:
     """Add a project to the registry and persist. Returns updated list."""
     projects = load_projects()
     projects = [p for p in projects if p.name != name]  # replace if exists
-    projects.append(ProjectEntry(name=name, config_path=config_path.resolve()))
+    projects.append(ProjectEntry(name=name, config_path=Path(config_path).resolve()))
     save_projects(projects)
     return projects
 
@@ -121,6 +121,7 @@ class StudioPrefs:
     port: int = 7860
     native_mode: bool = True
     default_config_path: str = ""  # persisted across restarts
+    monthly_budget_usd: float = 25.0  # AI spend budget cap shown on /system/costs
 
 
 def load_prefs() -> StudioPrefs:
@@ -130,6 +131,7 @@ def load_prefs() -> StudioPrefs:
         "window_width": int,
         "window_height": int,
         "port": int,
+        "monthly_budget_usd": float,
         "native_mode": lambda v: str(v).lower() not in {"0", "false", "no"},
     }
     for key, coerce in _COERCE.items():

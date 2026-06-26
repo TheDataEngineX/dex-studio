@@ -191,4 +191,22 @@
   renderRules();
 }());
 </script>
+{% if config_alerts %}
+<div class="card" style="margin-top:24px">
+  <div class="card-header"><h3>Configured Alerts</h3></div>
+  <table class="table">
+    <thead><tr><th>Name</th><th>Condition</th><th>Severity</th><th>Channels</th></tr></thead>
+    <tbody>
+    {% for a in config_alerts %}
+    <tr>
+      <td>{{ a.name }}</td>
+      <td><code>{{ a.condition }}</code></td>
+      <td><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span></td>
+      <td>{{ a.channels | join(", ") }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

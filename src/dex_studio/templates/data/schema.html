@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Schema Contracts — Lakehouse — DEX Studio{% endblock %}
+
+{% block page_title %}Schema Contracts{% endblock %}
+{% block page_sub %}snapshot expected schemas · detect drift · accept changes to update contracts{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-data)">
+
+  {# ── Metric strip ── #}
+  {% set open_drifts = drift_events | rejectattr('accepted') | list | length %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    {{ metric_card("Contracts", contracts | selectattr('has_contract') | list | length, "file-code", "indigo", "defined") }}
+    {{ metric_card("Pipelines", pipeline_count, "workflow", "blue") }}
+    {{ metric_card("Open Drift", open_drifts, "alert-triangle", "red" if open_drifts else "green", "events") }}
+  </div>
+
+  {# ── Contracts table ── #}
+  <div class="card bare" style="margin-bottom:20px;overflow:hidden">
+    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
+      <h2 style="font-size:13px">Pipeline Contracts</h2>
+      <span class="muted" style="font-size:11px">Snapshot the current schema to create or refresh a contract.</span>
+    </div>
+    <table class="dex-table">
+      <thead>
+        <tr>
+          <th>Pipeline</th>
+          <th style="text-align:right">Columns</th>
+          <th>Recorded at</th>
+          <th style="text-align:right;width:120px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in contracts %}
+        <tr>
+          <td>
+            <span class="mono" style="font-size:12px;font-weight:500">{{ c.pipeline }}</span>
+            {% if not c.has_contract %}
+            <span class="badge" style="background:color-mix(in oklch,var(--amber-9) 12%,transparent);color:var(--amber-11);border-color:var(--amber-6);margin-left:4px">no contract</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums">
+            {{ c.columns | length if c.has_contract else '—' }}
+          </td>
+          <td class="muted" style="font-size:12px">
+            {{ c.recorded_at[:19] | replace('T', ' ') if c.recorded_at else '—' }}
+          </td>
+          <td style="text-align:right">
+            <form method="post" action="/data/schema/{{ c.pipeline }}/snapshot" style="display:inline">
+              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px">
+                <i data-lucide="camera" style="width:11px;height:11px"></i>
+                {{ 'Snapshot' if not c.has_contract else 'Re-snapshot' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% if c.has_contract and c.columns %}
+        <tr style="background:var(--bg-elev)">
+          <td colspan="4" style="padding:6px 14px">
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              {% for col, typ in c.columns.items() %}
+              <span style="font-size:11px;padding:1px 6px;border-radius:var(--r-1);background:var(--bg-base);border:1px solid var(--border);font-family:var(--font-mono)">
+                <span style="color:var(--text)">{{ col }}</span>
+                <span style="color:var(--text-4);margin-left:3px">{{ typ }}</span>
+              </span>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% else %}
+        <tr>
+          <td colspan="4">
+            {{ empty_state("file-code", "No pipelines found.", "Configure a pipeline to start capturing schema contracts.") }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Drift events ── #}
+  {% if drift_events %}
+  <div class="card bare" style="overflow:hidden">
+    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
+      <h2 style="font-size:13px">Drift Events</h2>
+      <span class="muted" style="font-size:11px">Accept to promote the new schema as the active contract.</span>
+    </div>
+    <table class="dex-table">
+      <thead>
+        <tr>
+          <th>Pipeline</th>
+          <th>Detected at</th>
+          <th>Changes</th>
+          <th style="text-align:right;width:140px">Status / Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in drift_events %}
+        <tr {% if ev.accepted %}style="opacity:0.55"{% endif %}>
+          <td class="mono" style="font-size:12px;font-weight:500">{{ ev.pipeline }}</td>
+          <td class="muted" style="font-size:12px">{{ ev.detected_at[:19] | replace('T', ' ') }}</td>
+          <td>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">
+              {% for ch in ev.drift %}
+              {% set color = 'green' if ch.kind == 'added' else ('red' if ch.kind == 'removed' else 'amber') %}
+              <span class="badge" style="background:color-mix(in oklch,var(--{{ color }}-9) 12%,transparent);color:var(--{{ color }}-11);border-color:var(--{{ color }}-6);font-size:10px">
+                {{ ch.kind }}: {{ ch.column }}
+                {% if ch.old_type and ch.new_type %} ({{ ch.old_type }} → {{ ch.new_type }}){% endif %}
+              </span>
+              {% endfor %}
+            </div>
+          </td>
+          <td style="text-align:right">
+            {% if ev.accepted %}
+            <span class="pill ok" style="font-size:10px">Accepted</span>
+            {% else %}
+            <form method="post" action="/data/schema/drift/{{ ev.id }}/accept" style="display:inline">
+              <input type="hidden" name="pipeline" value="{{ ev.pipeline }}">
+              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px;color:var(--green-9);border-color:var(--green-6)">
+                <i data-lucide="check" style="width:11px;height:11px"></i> Accept drift
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {{ empty_state("file-code", "No drift events recorded.", "Snapshot a contract above, then run pipelines — DEX Studio will detect schema changes automatically.") }}
+  {% endif %}
+
+</div>
+{% endblock %}

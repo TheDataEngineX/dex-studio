@@ -281,4 +281,12 @@
   el.appendChild(svg);
 })();
 </script>
+{% if costs_config %}
+<div class="card" style="margin-top:24px">
+  <div class="card-header"><h3>Costs Configuration</h3></div>
+  <div style="padding:16px">
+    <pre style="font-size:12px;white-space:pre-wrap">{{ costs_config }}</pre>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

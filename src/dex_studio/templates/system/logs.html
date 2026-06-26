@@ -4,7 +4,7 @@
 {% block content_class %}full-bleed{% endblock %}
 
 {% block full_bleed %}
-<div style="height:100%;display:flex;flex-direction:column;min-height:0">
+<div style="height:100%;display:flex;flex-direction:column;min-height:0;--domain-color: var(--domain-system)">
 
   {# ── page header + filters ── #}
   <div class="content-inner" style="padding-bottom:0;flex-shrink:0">
@@ -14,10 +14,10 @@
         <p class="page-sub">unified log stream · engine + transforms + agents + privacy</p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" id="tail-btn" onclick="toggleTail()">
-          <i data-lucide="square" style="width:13px;height:13px"></i> Pause tail
+        <button class="btn sm primary" id="tail-btn" onclick="toggleTail()">
+          <i data-lucide="square" style="width:11px;height:11px"></i> Pause tail
         </button>
-        <button class="btn"><i data-lucide="download" style="width:13px;height:13px"></i> Export</button>
+        <button class="btn sm ghost"><i data-lucide="download" style="width:11px;height:11px"></i> Export</button>
       </div>
     </div>
 
@@ -136,6 +136,11 @@
   let levelFilter = 'all';
   let tailing     = true;
 
+  function escHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function msgColor(r) {
     if (r.lvl === 'ERROR') return 'var(--red-9)';
     if (r.msg.startsWith('✓')) return 'var(--green-9)';
@@ -159,10 +164,10 @@
       row.className = 'row';
       row.style.cssText = 'gap:12px;padding:3px 14px;background:' + lm.bg + ';border-left:2px solid ' + lm.border;
       row.innerHTML =
-        '<span class="dim" style="width:96px;flex-shrink:0">' + r.t + '</span>' +
-        '<span style="color:' + lm.c + ';width:44px;flex-shrink:0;font-weight:500">' + r.lvl + '</span>' +
-        '<span style="color:var(--accent-11);width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.src + '</span>' +
-        '<span style="color:' + msgColor(r) + ';overflow:hidden;text-overflow:ellipsis">' + r.msg + '</span>';
+        '<span class="dim" style="width:96px;flex-shrink:0">' + escHtml(r.t) + '</span>' +
+        '<span style="color:' + lm.c + ';width:44px;flex-shrink:0;font-weight:500">' + escHtml(r.lvl) + '</span>' +
+        '<span style="color:var(--accent-11);width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.src) + '</span>' +
+        '<span style="color:' + msgColor(r) + ';overflow:hidden;text-overflow:ellipsis">' + escHtml(r.msg) + '</span>';
       body.appendChild(row);
       shown++;
     });
@@ -223,7 +228,7 @@
       btn.innerHTML  = '<i data-lucide="play" style="width:13px;height:13px"></i> Resume tail';
       pill.style.display = 'none';
     }
-    btn.className = 'btn' + (tailing ? ' primary' : '');
+    btn.className = 'btn sm' + (tailing ? ' primary' : '');
     if (typeof lucide !== 'undefined') lucide.createIcons();
     renderLogs();
   };

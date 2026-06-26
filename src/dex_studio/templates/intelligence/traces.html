@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Traces — Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Traces{% endblock %}
+{% block page_sub %}
+  {% if run_stats %}{{ run_stats.total_runs }} run{{ 's' if run_stats.total_runs != 1 else '' }}
+  {% if error_rate and error_rate != '0%' %} · <span style="color:var(--state-error)">{{ error_rate }} errors</span>{% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block page_actions %}
+<form method="get" action="" class="row" style="gap:6px">
+  <div class="input-icon" style="width:200px">
+    <i data-lucide="filter" class="icon" style="width:11px;height:11px"></i>
+    <input class="input" name="agent" value="{{ agent_filter or '' }}"
+           placeholder="Filter by agent…" style="font-size:12px;height:28px">
+  </div>
+  <button type="submit" class="btn sm ghost" style="height:28px">Apply</button>
+  {% if agent_filter %}
+  <a href="?" class="btn sm ghost" style="height:28px">Clear</a>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Metric strip ── #}
+{% if run_stats %}
+<div class="row" style="gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
+  {{ metric_card("Total runs",    run_stats.total_runs,       "activity",   "violet") }}
+  {{ metric_card("Errors",        run_stats.error_count,      "alert-circle","red",   error_rate + " rate" if error_rate) }}
+  {{ metric_card("Avg latency",   run_stats.avg_latency_ms,   "timer",      "blue",  "ms") }}
+  {{ metric_card("Tool calls",    run_stats.total_tool_calls, "wrench",     "green") }}
+</div>
+{% endif %}
+
+{% if traces %}
+
+<div class="grid" style="grid-template-columns:2fr 3fr;gap:var(--space-3)">
+
+  {# ── Left: trace list (40%) ───────────────────────────────────────────────── #}
+  <div class="card bare" style="display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 260px)">
+
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div class="input-icon">
+        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+        <input class="input" id="intel-trace-search" placeholder="Filter traces…"
+               style="font-size:12px;height:26px" oninput="intelFilterTraces()">
+      </div>
+    </div>
+
+    <div style="flex:1;overflow-y:auto" id="intel-trace-list">
+      {% for t in traces %}
+      <div class="intel-trace-item" role="button" tabindex="0"
+           data-id="{{ t.id }}"
+           data-status="{{ t.status }}"
+           onclick="intelSelectTrace(this)"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();intelSelectTrace(this)}"
+           style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;
+                  border-left:3px solid {{ 'var(--violet-9)' if loop.first else 'transparent' }};
+                  background:{{ 'color-mix(in oklch,var(--violet-9) 8%,transparent)' if loop.first else 'none' }}">
+
+        <div class="row" style="gap:6px;margin-bottom:3px">
+          {% if t.status in ('ok', 'success') %}
+            <span class="sdot ok" style="flex-shrink:0"></span>
+          {% elif t.status == 'error' %}
+            <span class="sdot error" style="flex-shrink:0"></span>
+          {% else %}
+            <span class="sdot idle" style="flex-shrink:0"></span>
+          {% endif %}
+          <span style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+                       white-space:nowrap;flex:1">{{ t.task or t.agent or '—' }}</span>
+          {% if t.status in ('ok', 'success') %}
+            <span class="pill success" style="height:14px;font-size:9px;flex-shrink:0">ok</span>
+          {% elif t.status == 'error' %}
+            <span class="pill error" style="height:14px;font-size:9px;flex-shrink:0">error</span>
+          {% else %}
+            <span class="pill" style="height:14px;font-size:9px;flex-shrink:0">{{ t.status }}</span>
+          {% endif %}
+        </div>
+
+        <div class="row" style="gap:8px;font-size:10.5px;color:var(--text-4);padding-left:16px">
+          <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px"
+                title="{{ t.id }}">{{ t.id[:12] if t.id else '—' }}…</span>
+          <span class="mono" style="flex:1">{{ t.agent or '—' }}</span>
+          <span class="mono">
+            {% if t.latency_ms and t.latency_ms != '—' %}{{ t.latency_ms }}ms{% else %}—{% endif %}
+          </span>
+          <span>{{ t.tool_calls }} call{{ 's' if t.tool_calls != 1 }}</span>
+        </div>
+
+        <div style="font-size:10px;color:var(--text-4);margin-top:2px;padding-left:16px">
+          {{ t.timestamp }}
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+
+  </div>
+
+  {# ── Right: detail panel (60%) ────────────────────────────────────────────── #}
+  <div class="card bare" style="display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 260px)"
+       id="intel-detail-panel">
+
+    {# Placeholder ── #}
+    <div id="intel-detail-placeholder"
+         style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;
+                gap:10px;color:var(--text-4)">
+      <i data-lucide="mouse-pointer-click" style="width:28px;height:28px;opacity:.4"></i>
+      <span style="font-size:13px">Select a trace to inspect</span>
+    </div>
+
+    {# Detail content ── #}
+    <div id="intel-detail-content" style="display:none;flex-direction:column;height:100%">
+
+      {# Header #}
+      <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0">
+        <span class="glyph" style="background:var(--violet-3)">
+          <i data-lucide="git-branch" style="width:13px;height:13px;color:var(--violet-9)"></i>
+        </span>
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:8px">
+            <span class="mono" id="intel-detail-id"
+                  style="font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px">—</span>
+            <span id="intel-detail-status" class="pill" style="height:16px;font-size:9px;flex-shrink:0">—</span>
+          </div>
+          <div class="row" style="gap:10px;margin-top:3px">
+            <span class="mono dim" id="intel-detail-agent" style="font-size:11px">—</span>
+            <span class="mono" id="intel-detail-latency" style="font-size:11px;color:var(--text-3)">—</span>
+            <span class="muted" id="intel-detail-ts" style="font-size:11px">—</span>
+            <span class="muted" id="intel-detail-tools" style="font-size:11px">—</span>
+          </div>
+        </div>
+      </div>
+
+      {# Tabs #}
+      <div class="tabs" style="padding-left:14px;flex-shrink:0">
+        <button class="tab active" onclick="intelSwitchTab('steps',this)">Steps</button>
+        <button class="tab" onclick="intelSwitchTab('input',this)">Input</button>
+        <button class="tab" onclick="intelSwitchTab('output',this)">Output</button>
+      </div>
+
+      {# Steps tab — vertical timeline #}
+      <div id="intel-tab-steps" style="flex:1;overflow-y:auto;padding:16px">
+        <div id="intel-steps-list">
+          <div class="muted" style="font-size:12px;text-align:center;padding:32px 0">No steps.</div>
+        </div>
+      </div>
+
+      {# Input tab #}
+      <div id="intel-tab-input" style="display:none;flex:1;overflow-y:auto;padding:16px">
+        <div class="card bare" style="padding:12px">
+          <pre id="intel-detail-input" class="mono"
+               style="font-size:11.5px;color:var(--text-2);white-space:pre-wrap;margin:0;line-height:1.5">—</pre>
+        </div>
+      </div>
+
+      {# Output tab #}
+      <div id="intel-tab-output" style="display:none;flex:1;overflow-y:auto;padding:16px">
+        <div class="card bare" style="padding:12px">
+          <pre id="intel-detail-output" class="mono"
+               style="font-size:11.5px;color:var(--text-2);white-space:pre-wrap;margin:0;line-height:1.5">—</pre>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+{% else %}
+
+{{ empty_state("git-branch", "No traces recorded", "Traces appear here when intelligence agents run.") }}
+
+{% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var TRACE_DATA = {{ trace_data_json | safe }};
+
+  // ── Filter ────────────────────────────────────────────────────────────────
+  globalThis.intelFilterTraces = function () {
+    var q = (document.getElementById('intel-trace-search').value || '').toLowerCase();
+    document.querySelectorAll('.intel-trace-item').forEach(function (item) {
+      item.style.display = !q || item.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+  // ── Select trace ──────────────────────────────────────────────────────────
+  globalThis.intelSelectTrace = function (el) {
+    document.querySelectorAll('.intel-trace-item').forEach(function (i) {
+      i.style.borderLeftColor = 'transparent';
+      i.style.background = 'none';
+    });
+    el.style.borderLeftColor = 'var(--violet-9)';
+    el.style.background = 'color-mix(in oklch,var(--violet-9) 8%,transparent)';
+
+    var id = el.dataset.id;
+    var d = TRACE_DATA[id] || {};
+
+    // Show detail content
+    var placeholder = document.getElementById('intel-detail-placeholder');
+    var content = document.getElementById('intel-detail-content');
+    if (placeholder) placeholder.style.display = 'none';
+    if (content) content.style.display = 'flex';
+
+    // Header
+    _setText('intel-detail-id', id || '—');
+    _setText('intel-detail-agent', d.agent || '—');
+    _setText('intel-detail-latency', d.latency_ms ? d.latency_ms + 'ms' : '—');
+    _setText('intel-detail-ts', d.timestamp || '—');
+    _setText('intel-detail-tools', d.tool_calls !== undefined ? d.tool_calls + ' tool call' + (d.tool_calls !== 1 ? 's' : '') : '—');
+
+    var statusEl = document.getElementById('intel-detail-status');
+    if (statusEl) {
+      var s = d.status || '—';
+      statusEl.textContent = s;
+      statusEl.className = 'pill ' + (s === 'ok' || s === 'success' ? 'success' : s === 'error' ? 'error' : '');
+      statusEl.style.cssText = 'height:16px;font-size:9px;flex-shrink:0';
+    }
+
+    // Steps
+    renderSteps(d.steps || []);
+
+    // Input / Output
+    _setText('intel-detail-input', d.input_text || '—');
+    _setText('intel-detail-output', d.output_text || '—');
+
+    // Reset to steps tab
+    intelSwitchTabById('steps');
+  };
+
+  function renderSteps(steps) {
+    var container = document.getElementById('intel-steps-list');
+    if (!container) return;
+    if (!steps || steps.length === 0) {
+      container.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:32px 0">No step data recorded.</div>';
+      return;
+    }
+    var html = '<div style="position:relative;padding-left:20px">';
+    steps.forEach(function (step, idx) {
+      var isLast = idx === steps.length - 1;
+      var statusCls = step.status === 'ok' || step.status === 'success' ? 'success'
+                    : step.status === 'error' ? 'error' : '';
+      html +=
+        '<div style="position:relative;padding-bottom:' + (isLast ? '0' : '16px') + '">' +
+          (!isLast ? '<div style="position:absolute;left:-13px;top:18px;bottom:0;width:1px;background:var(--border)"></div>' : '') +
+          '<div style="position:absolute;left:-17px;top:4px;width:8px;height:8px;border-radius:50%;' +
+            'background:' + (statusCls === 'success' ? 'var(--green-9)' : statusCls === 'error' ? 'var(--red-9)' : 'var(--border)') + ';' +
+            'border:2px solid var(--bg-elev)"></div>' +
+          '<div class="row" style="gap:8px;align-items:flex-start">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">' +
+                '<span class="mono" style="font-size:12px;font-weight:600">' + escH(step.step_id || step.name || ('step ' + (idx + 1))) + '</span>' +
+                (step.type ? '<span class="chip" style="font-size:9.5px;height:15px">' + escH(step.type) + '</span>' : '') +
+                (step.tool_name ? '<span class="chip" style="font-size:9.5px;height:15px;background:var(--violet-3);color:var(--violet-9)">' + escH(step.tool_name) + '</span>' : '') +
+                (statusCls ? '<span class="pill ' + statusCls + '" style="font-size:9px;height:14px">' + escH(step.status) + '</span>' : '') +
+              '</div>' +
+              (step.duration_ms !== undefined ? '<div style="font-size:10.5px;color:var(--text-4);margin-top:2px">' + step.duration_ms + 'ms</div>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  globalThis.intelSwitchTab = function (name, btn) {
+    intelSwitchTabById(name);
+    document.querySelectorAll('.tabs .tab').forEach(function (b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+  };
+
+  function intelSwitchTabById(name) {
+    ['steps', 'input', 'output'].forEach(function (t) {
+      var el = document.getElementById('intel-tab-' + t);
+      if (el) el.style.display = t === name ? '' : 'none';
+    });
+  }
+
+  function _setText(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function escH(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Init: select first trace
+  var first = document.querySelector('.intel-trace-item');
+  if (first) intelSelectTrace(first);
+}());
+</script>
+{% endblock %}

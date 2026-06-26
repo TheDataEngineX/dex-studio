@@ -33,23 +33,14 @@ Visit [http://localhost:7860](http://localhost:7860).
 
 ## First Login
 
-On first start, an API key is auto-generated, printed to the console, and saved to `~/.dex-studio/api.key`:
+On first start, DEX Studio redirects to the `/setup` page where you choose a password (minimum 8 characters). The password is PBKDF2-hashed and saved to `~/.dex-studio/auth.hash`.
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│  DEX Studio — API key generated (shown once)            │
-│  Key: <your-key>                                        │
-│  Saved to: ~/.dex-studio/api.key                        │
-│  Set DEX_STUDIO_API_KEY env var to override.            │
-└─────────────────────────────────────────────────────────┘
-```
+After setting a password, log in at `/login` with the same password.
 
-Enter this key at the `/login` page. The key is valid until you delete or replace it.
-
-To override (e.g. in Docker or CI):
+To pre-configure (e.g. in Docker or CI):
 
 ```bash
-DEX_STUDIO_API_KEY=mykey uv run poe dev
+uv run poe dev   # set password via the /setup page on first visit
 ```
 
 ## Switch Projects
@@ -72,7 +63,6 @@ To regenerate screenshots, the demo video, and the README GIF after UI changes:
 # System prerequisites (one-time)
 brew install ffmpeg           # macOS
 sudo apt install ffmpeg       # Ubuntu/Debian
-cargo install agg             # asciinema GIF exporter (requires Rust)
 
 # Python dev deps
 uv sync --all-groups
@@ -81,9 +71,11 @@ uv run playwright install chromium
 # Screenshots only (~60s, no ffmpeg needed)
 uv run poe screenshots
 
-# Full demo video + screenshots (~10 min, requires ffmpeg + agg)
-uv run poe demo
+# Full demo video (~10 min, requires ffmpeg)
+uv run python scripts/demo/record.py
+
+# GIF from video (15s highlight clip)
+ffmpeg -i docs/demo-full.mp4 -t 15 -vf "fps=10,scale=800:-1" docs/demo.gif
 ```
 
 Outputs land in `docs/`. Commit them alongside the code change.
-After generating `docs/demo-full.mp4`, upload it to YouTube and update the `PLACEHOLDER` URL in `README.md`.

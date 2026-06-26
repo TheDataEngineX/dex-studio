@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from dex_studio.auth import _hash_password
+
 # ── Minimal dex.yaml with a real CSV source ──────────────────────────────────
 
 _CONFIG_TEMPLATE = """\
@@ -78,17 +80,23 @@ _TEST_API_KEY = "integration-test-key-abc123"  # gitleaks:allow
 
 
 @pytest.fixture(scope="module")
-def client(real_engine) -> Generator[TestClient]:
+def client(real_engine, tmp_path_factory: pytest.TempPathFactory) -> Generator[TestClient]:
     """TestClient with real DexEngine injected, scheduler lifespan disabled.
 
     Auth is always enabled now, so we set a known test key and login once
     before yielding so all tests run in an authenticated session.
     """
     import dex_studio._engine as _mod
+    import dex_studio.auth as _auth_mod
 
     orig = _mod._ENGINE
     _mod._ENGINE = real_engine
-    os.environ["DEX_STUDIO_API_KEY"] = _TEST_API_KEY
+
+    hash_file = tmp_path_factory.mktemp("auth") / "auth.hash"
+    hash_file.write_text(_hash_password(_TEST_API_KEY))
+    _orig_hash_file = _auth_mod._HASH_FILE
+    _auth_mod._HASH_FILE = hash_file
+
     os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
 
     from dex_studio.app import create_app
@@ -102,12 +110,12 @@ def client(real_engine) -> Generator[TestClient]:
 
     with TestClient(app, raise_server_exceptions=False) as tc:
         # Authenticate once — the TestClient persists the session cookie.
-        login = tc.post("/login", data={"api_key": _TEST_API_KEY})
+        login = tc.post("/login", data={"passphrase": _TEST_API_KEY})
         assert login.status_code in (200, 303), f"Login failed: {login.status_code}"
         yield tc
 
     _mod._ENGINE = orig
-    os.environ.pop("DEX_STUDIO_API_KEY", None)
+    _auth_mod._HASH_FILE = _orig_hash_file
 
 
 @pytest.fixture(scope="module")
@@ -136,7 +144,7 @@ def test_health_returns_ok(client: TestClient) -> None:
 def test_home_renders(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200
-    assert b"IntegrationTest" in r.content
+    assert b"DEX Studio" in r.content
 
 
 # ── Data — sources ────────────────────────────────────────────────────────────
@@ -231,32 +239,60 @@ def test_system_metrics(client: TestClient) -> None:
     assert r.status_code == 200
 
 
-# ── ML ────────────────────────────────────────────────────────────────────────
+# ── Intelligence ──────────────────────────────────────────────────────────────
 
 
-def test_ml_models(client: TestClient) -> None:
-    r = client.get("/ml/models")
+def test_intelligence_models(client: TestClient) -> None:
+    r = client.get("/intelligence/models")
     assert r.status_code == 200
 
 
-def test_ml_experiments(client: TestClient) -> None:
-    r = client.get("/ml/experiments")
+def test_intelligence_experiments(client: TestClient) -> None:
+    r = client.get("/intelligence/experiments")
     assert r.status_code == 200
 
 
-def test_ml_drift(client: TestClient) -> None:
-    r = client.get("/ml/drift")
+def test_intelligence_drift(client: TestClient) -> None:
+    r = client.get("/intelligence/drift")
     assert r.status_code == 200
 
 
-# ── AI ────────────────────────────────────────────────────────────────────────
-
-
-def test_ai_agents(client: TestClient) -> None:
-    r = client.get("/ai/agents")
+def test_intelligence_agents(client: TestClient) -> None:
+    r = client.get("/intelligence/agents")
     assert r.status_code == 200
 
 
-def test_ai_playground(client: TestClient) -> None:
-    r = client.get("/ai/playground")
+def test_intelligence_playground(client: TestClient) -> None:
+    r = client.get("/intelligence/playground")
+    assert r.status_code == 200
+
+
+# ── Data — data pipeline data flow ──────────────────────────────────────────
+
+
+def test_pipeline_data_flow(client: TestClient, csrf_headers: dict[str, str]) -> None:
+    """Run the pipeline and verify data flows to the warehouse."""
+    r = client.post("/data/pipelines/run/clean_users", headers=csrf_headers)
+    assert r.status_code in (200, 303), f"run failed: {r.status_code}"
+
+    r2 = client.get("/data/warehouse/tables")
+    assert r2.status_code == 200
+
+
+# ── Error handling ──────────────────────────────────────────────────────────
+
+
+def test_favicon_returns_200(client: TestClient) -> None:
+    r = client.get("/favicon.ico")
+    assert r.status_code == 200
+    assert "image/svg+xml" in r.headers.get("content-type", "")
+
+
+def test_not_found_returns_404(client: TestClient) -> None:
+    r = client.get("/nonexistent-route")
+    assert r.status_code == 404
+
+
+def test_system_components_returns_200(client: TestClient) -> None:
+    r = client.get("/system/components")
     assert r.status_code == 200

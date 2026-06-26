@@ -1,62 +1,198 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import status_badge, empty_state %}
+{% from "components/macros.html" import metric_card, status_badge, empty_state, filter_empty_state %}
 
 {% block title %}Sources — DEX Studio{% endblock %}
 {% block page_title %}Sources{% endblock %}
+{% block page_sub %}{{ sources | length }} source{{ 's' if sources | length != 1 }} configured{% endblock %}
 {% block page_actions %}
-<button @click="$dispatch('open-add-source')" class="btn primary sm">
+<button @click="$dispatch('open-add-source')" class="btn sm primary">
   <i data-lucide="plus" style="width:13px;height:13px"></i> Add Source
 </button>
 {% endblock %}
 
 {% block content %}
+<div style="--domain-color: var(--domain-data)">
+
 {% if sources %}
-<div style="margin-bottom:10px">
-  <input class="dex-table-filter" placeholder="Filter sources…" data-table="sources-table">
-</div>
-<div class="card bare">
-  <table id="sources-table" class="dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th class="sortable">Name</th>
-        <th class="sortable">Type</th>
-        <th class="sortable">Status</th>
-        <th style="width:90px">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
+
+{# ── 3-col master-detail layout ────────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns:1fr 2fr 1fr;gap:var(--space-3);align-items:start">
+
+  {# ── Left col: source list ──────────────────────────────────────────────── #}
+  <div class="card bare">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div class="input-icon">
+        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
+        <input class="input" id="src-search" placeholder="Filter sources…" style="font-size:12px;height:26px"
+               oninput="srcFilter(this.value)">
+      </div>
+    </div>
+    <div id="src-list">
       {% for s in sources %}
-      <tr>
-        <td>
-          <a href="/data/sources/{{ s.name }}" style="font-weight:600;color:var(--accent-11);text-decoration:none;font-family:var(--font-mono);font-size:12px">{{ s.name }}</a>
-        </td>
-        <td>
-          <span class="chip" style="font-size:11px">{{ s.type }}</span>
-        </td>
-        <td>{{ status_badge(s.status) }}</td>
-        <td>
-          <div style="display:flex;gap:4px">
-            <a href="/data/sources/{{ s.name }}" class="btn icon ghost sm" title="View">
-              <i data-lucide="eye" style="width:12px;height:12px"></i>
-            </a>
-            <form method="post" action="/data/sources/delete/{{ s.name }}" style="display:inline"
-                  onsubmit="return confirm('Remove source {{ s.name }}?')">
-              <button type="submit" class="btn icon ghost sm" title="Delete" style="color:var(--red-9)">
-                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
-              </button>
-            </form>
+      <div class="pipe-item {{ 'active' if loop.first }}"
+           role="button" tabindex="0"
+           data-name="{{ s.name }}"
+           data-connector="{{ s.connector_type | default('http') }}"
+           onclick="selectSource(this)"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectSource(this)}"
+           style="border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:10px 14px 10px 11px;cursor:pointer;display:flex;gap:10px;align-items:center;background:{{ 'color-mix(in oklch,var(--accent-9) 10%,transparent)' if loop.first else 'none' }}">
+        <i data-lucide="database" style="width:13px;height:13px;opacity:.4;flex-shrink:0"></i>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="mono" style="font-weight:500;font-size:13px;color:var(--text)">{{ s.name }}</span>
+            <span class="type-pill">{{ s.connector_type | default('http') }}</span>
           </div>
-        </td>
-      </tr>
+          <div class="muted" style="font-size:11px;margin-top:2px">
+            <span class="sdot {{ 'ok' if s.status == 'active' else 'error' }}" style="width:6px;height:6px;display:inline-block;margin-right:4px"></span>
+            {{ s.status | default('active') }} · last {{ s.last_synced | default('—') }}
+          </div>
+        </div>
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+  </div>
+
+  {# ── Center col: detail with tabs ───────────────────────────────────────── #}
+  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
+
+    {# Header #}
+    <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0">
+      <span class="glyph accent">
+        <i data-lucide="database" style="width:13px;height:13px"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:8px">
+          <span class="mono" id="src-name" style="font-weight:600;font-size:15px">
+            {{ sources[0].name if sources else '—' }}
+          </span>
+          <span id="src-type-pill" class="type-pill">{{ sources[0].connector_type if sources else '—' }}</span>
+        </div>
+        <div class="muted" id="src-meta" style="font-size:11px;margin-top:2px">
+          {{ sources[0].last_synced if sources else '—' }}
+        </div>
+      </div>
+      <button class="btn sm ghost" onclick="testConnection()">
+        <i data-lucide="zap" style="width:11px;height:11px"></i> Test connection
+      </button>
+    </div>
+
+    {# Tabs #}
+    <div class="tabs" style="padding-left:14px;flex-shrink:0">
+      <button class="tab active" onclick="switchSrcTab('overview',this)">Overview</button>
+      <button class="tab" onclick="switchSrcTab('schema',this)">Schema</button>
+      <button class="tab" onclick="switchSrcTab('sample',this)">Sample</button>
+      <button class="tab" onclick="switchSrcTab('config',this)">Config</button>
+    </div>
+
+    {# Overview tab #}
+    <div id="src-tab-overview" style="padding:16px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <div class="card dex-metric-card dex-metric-indigo" style="padding:14px 18px;flex:1;min-width:100px">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Total Rows</div>
+          <div id="src-metric-rows" style="font-size:22px;font-weight:700;color:var(--text);line-height:1">—</div>
+        </div>
+        <div class="card dex-metric-card dex-metric-blue" style="padding:14px 18px;flex:1;min-width:100px">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Columns</div>
+          <div id="src-metric-cols" style="font-size:22px;font-weight:700;color:var(--text);line-height:1">—</div>
+        </div>
+        <div class="card dex-metric-card dex-metric-green" style="padding:14px 18px;flex:1;min-width:100px">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Connector</div>
+          <div id="src-metric-type" style="font-size:16px;font-weight:700;color:var(--text);line-height:1;font-family:var(--font-mono)">—</div>
+        </div>
+      </div>
+      <div id="src-overview-detail" class="muted" style="font-size:12px;line-height:1.6">
+        Select a source from the list to view details.
+      </div>
+    </div>
+
+    {# Schema tab #}
+    <div id="src-tab-schema" style="display:none;overflow:auto">
+      <table class="dex-table" id="src-schema-table">
+        <thead><tr><th>Column</th><th>Type</th></tr></thead>
+        <tbody id="src-schema-body">
+          <tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No schema data</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# Sample tab #}
+    <div id="src-tab-sample" style="display:none;overflow:auto">
+      <table class="dex-table" id="src-sample-table">
+        <thead><tr id="src-sample-head"><th class="muted">—</th></tr></thead>
+        <tbody id="src-sample-body">
+          <tr><td class="muted" style="text-align:center;padding:20px">No sample data</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# Config tab #}
+    <div id="src-tab-config" style="display:none;overflow:auto">
+      <table class="dex-table" id="src-config-table">
+        <thead><tr><th>Key</th><th>Value</th></tr></thead>
+        <tbody id="src-config-body">
+          <tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No config data</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  {# ── Right col: health & actions ────────────────────────────────────────── #}
+  <div class="card bare" style="padding:16px;display:flex;flex-direction:column;gap:14px">
+    <div>
+      <div class="cap" style="margin-bottom:6px">Last fetched</div>
+      <div class="mono" id="src-last-fetched" style="font-size:12px;color:var(--text-2)">—</div>
+    </div>
+    <div>
+      <div class="cap" style="margin-bottom:6px">Row trend</div>
+      <div id="src-row-trend" style="font-size:12px;color:var(--text-3)">
+        <span style="color:var(--state-idle)">— no data</span>
+      </div>
+    </div>
+    <div>
+      <div class="cap" style="margin-bottom:8px">Actions</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn ghost" style="width:100%;justify-content:flex-start;gap:6px;font-size:12px"
+                onclick="testConnection()">
+          <i data-lucide="zap" style="width:12px;height:12px"></i> Test connection
+        </button>
+        <a id="src-run-link" href="/data/pipelines" class="btn ghost"
+           style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;text-decoration:none">
+          <i data-lucide="play" style="width:12px;height:12px"></i> Run now
+        </a>
+        <a href="/data/sources" class="btn ghost"
+           style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;text-decoration:none">
+          <i data-lucide="eye" style="width:12px;height:12px"></i> View detail
+        </a>
+      </div>
+    </div>
+    <div>
+      <div class="cap" style="margin-bottom:6px">Recent fetches</div>
+      <div style="display:flex;gap:4px">
+        {# Placeholder status dots - would be populated from run history #}
+        {% for _ in range(5) %}
+        <span class="sdot idle" title="No data"></span>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="margin-top:4px;padding-top:12px;border-top:1px solid var(--border)">
+      <form method="post" id="src-delete-form" action="#"
+            onsubmit="event.preventDefault();dexConfirm(this,'Remove source?','This will permanently disconnect this source from the project.')">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn ghost" style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;color:var(--red-9);border-color:var(--red-6)">
+          <i data-lucide="trash-2" style="width:12px;height:12px"></i> Remove source
+        </button>
+      </form>
+    </div>
+  </div>
+
 </div>
+
 {% else %}
 {{ empty_state("database", "No sources configured", "Add a data source to get started.") }}
 {% endif %}
 
-<!-- Add Source Dialog -->
+{# ── Add Source Dialog ───────────────────────────────────────────────────────── #}
 <div x-data="{open:false,srcType:'csv'}" @open-add-source.window="open=true"
      x-show="open" x-cloak class="dex-modal-overlay"
      @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
@@ -65,7 +201,7 @@
     <form method="post" action="/data/sources/add">
       <div class="dex-form-group" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
-        <input type="text" name="name" placeholder="my_source" required class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        <input type="text" name="name" placeholder="my_source" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
       </div>
       <div class="dex-form-group" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Type *</label>
@@ -73,19 +209,15 @@
           {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
       </div>
-
-      <!-- Generic path — hidden for dbt (project_dir takes its place) -->
       <div class="dex-form-group" style="margin-bottom:10px" x-show="srcType !== 'dbt'">
         <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Path / URL</label>
-        <input type="text" name="path" placeholder="/data/file.csv" class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+        <input type="text" name="path" placeholder="/data/file.csv" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
       </div>
-
-      <!-- Spark-specific fields -->
       <template x-if="srcType === 'spark'">
         <div>
           <div class="dex-form-group" style="margin-bottom:10px">
             <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Spark master</label>
-            <input type="text" name="spark_master" placeholder="local[*]" value="local[*]" class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+            <input type="text" name="spark_master" placeholder="local[*]" value="local[*]" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
           </div>
           <div class="dex-form-group" style="margin-bottom:10px">
             <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Format</label>
@@ -99,25 +231,23 @@
           </div>
         </div>
       </template>
-
-      <!-- dbt-specific fields -->
       <template x-if="srcType === 'dbt'">
         <div>
           <div class="dex-form-group" style="margin-bottom:10px">
             <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project dir *</label>
-            <input type="text" name="dbt_project_dir" placeholder="/path/to/dbt_project" required class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+            <input type="text" name="dbt_project_dir" placeholder="/path/to/dbt_project" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
           </div>
           <div class="dex-form-group" style="margin-bottom:10px">
             <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model *</label>
-            <input type="text" name="dbt_model" placeholder="my_model" required class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+            <input type="text" name="dbt_model" placeholder="my_model" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
           </div>
           <div class="dex-form-group" style="margin-bottom:10px">
             <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Target</label>
-            <input type="text" name="dbt_target" placeholder="dev" value="dev" class="input" style="width:100%;padding:7px 10px;font-family:'Fira Code',monospace;font-size:12px">
+            <input type="text" name="dbt_target" placeholder="dev" value="dev" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
           </div>
         </div>
       </template>
-
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
         <button type="button" @click="open=false" class="btn ghost">Cancel</button>
         <button type="submit" class="btn primary">Add</button>
@@ -125,4 +255,130 @@
     </form>
   </div>
 </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const SOURCE_DATA = {{ source_data_json | safe }};
+
+  function esc(s) {
+    return String(s ?? '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function setEl(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function setHtml(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
+  globalThis.selectSource = function (el) {
+    document.querySelectorAll('.pipe-item').forEach(function (i) {
+      i.classList.remove('active');
+      i.style.borderLeftColor = 'transparent';
+      i.style.background = 'none';
+    });
+    el.classList.add('active');
+    el.style.borderLeftColor = 'var(--accent-9)';
+    el.style.background = 'color-mix(in oklch,var(--accent-9) 10%,transparent)';
+
+    const name = el.dataset.name;
+    const d = SOURCE_DATA[name] || {};
+
+    setEl('src-name', name);
+    const typePill = document.getElementById('src-type-pill');
+    if (typePill) typePill.textContent = d.connector || '—';
+    setEl('src-meta', 'Last synced: ' + (d.last_fetched || '—'));
+    setEl('src-last-fetched', d.last_fetched || '—');
+    setEl('src-metric-rows', d.row_count != null ? String(d.row_count) : '—');
+    setEl('src-metric-cols', d.schema ? String(d.schema.length) : '—');
+    setEl('src-metric-type', d.connector || '—');
+
+    // Overview
+    setEl('src-overview-detail', 'Connector: ' + esc(d.connector || '—') +
+      ' · ' + (d.schema ? d.schema.length + ' columns' : 'schema unavailable'));
+
+    // Schema tab
+    const schemaBody = document.getElementById('src-schema-body');
+    if (schemaBody) {
+      if (d.schema && d.schema.length) {
+        schemaBody.innerHTML = d.schema.map(function(col) {
+          return '<tr><td class="mono" style="font-size:12px">' + esc(col.name) + '</td>' +
+            '<td class="mono dim" style="font-size:11.5px">' + esc(col.type) + '</td></tr>';
+        }).join('');
+      } else {
+        schemaBody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No schema available</td></tr>';
+      }
+    }
+
+    // Sample tab
+    const sampleHead = document.getElementById('src-sample-head');
+    const sampleBody = document.getElementById('src-sample-body');
+    if (sampleHead && sampleBody) {
+      const cols = d.sample_cols || [];
+      if (cols.length && d.sample_rows && d.sample_rows.length) {
+        sampleHead.innerHTML = cols.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('');
+        sampleBody.innerHTML = d.sample_rows.slice(0, 5).map(function(row) {
+          return '<tr>' + cols.map(function(c) {
+            return '<td class="mono" style="font-size:11.5px">' + esc(row[c] != null ? row[c] : '—') + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+      } else {
+        sampleHead.innerHTML = '<th class="muted">—</th>';
+        sampleBody.innerHTML = '<tr><td class="muted" style="text-align:center;padding:20px">No sample data</td></tr>';
+      }
+    }
+
+    // Config tab
+    const configBody = document.getElementById('src-config-body');
+    if (configBody) {
+      if (d.config_display && d.config_display.length) {
+        configBody.innerHTML = d.config_display.map(function(c) {
+          return '<tr><td class="mono" style="font-size:12px">' + esc(c.key) + '</td>' +
+            '<td class="mono dim" style="font-size:11.5px">' + esc(c.value) + '</td></tr>';
+        }).join('');
+      } else {
+        configBody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No config data</td></tr>';
+      }
+    }
+
+    // Update delete form action
+    const delForm = document.getElementById('src-delete-form');
+    if (delForm) delForm.action = '/data/sources/delete/' + encodeURIComponent(name);
+    // Update run link
+    const runLink = document.getElementById('src-run-link');
+    if (runLink) runLink.href = '/data/pipelines';
+  };
+
+  globalThis.switchSrcTab = function (name, btn) {
+    document.querySelectorAll('[id^="src-tab-"]').forEach(el => { el.style.display = 'none'; });
+    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const pane = document.getElementById('src-tab-' + name);
+    if (pane) pane.style.display = '';
+  };
+
+  globalThis.srcFilter = function (q) {
+    const lq = q.toLowerCase();
+    document.querySelectorAll('.pipe-item').forEach(function (item) {
+      item.style.display = !lq || item.dataset.name.toLowerCase().includes(lq) ? '' : 'none';
+    });
+  };
+
+  globalThis.testConnection = function () {
+    const name = document.getElementById('src-name');
+    if (name) alert('Testing connection for: ' + name.textContent + '\n(Connection test would run here)');
+  };
+
+  // Init with first source
+  const first = document.querySelector('.pipe-item');
+  if (first) selectSource(first);
+})();
+</script>
 {% endblock %}

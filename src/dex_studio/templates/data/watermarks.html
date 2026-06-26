@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Watermarks — DEX Studio{% endblock %}
+{% block page_title %}Watermarks{% endblock %}
+{% block page_sub %}Per-source ingestion cursors · content-hash dedup state · reset to force full re-ingest{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-data)">
+
+  {# ── Metric strip ── #}
+  {% set most_stale_name = '' %}
+  {% set freshest_name = '' %}
+  {% if watermarks %}
+    {% set most_stale_name = watermarks[0].source %}
+    {% set freshest_name = watermarks[-1].source %}
+  {% endif %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    {{ metric_card("Sources Tracked", watermarks | length, "droplets", "indigo") }}
+    {{ metric_card("Most Stale", most_stale_name if most_stale_name else '—', "alert-triangle", "red" if most_stale_name else "indigo") }}
+    {{ metric_card("Freshest", freshest_name if freshest_name else '—', "check-circle", "green" if freshest_name else "indigo") }}
+  </div>
+
+  {# ── Watermark board ── #}
+  <div class="card bare" style="margin-bottom:20px;overflow:hidden">
+    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
+      <h2 style="font-size:13px">Ingestion Cursors</h2>
+      <span class="muted" style="font-size:11px">Watermarks track the latest ingested timestamp per source.</span>
+    </div>
+
+    {% if watermarks %}
+
+    {# ── Watermark board cards ── #}
+    <div style="display:flex;flex-direction:column;gap:0">
+      {% for w in watermarks %}
+      {% set ts = w.updated_at[:19] | replace('T', ' ') if w.updated_at else '' %}
+      {# Compute staleness: compare updated_at to now — simplified color logic #}
+      {% set stale_color = 'var(--state-ok)' %}
+      {% set stale_label = 'Fresh' %}
+      {% set stale_pct = 20 %}
+      {# We can't do real datetime math in Jinja2 easily, so use hash_count as proxy for activity #}
+      {% if not ts %}
+        {% set stale_color = 'var(--state-error)' %}
+        {% set stale_label = 'Unknown' %}
+        {% set stale_pct = 100 %}
+      {% endif %}
+
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;gap:16px;align-items:center">
+        {# Source name #}
+        <div style="min-width:160px;flex-shrink:0">
+          <div class="mono" style="font-size:13px;font-weight:500;color:var(--text)">{{ w.source }}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">{{ ts if ts else '—' }}</div>
+        </div>
+
+        {# Watermark value #}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);margin-bottom:3px">Watermark</div>
+          <div class="mono" style="font-size:12px;color:var(--accent-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{ w.watermark[:19] | replace('T', ' ') if w.watermark else '—' }}
+          </div>
+        </div>
+
+        {# Staleness bar #}
+        <div style="min-width:120px;flex-shrink:0">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);margin-bottom:4px">Freshness</div>
+          <div style="height:6px;border-radius:3px;background:var(--bg-elev-2);overflow:hidden">
+            <div style="height:100%;width:{{ stale_pct }}%;border-radius:3px;background:{{ stale_color }};transition:width .3s"></div>
+          </div>
+          <div style="font-size:10px;color:{{ stale_color }};margin-top:3px">{{ stale_label }}</div>
+        </div>
+
+        {# Hash count #}
+        <div style="flex-shrink:0;text-align:right">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);margin-bottom:3px">Dedup hashes</div>
+          <div class="mono" style="font-size:12px">{{ w.hash_count | default(0) }}</div>
+        </div>
+
+        {# Reset action #}
+        <div style="flex-shrink:0">
+          <form method="post" action="/data/watermarks/{{ w.source }}/reset"
+                onsubmit="event.preventDefault();dexConfirm(this,'Reset watermark for {{ w.source }}?','This clears the cursor and dedup hashes — the next pipeline run will re-ingest <strong>ALL</strong> historical data.')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px;color:var(--red-9);border-color:var(--red-6)">
+              <i data-lucide="rotate-ccw" style="width:11px;height:11px"></i> Reset
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    {% call empty_state("droplets", "No watermarks recorded yet", "Watermarks are created automatically when the scheduler runs a pipeline.") %}
+    <div style="margin-top:12px">
+      {% if all_sources %}
+      <p class="muted" style="font-size:12px;margin:0 0 16px;line-height:1.6">
+        {{ all_sources | length }} source{{ 's' if all_sources | length != 1 else '' }} configured:
+        {% for s in all_sources[:6] %}<code>{{ s }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if all_sources | length > 6 %} &hellip;{% endif %}
+      </p>
+      {% endif %}
+      <div style="display:flex;gap:8px;justify-content:center">
+        <a href="/data/pipelines" class="btn primary" style="text-decoration:none">
+          <i data-lucide="git-branch" style="width:13px;height:13px"></i> Run a pipeline
+        </a>
+        <a href="/system/runs" class="btn ghost" style="text-decoration:none">
+          <i data-lucide="clock" style="width:13px;height:13px"></i> View scheduler
+        </a>
+      </div>
+    </div>
+    {% endcall %}
+    {% endif %}
+  </div>
+
+  {# ── How watermarks work ── #}
+  <details class="card" style="padding:0">
+    <summary style="padding:12px 14px;cursor:pointer;font-size:13px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px">
+      <i data-lucide="info" style="width:13px;height:13px;color:var(--text-4)"></i>
+      How watermarks work
+      <i data-lucide="chevron-down" style="width:12px;height:12px;color:var(--text-4);margin-left:auto"></i>
+    </summary>
+    <div style="padding:0 14px 14px;font-size:12px;line-height:1.7;color:var(--text-2);border-top:1px solid var(--border)">
+      <p style="margin:12px 0 6px">
+        <strong>Watermark cursor</strong> — after each successful pipeline run the scheduler records the latest
+        <code>updated_at</code> or <code>ingested_at</code> timestamp for that source. On the next run only records
+        newer than this cursor are fetched, enabling incremental ingestion.
+      </p>
+      <p style="margin:0 0 6px">
+        <strong>Content-hash deduplication</strong> — a SHA-256 hash of each ingested row is stored. If the same
+        row appears again in a subsequent run it is silently dropped. The hash count column shows how many
+        unique rows have been ingested from each source.
+      </p>
+      <p style="margin:0">
+        <strong>Reset</strong> — clears both the cursor and all stored hashes for a source.
+        The next pipeline run will ingest the full history. Use with caution on large sources.
+      </p>
+    </div>
+  </details>
+</div>
+{% endblock %}

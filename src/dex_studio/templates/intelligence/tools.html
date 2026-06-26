@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, status_badge %}
+
+{% block title %}Tool Catalog — Intelligence — DEX Studio{% endblock %}
+{% block page_title %}Tool Catalog{% endblock %}
+{% block page_sub %}{{ (builtin_count + sql_count + python_count) }} tools across 3 tiers{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-intelligence)">
+
+{# ── Metric strip ── #}
+<div class="row" style="gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
+  {{ metric_card("Builtin tools",  builtin_count, "zap",    "blue",  "Platform native") }}
+  {{ metric_card("SQL tools",      sql_count,     "database","amber", "Template-driven") }}
+  {{ metric_card("Python tools",   python_count,  "code",   "green", "Custom functions") }}
+</div>
+
+{% if tools %}
+
+{# ── Filter tabs ── #}
+<div class="row" style="gap:6px;margin-bottom:var(--space-3)">
+  <button class="btn sm ghost tool-tier-btn active-filter" data-tier="all"
+          onclick="filterTier('all',this)" style="height:26px;font-size:12px">All</button>
+  <button class="btn sm ghost tool-tier-btn" data-tier="builtin"
+          onclick="filterTier('builtin',this)" style="height:26px;font-size:12px">
+    <span style="width:7px;height:7px;border-radius:50%;background:var(--blue-9);display:inline-block;margin-right:4px"></span>Builtin
+  </button>
+  <button class="btn sm ghost tool-tier-btn" data-tier="sql"
+          onclick="filterTier('sql',this)" style="height:26px;font-size:12px">
+    <span style="width:7px;height:7px;border-radius:50%;background:var(--amber-9);display:inline-block;margin-right:4px"></span>SQL
+  </button>
+  <button class="btn sm ghost tool-tier-btn" data-tier="python"
+          onclick="filterTier('python',this)" style="height:26px;font-size:12px">
+    <span style="width:7px;height:7px;border-radius:50%;background:var(--green-9);display:inline-block;margin-right:4px"></span>Python
+  </button>
+</div>
+
+{# ── Tool card grid ── #}
+<div class="grid" id="tool-grid"
+     style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+
+  {% for t in tools %}
+  <div class="card tool-card" data-tier="{{ t.tier }}"
+       style="padding:18px;display:flex;flex-direction:column;gap:12px">
+
+    {# Name + tier badge #}
+    <div class="row" style="gap:8px;align-items:flex-start">
+      <span class="glyph" style="flex-shrink:0;background:var(--violet-3)">
+        <i data-lucide="wrench" style="width:13px;height:13px;color:var(--violet-9)"></i>
+      </span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="mono" style="font-weight:700;font-size:13px">{{ t.name }}</span>
+          {% if t.tier == 'builtin' %}
+            <span class="pill info" style="font-size:10px">builtin</span>
+          {% elif t.tier == 'sql' %}
+            <span class="pill warn" style="font-size:10px">sql</span>
+          {% elif t.tier == 'python' %}
+            <span class="pill success" style="font-size:10px">python</span>
+          {% else %}
+            <span class="pill" style="font-size:10px">{{ t.tier }}</span>
+          {% endif %}
+          {% if t.param_count is defined and t.param_count > 0 %}
+            <span class="chip" style="height:16px;font-size:9.5px">{{ t.param_count }} param{{ 's' if t.param_count != 1 }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Description #}
+    {% if t.description %}
+    <div class="muted" style="font-size:12px;line-height:1.5">{{ t.description }}</div>
+    {% endif %}
+
+    {# Params expand ── #}
+    {% if t.params %}
+    <details style="font-size:12px">
+      <summary style="cursor:pointer;color:var(--text-3);user-select:none;list-style:none;
+                      display:flex;align-items:center;gap:4px">
+        <i data-lucide="chevron-right" style="width:11px;height:11px;transition:transform .15s"
+           class="param-chevron"></i>
+        {{ t.param_count }} param{{ 's' if t.param_count != 1 }}
+      </summary>
+      <div style="margin-top:8px;overflow-x:auto">
+        <table class="dex-table" style="width:100%;font-size:11px">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in t.params %}
+            <tr>
+              <td class="mono">{{ p.name }}</td>
+              <td class="mono" style="color:var(--text-3)">{{ p.type }}</td>
+              <td>
+                {% if p.required %}
+                  <span class="pill error" style="font-size:9px">yes</span>
+                {% else %}
+                  <span class="pill" style="font-size:9px">no</span>
+                {% endif %}
+              </td>
+              <td class="mono" style="color:var(--text-4)">{{ p.default if p.default is not none else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+
+    {# SQL template ── #}
+    {% if t.sql_template %}
+    <details style="font-size:12px">
+      <summary style="cursor:pointer;color:var(--text-3);user-select:none;list-style:none;
+                      display:flex;align-items:center;gap:4px">
+        <i data-lucide="chevron-right" style="width:11px;height:11px"></i>
+        SQL template
+      </summary>
+      <pre class="mono card bare" style="margin-top:8px;padding:10px;font-size:11px;
+           white-space:pre-wrap;line-height:1.5;color:var(--text-2);overflow-x:auto">{{ t.sql_template }}</pre>
+    </details>
+    {% endif %}
+
+    {# Source file ── #}
+    {% if t.source_file %}
+    <div class="muted mono" style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+         title="{{ t.source_file }}">{{ t.source_file }}</div>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+</div>
+
+{# No-match state (when all filtered out) #}
+<div id="tool-empty-filter" style="display:none;text-align:center;padding:48px 24px;color:var(--text-3)">
+  <i data-lucide="search-x" style="width:28px;height:28px;opacity:.4;display:block;margin:0 auto 10px"></i>
+  <div style="font-size:13px">No tools match this filter.</div>
+</div>
+
+{% else %}
+
+{% call empty_state("wrench", "No tools configured", "Define tools in your dex.yaml intelligence section.") %}
+<div class="card" style="margin:16px auto;max-width:400px;padding:16px;text-align:left">
+  <div class="cap" style="margin-bottom:8px">dex.yaml</div>
+  <pre class="mono muted" style="font-size:11.5px;line-height:1.6;margin:0">intelligence:
+  tools:
+    search_movies:
+      type: sql_query
+    score_sentiment:
+      type: python
+      module: tools.sentiment</pre>
+</div>
+{% endcall %}
+
+{% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var _activeTier = 'all';
+
+  globalThis.filterTier = function (tier, btn) {
+    _activeTier = tier;
+    document.querySelectorAll('.tool-tier-btn').forEach(function (b) {
+      b.classList.remove('active-filter');
+      b.style.background = '';
+      b.style.color = '';
+    });
+    btn.classList.add('active-filter');
+    btn.style.background = 'color-mix(in oklch,var(--domain-intelligence) 15%,transparent)';
+    btn.style.color = 'var(--violet-11)';
+
+    var visible = 0;
+    document.querySelectorAll('.tool-card').forEach(function (card) {
+      var show = tier === 'all' || card.dataset.tier === tier;
+      card.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+
+    var emptyEl = document.getElementById('tool-empty-filter');
+    if (emptyEl) emptyEl.style.display = visible === 0 ? '' : 'none';
+  };
+
+  // Chevron rotate on details open
+  document.querySelectorAll('details').forEach(function (det) {
+    det.addEventListener('toggle', function () {
+      var chev = det.querySelector('.param-chevron');
+      if (chev) chev.style.transform = det.open ? 'rotate(90deg)' : '';
+    });
+  });
+
+  // Init active filter button style
+  var allBtn = document.querySelector('.tool-tier-btn[data-tier="all"]');
+  if (allBtn) {
+    allBtn.style.background = 'color-mix(in oklch,var(--domain-intelligence) 15%,transparent)';
+    allBtn.style.color = 'var(--violet-11)';
+  }
+}());
+</script>
+{% endblock %}

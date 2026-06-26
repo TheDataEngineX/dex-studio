@@ -8,15 +8,17 @@ import os
 import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any
 
 import duckdb
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from dex_studio import _json
 from dex_studio.flow import build_nodes
-from dex_studio.jobs import run_pipeline_bg
+from dex_studio.jobs import is_pipeline_running, run_all_pipelines_bg, run_pipeline_bg
 from dex_studio.routers._deps import (
     JsonReadDep,
     ReadDep,
@@ -26,9 +28,31 @@ from dex_studio.routers._deps import (
     render,
     stub_page,
 )
-from dex_studio.utils import fmt_cron, fmt_ts
+from dex_studio.studio_db import get_studio_db
+from dex_studio.utils import fmt_cron, fmt_ts, fmt_ts_iso
 
 router = APIRouter()
+log = structlog.get_logger().bind(src="router.data")
+
+
+def _safe_pipeline_name(name: str) -> str:
+    """Sanitize pipeline_name for use in redirect URLs — strip path traversal chars."""
+    import re as _re
+
+    return _re.sub(r"[^A-Za-z0-9_\-]", "", name)[:128]
+
+
+def _fmt_dur_s(dur_s: float | None) -> str:
+    if dur_s is None:
+        return "—"
+    return f"{dur_s:.1f}s" if dur_s >= 1 else f"{int(dur_s * 1000)}ms"
+
+
+def _fmt_dur_ms(dur_ms: float | None) -> str:
+    if dur_ms is None:
+        return "—"
+    return f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
+
 
 _SOURCE_TYPES = [
     "csv",
@@ -39,6 +63,8 @@ _SOURCE_TYPES = [
     "mysql",
     "s3",
     "rest",
+    "http",
+    "sse",
     "kafka",
     "spark",
     "dbt",
@@ -48,16 +74,134 @@ _SOURCE_TYPES = [
 # ── Dashboard (/data) ────────────────────────────────────────────────────────
 
 
+def _build_dashboard_recent_runs(eng: Any) -> list[dict[str, Any]]:
+    """Return last 5 pipeline runs as display-ready dicts."""
+    runs: list[dict[str, Any]] = []
+    sdb = get_studio_db(eng)
+    if sdb is not None:
+        with contextlib.suppress(Exception):
+            for r in sdb.get_runs(None, limit=5):
+                st = r.get("status", "")
+                pipe_name = r.get("pipeline") or "—"
+                ts = r.get("finished_at") or r.get("started_at")
+                runs.append(
+                    {
+                        "name": pipe_name,
+                        "pipeline": pipe_name,
+                        "status": "success" if st == "success" else "error",
+                        "status_class": "ok" if st == "success" else "error",
+                        "duration": _fmt_dur_s(r.get("duration_s")),
+                        "rows": "—",
+                        "started": fmt_ts(ts),
+                    }
+                )
+    if not runs:
+        with contextlib.suppress(Exception):
+            for r in eng.store.get_pipeline_runs()[:5]:
+                success = getattr(r, "success", False)
+                pipe_name = getattr(r, "pipeline_name", "") or getattr(r, "pipeline", "") or "—"
+                runs.append(
+                    {
+                        "name": pipe_name,
+                        "pipeline": pipe_name,
+                        "status": "success" if success else "error",
+                        "status_class": "ok" if success else "error",
+                        "duration": _fmt_dur_ms(getattr(r, "duration_ms", None)),
+                        "rows": str(getattr(r, "rows_output", None) or "—"),
+                        "started": fmt_ts(getattr(r, "timestamp", None)),
+                    }
+                )
+    return runs
+
+
+def _build_activity_feed(recent_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Synthesize an activity feed from recent pipeline runs."""
+    feed: list[dict[str, Any]] = []
+    for r in recent_runs[:10]:
+        status = r.get("status", "error")
+        is_ok = status in ("success", "ok")
+        feed.append(
+            {
+                "domain": "data",
+                "icon": "check-circle" if is_ok else "alert-circle",
+                "desc": f"Pipeline {r.get('name', '—')} {'completed' if is_ok else 'failed'}",
+                "sub": r.get("duration", "—"),
+                "badge": "OK" if is_ok else "FAIL",
+                "href": f"/data/pipelines/{r.get('name', '')}",
+                "time_ago": r.get("started", "—"),
+            }
+        )
+    return feed
+
+
+def _build_quality_summary(eng: Any) -> dict[str, Any]:
+    """Return summary quality info: pass_pct (str), failing (list of dicts)."""
+    result: dict[str, Any] = {"pass_pct": "—", "failing": []}
+    with contextlib.suppress(Exception):
+        history = eng.quality_history()
+        runs = history.get("runs", [])
+        if runs:
+            latest = runs[0]
+            results = latest.get("results", {})
+            scores = []
+            failing: list[dict[str, str]] = []
+            for table, r in results.items():
+                if r is None:
+                    continue
+                s = r.get("score", 0.0)
+                scores.append(s)
+                if not r.get("passed", False):
+                    failing.append({"table": table, "score": f"{s * 100:.0f}%"})
+            if scores:
+                result["pass_pct"] = f"{sum(scores) / len(scores) * 100:.0f}%"
+            result["failing"] = failing
+    return result
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
+@router.get("/dashboard", response_class=HTMLResponse)
 def data_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
     stats = eng.pipeline_stats()
     sources = eng.config.data.sources or {}
     layers = eng.warehouse_layers()
+    # Compute layer stats for accent card tier dots
+    layer_stats: list[dict[str, Any]] = []
+    for lyr in ("bronze", "silver", "gold"):
+        tbl_count = 0
+        with contextlib.suppress(Exception):
+            tbl_count = len(eng.warehouse_tables(lyr))
+        layer_stats.append({"layer": lyr, "count": tbl_count})
+    table_count = sum(ls["count"] for ls in layer_stats)
+    # Pipeline sparkbar data
+    p_total = stats.get("total", 0)
+    p_running = stats.get("running", 0)
+    p_failed = stats.get("failed", 0)
+    p_idle = max(0, p_total - p_running - p_failed)
+    sparkbar_data: list[dict[str, str]] = []
+    for _ in range(p_running):
+        sparkbar_data.append({"status": "running", "height": "80"})
+    for _ in range(p_failed):
+        sparkbar_data.append({"status": "fail", "height": "70"})
+    for _ in range(p_idle):
+        sparkbar_data.append({"status": "ok", "height": "60"})
+    sparkbar_data = sparkbar_data[:7]
+    while len(sparkbar_data) < 7:
+        sparkbar_data.insert(0, {"status": "empty", "height": "30"})
+    # Recent runs & activity feed
+    recent_runs = _build_dashboard_recent_runs(eng)
+    activity_feed = _build_activity_feed(recent_runs)
+    quality_summary = _build_quality_summary(eng)
     ctx = base_ctx(request) | {
         "stats": stats,
         "source_count": len(sources),
         "layers": layers,
+        "layer_stats": layer_stats,
+        "table_count": table_count,
+        "sparkbar_data": sparkbar_data,
+        "recent_runs": recent_runs,
+        "activity_feed": activity_feed,
+        "quality_summary": quality_summary,
         "active_tab": "data",
     }
     return render(request, "data/dashboard.html", ctx)
@@ -163,7 +307,7 @@ def _pipeline_steps(cfg: Any) -> list[dict[str, str]]:
         sql = str(getattr(s, "sql", "") or "")
         key = getattr(s, "key", None)
         if cond:
-            label = f"{stype}: {cond[:35]}…" if len(cond) > 35 else f"{stype}: {cond}"
+            label = f"{stype}: {cond[:35]}…" if len(cond) > 35 else f"{stype}: {cond}"  # noqa: S601
         elif sql:
             first = sql.strip().splitlines()[0][:35]
             label = f"sql: {first}…" if len(sql.strip()) > 35 else f"sql: {first}"
@@ -175,24 +319,83 @@ def _pipeline_steps(cfg: Any) -> list[dict[str, str]]:
     return out
 
 
+def _next_run_iso(schedule: str, last_run_ts: Any) -> str:
+    """Return ISO next-run timestamp for a cron schedule, or empty string."""
+    if not schedule:
+        return ""
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    from croniter import croniter as _cron  # type: ignore[import-untyped]
+
+    try:
+        if isinstance(last_run_ts, str):
+            base: _dt = _dt.fromisoformat(last_run_ts)
+        elif last_run_ts is not None:
+            base = last_run_ts
+        else:
+            base = _dt.now(_UTC)
+        if hasattr(base, "tzinfo") and base.tzinfo is None:
+            base = base.replace(tzinfo=_UTC)
+        now = _dt.now(_UTC)
+        if base < now:
+            base = now
+        itr = _cron(schedule, base)
+        nxt: _dt = itr.get_next(_dt)
+        return nxt.replace(tzinfo=_UTC).isoformat()
+    except Exception as exc:
+        log.warning("next_run_iso failed", schedule=schedule, error=str(exc))
+        return ""
+
+
 def _build_pipeline_rows(eng: Any) -> list[dict[str, Any]]:
     rows = []
+    sdb = get_studio_db(eng)
     for name, cfg in (eng.config.data.pipelines or {}).items():
         last = eng.pipeline_last_run(name)
         dest = str(cfg.destination or name)
-        # Prefer event-store timestamp; fall back to parquet mtime for CLI runs
-        last_run = fmt_ts(last.timestamp if last else None)
+        raw_schedule = getattr(cfg, "schedule", "") or ""
+
+        if last is not None:
+            last_run_ts: Any = last.timestamp
+            status = _pipeline_status(last)
+            duration_ms = f"{last.duration_ms:.0f}" if last.duration_ms else "—"
+            rows_in = str(last.rows_input)
+            rows_out = str(last.rows_output)
+        else:
+            # Engine DuckDB has no record — fall back to StudioDb which captures all runs
+            db_runs = sdb.get_runs(name, limit=1) if sdb is not None else []
+            if db_runs:
+                db_r = db_runs[0]
+                last_run_ts = db_r.get("finished_at") or db_r.get("started_at") or None
+                raw_st = _norm_status(db_r.get("status", ""))
+                status = raw_st if raw_st in ("success", "failed", "error", "running") else "never"
+                dur_s = db_r.get("duration_s")
+                duration_ms = f"{dur_s * 1000:.0f}" if dur_s is not None else "—"
+            else:
+                last_run_ts = None
+                status = "never"
+                duration_ms = "—"
+            rows_in = "—"
+            rows_out = "—"
+
+        if is_pipeline_running(name):
+            status = "running"
+
+        last_run = fmt_ts(last_run_ts)
         if last_run == "—":
             last_run = _pipeline_parquet_mtime(eng, dest) or "—"
+
         rows.append(
             {
                 "name": name,
-                "schedule": fmt_cron(cfg.schedule or "") if cfg.schedule else "—",
-                "status": _pipeline_status(last),
+                "schedule": fmt_cron(raw_schedule) if raw_schedule else "—",
+                "next_run_at": _next_run_iso(raw_schedule, last_run_ts),
+                "status": status,
                 "last_run": last_run,
-                "duration_ms": f"{last.duration_ms:.0f}" if last and last.duration_ms else "—",
-                "rows_in": str(last.rows_input) if last else "—",
-                "rows_out": str(last.rows_output) if last else "—",
+                "duration_ms": duration_ms,
+                "rows_in": rows_in,
+                "rows_out": rows_out,
                 "source": str(cfg.source or ""),
                 "destination": dest,
                 "steps": _pipeline_steps(cfg),
@@ -214,6 +417,62 @@ def _serialize_run(r: Any) -> dict[str, Any]:
     }
 
 
+def _norm_status(status: str) -> str:
+    """Normalise scheduler's 'failure' → 'failed' for consistent display."""
+    return "failed" if status == "failure" else status
+
+
+def _serialize_db_run(r: dict[str, Any]) -> dict[str, Any]:
+    """Serialise a StudioDb pipeline_runs row to the same shape as _serialize_run."""
+    dur_s = r.get("duration_s")
+    status = _norm_status(r.get("status", ""))
+    ts = r.get("finished_at") or r.get("started_at") or ""
+    return {
+        "run_id": r.get("id", 0),
+        "pipeline_name": r.get("pipeline", ""),
+        "timestamp": fmt_ts(ts),
+        "started": fmt_ts_iso(ts),
+        "success": status == "success",
+        "duration_ms": round(dur_s * 1000, 0) if dur_s is not None else None,
+        "duration": _fmt_dur_s(dur_s),
+        "rows_output": None,
+        "error": r.get("error") or "",
+        "trigger": r.get("triggered_by") or "scheduler",
+        "status": status,
+    }
+
+
+def _sparkbar_for_pipeline(eng: Any, name: str) -> list[dict[str, str]]:
+    bars: list[dict[str, str]] = []
+    sdb = get_studio_db(eng)
+    if sdb is not None:
+        with contextlib.suppress(Exception):
+            for r in sdb.get_runs(name, limit=7):
+                st = r.get("status", "")
+                bars.append({"status": "ok" if st == "success" else "fail", "height": "70"})
+    if not bars:
+        with contextlib.suppress(Exception):
+            for r in reversed(eng.store.get_pipeline_runs(name)[:7]):
+                bars.append({"status": "ok" if r.success else "fail", "height": "70"})
+    while len(bars) < 7:
+        bars.insert(0, {"status": "empty", "height": "30"})
+    return bars[-7:]
+
+
+@router.get("/pipelines/status")
+def pipelines_status(request: Request, eng: JsonReadDep) -> Any:
+    """Lightweight JSON — status/last_run/next_run_at for live polling."""
+    return [
+        {
+            "name": r["name"],
+            "status": r["status"],
+            "last_run": r["last_run"],
+            "next_run_at": r["next_run_at"],
+        }
+        for r in _build_pipeline_rows(eng)
+    ]
+
+
 @router.get("/pipelines", response_class=HTMLResponse)
 def pipelines(request: Request, eng: ReadDep) -> HTMLResponse:
     rows = _build_pipeline_rows(eng)
@@ -221,12 +480,47 @@ def pipelines(request: Request, eng: ReadDep) -> HTMLResponse:
         r["name"]: {"source": r["source"], "destination": r["destination"], "steps": r["steps"]}
         for r in rows
     }
+    sparkbar_by_pipeline = {r["name"]: _sparkbar_for_pipeline(eng, r["name"]) for r in rows}
     ctx = base_ctx(request) | {
         "pipelines": rows,
         "source_types": _SOURCE_TYPES,
         "pipeline_data_json": _json.dumps(pipeline_data),
+        "sparkbar_by_pipeline": sparkbar_by_pipeline,
     }
     return render(request, "data/pipelines.html", ctx)
+
+
+@router.get("/pipelines/runs", response_class=HTMLResponse)
+def pipeline_runs_page(request: Request, eng: ReadDep) -> HTMLResponse:
+    """HTML — paginated run history for all pipelines."""
+    sdb = get_studio_db(eng)
+    db_runs = sdb.get_runs(None, limit=200) if sdb is not None else []
+    runs = [_serialize_db_run(r) for r in db_runs]
+    if not runs:
+        for r in reversed(eng.store.get_pipeline_runs()[-200:]):
+            runs.append(_serialize_run(r))
+    ctx = base_ctx(request) | {
+        "runs": runs,
+        "total_count": len(runs),
+        "pipeline_name": None,
+    }
+    return render(request, "data/pipeline_runs.html", ctx)
+
+
+@router.get("/pipelines/{name}/runs/detail", response_class=HTMLResponse)
+def pipeline_runs_detail_page(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
+    """HTML — run history for a single pipeline."""
+    sdb = get_studio_db(eng)
+    db_runs = sdb.get_runs(name, limit=100) if sdb is not None else []
+    runs = [_serialize_db_run(r) for r in db_runs]
+    if not runs:
+        runs = [_serialize_run(r) for r in eng.store.get_pipeline_runs(name)[:100]]
+    ctx = base_ctx(request) | {
+        "runs": runs,
+        "total_count": len(runs),
+        "pipeline_name": name,
+    }
+    return render(request, "data/pipeline_runs.html", ctx)
 
 
 @router.get("/pipelines/runs/all")
@@ -234,6 +528,11 @@ def pipeline_runs_all(request: Request, eng: JsonReadDep) -> Any:
     """JSON — last 50 runs across all pipelines."""
     from fastapi.responses import JSONResponse
 
+    sdb = get_studio_db(eng)
+    if sdb is not None:
+        db_runs = sdb.get_runs(None, limit=50)
+        if db_runs:
+            return JSONResponse([_serialize_db_run(r) for r in db_runs])
     runs = eng.store.get_pipeline_runs(None)[:50]
     return JSONResponse([_serialize_run(r) for r in runs])
 
@@ -243,6 +542,11 @@ def pipeline_runs_for(request: Request, eng: JsonReadDep, name: str) -> Any:
     """JSON — last 20 runs for a single pipeline."""
     from fastapi.responses import JSONResponse
 
+    sdb = get_studio_db(eng)
+    if sdb is not None:
+        db_runs = sdb.get_runs(name, limit=20)
+        if db_runs:
+            return JSONResponse([_serialize_db_run(r) for r in db_runs])
     runs = eng.store.get_pipeline_runs(name)[:20]
     return JSONResponse([_serialize_run(r) for r in runs])
 
@@ -258,6 +562,20 @@ def run_pipeline(request: Request, _: WriteDep, name: str) -> RedirectResponse:
         flash(request, "Not enough memory to run a pipeline safely. Free up RAM first.", "error")
     else:
         flash(request, "System busy — too many pipelines queued. Try again shortly.", "warning")
+    return RedirectResponse("/data/pipelines", status_code=303)
+
+
+@router.post("/pipelines/run-all")
+def run_all_pipelines(request: Request, _: WriteDep) -> RedirectResponse:
+    status = run_all_pipelines_bg()
+    if status == "started":
+        flash(request, "All pipelines queued — running in dependency order.")
+    elif status == "running":
+        flash(request, "A full run is already in progress.", "warning")
+    elif status == "low_memory":
+        flash(request, "Not enough memory to run pipelines safely.", "error")
+    else:
+        flash(request, "System busy — try again shortly.", "warning")
     return RedirectResponse("/data/pipelines", status_code=303)
 
 
@@ -308,18 +626,33 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
     cfg = (eng.config.data.pipelines or {}).get(name)
     if cfg is None:
         return RedirectResponse("/data/pipelines", status_code=303)  # type: ignore[return-value]
-    runs = eng.store.get_pipeline_runs(name)
-    history = [
-        {
-            "timestamp": fmt_ts(r.timestamp),
-            "success": r.success,
-            "rows_input": r.rows_input,
-            "rows_output": r.rows_output,
-            "duration_ms": f"{r.duration_ms:.0f}" if r.duration_ms else "—",
-            "error": r.error or "",
-        }
-        for r in runs[:20]
-    ]
+    sdb = get_studio_db(eng)
+    db_runs = sdb.get_runs(name, limit=20) if sdb is not None else []
+    if db_runs:
+        history = [
+            {
+                "timestamp": fmt_ts(r.get("finished_at") or r.get("started_at")),
+                "success": r.get("status") == "success",
+                "rows_input": "—",
+                "rows_output": "—",
+                "duration_ms": _fmt_dur_s(r.get("duration_s")),
+                "error": r.get("error") or "",
+            }
+            for r in db_runs
+        ]
+    else:
+        runs = eng.store.get_pipeline_runs(name)
+        history = [
+            {
+                "timestamp": fmt_ts(r.timestamp),
+                "success": r.success,
+                "rows_input": r.rows_input,
+                "rows_output": r.rows_output,
+                "duration_ms": f"{r.duration_ms:.0f}" if r.duration_ms else "—",
+                "error": r.error or "",
+            }
+            for r in runs[:20]
+        ]
     steps = []
     if hasattr(cfg, "steps") and cfg.steps:
         for s in cfg.steps:
@@ -330,6 +663,36 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
                     "sql": getattr(s, "sql", ""),
                 }
             )
+    # Build source_info / dest_info for the template
+    src_cfg = (eng.config.data.sources or {}).get(cfg.source or "")
+    src_query = getattr(src_cfg, "query", None) if src_cfg else None
+    source_info = SimpleNamespace(
+        name=cfg.source or "—",
+        schedule=fmt_cron(cfg.schedule or ""),
+        endpoint=getattr(src_cfg, "url", None) if src_cfg else "—",
+        auth="—",
+        fetch_mode="incremental" if src_query else "full",
+        watermark_col="",
+        last_watermark="—",
+    )
+    dst = getattr(cfg, "destination", None) or name
+    dest_info = SimpleNamespace(
+        table=dst,
+        layer="bronze",
+        scd_type=1,
+        pk_col="id",
+        current_flag="",
+        effective_from="",
+        effective_to="",
+    )
+    # Compute stats summary from history
+    total_runs = len(history)
+    success_count = sum(1 for h in history if h["success"])
+    stats = SimpleNamespace(
+        rows_total=str(total_runs) if total_runs else "—",
+        success_rate=f"{success_count / total_runs * 100:.0f}%" if total_runs else "—",
+        next_run=_next_run_iso(cfg.schedule or "", history[0]["timestamp"] if history else None),
+    )
     ctx = base_ctx(request) | {
         "pipeline_name": name,
         "schedule": fmt_cron(cfg.schedule or ""),
@@ -337,6 +700,9 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
         "destination": getattr(cfg, "destination", None) or "—",
         "history": history,
         "steps": steps,
+        "source_info": source_info,
+        "dest_info": dest_info,
+        "stats": stats,
     }
     return render(request, "data/pipeline_detail.html", ctx)
 
@@ -344,25 +710,113 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
 # ── Sources ──────────────────────────────────────────────────────────────────
 
 
+def _get_watermark_store(eng: Any) -> Any | None:
+    """Return a WatermarkStore for the current project, or None if unavailable."""
+    try:
+        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.watermark import WatermarkStore
+    except ImportError:
+        return None
+    db = None
+    with contextlib.suppress(Exception):
+        db = _get_or_create_studio_db(eng)
+    if db is None:
+        return None
+    return WatermarkStore(db)
+
+
+_SENSITIVE_KEYS = frozenset({"secret", "token", "password", "key", "pass", "auth", "cred"})
+
+
+def _mask_config_value(k: str, v: Any) -> str:
+    k_lower = k.lower()
+    if any(s in k_lower for s in _SENSITIVE_KEYS):
+        return "••••••••"
+    return str(v)
+
+
 def _build_source_rows(eng: Any) -> list[dict[str, str]]:
+    store = _get_watermark_store(eng)
+    wm_rows = store.all_watermarks() if store else []
+    last_synced_map = {w["source"]: fmt_ts_iso(w.get("updated_at") or "") for w in wm_rows}
     rows = []
     for name, cfg in (eng.config.data.sources or {}).items():
+        connector_type = str(getattr(cfg, "type", "http"))
         rows.append(
             {
                 "name": name,
                 "type": str(getattr(cfg, "type", "—")),
                 "status": "active",
+                "connector_type": connector_type,
+                "last_synced": last_synced_map.get(name, "—"),
             }
         )
     return rows
 
 
+def _build_source_data(eng: Any) -> dict[str, Any]:
+    """Build JSON-serialisable dict keyed by source name for the master-detail JS panel."""
+    result: dict[str, Any] = {}
+    for name, cfg in (eng.config.data.sources or {}).items():
+        connector = str(getattr(cfg, "type", "http"))
+        row_count: Any = "—"
+        schema: list[dict[str, str]] = []
+        sample_rows: list[dict[str, Any]] = []
+        config_display: list[dict[str, str]] = []
+        last_fetched = "—"
+
+        with contextlib.suppress(Exception):
+            stats = eng.source_stats(name) or {}
+            row_count = stats.get("row_count", "—")
+        with contextlib.suppress(Exception):
+            schema_raw = eng.source_schema(name) or []
+            schema = [
+                {
+                    "name": str(col.get("column_name", col.get("name", ""))),
+                    "type": str(col.get("data_type", col.get("type", ""))),
+                }
+                for col in schema_raw
+            ]
+        with contextlib.suppress(Exception):
+            raw_rows = eng.source_sample(name, limit=5) or []
+            sample_rows = [dict(r) for r in raw_rows]
+        # Config display — mask sensitive values
+        cfg_dict = vars(cfg) if hasattr(cfg, "__dict__") else {}
+        if isinstance(cfg_dict, dict):
+            config_display = [
+                {"key": k, "value": _mask_config_value(k, v)}
+                for k, v in cfg_dict.items()
+                if not k.startswith("_") and v is not None
+            ]
+
+        store = _get_watermark_store(eng)
+        if store:
+            with contextlib.suppress(Exception):
+                for w in store.all_watermarks():
+                    if w.get("source") == name:
+                        last_fetched = fmt_ts_iso(w.get("updated_at") or "")
+                        break
+
+        result[name] = {
+            "connector": connector,
+            "row_count": row_count,
+            "schema": schema,
+            "sample_rows": sample_rows,
+            "sample_cols": [c["name"] for c in schema[:8]],
+            "config_display": config_display,
+            "last_fetched": last_fetched,
+        }
+    return result
+
+
 @router.get("/sources", response_class=HTMLResponse)
 def sources(request: Request, eng: ReadDep) -> HTMLResponse:
     rows = _build_source_rows(eng)
+    source_data = _build_source_data(eng)
     ctx = base_ctx(request) | {
         "sources": rows,
         "source_types": _SOURCE_TYPES,
+        "source_data_json": _json.dumps(source_data),
     }
     return render(request, "data/sources.html", ctx)
 
@@ -623,15 +1077,28 @@ def lakehouse(request: Request, eng: ReadDep, layer: str = "") -> HTMLResponse:
 def lakehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronze") -> HTMLResponse:
     tables = eng.warehouse_tables(layer)
     ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
-    return render(request, "data/warehouse_tables.html", ctx)
+    return render(request, "data/warehouse_tables.html", ctx)  # noqa: S601
 
 
 # ── Warehouse (Gold layer — BI-ready structured data) ─────────────────────────
 
 
+def _enrich_tables(eng: Any, tables: list[dict[str, Any]], layer: str) -> list[dict[str, Any]]:
+    enriched = []
+    for tbl in tables:
+        name = tbl.get("name", "")
+        try:
+            schema = eng.warehouse_table_schema(name, layer) or []
+            col_count = len(schema)  # noqa: S601
+        except Exception:  # noqa: BLE001
+            col_count = 0
+        enriched.append({**tbl, "column_count": col_count})
+    return enriched
+
+
 @router.get("/warehouse", response_class=HTMLResponse)
 def warehouse(request: Request, eng: ReadDep) -> HTMLResponse:
-    tables = eng.warehouse_tables("gold")
+    tables = _enrich_tables(eng, eng.warehouse_tables("gold"), "gold")
     ctx = base_ctx(request) | {
         "tables": tables,
         "active_layer": "gold",
@@ -641,7 +1108,7 @@ def warehouse(request: Request, eng: ReadDep) -> HTMLResponse:
 
 @router.get("/warehouse/tables", response_class=HTMLResponse)
 def warehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronze") -> HTMLResponse:
-    tables = eng.warehouse_tables(layer)
+    tables = _enrich_tables(eng, eng.warehouse_tables(layer), layer)
     ctx = base_ctx(request) | {"tables": tables, "active_layer": layer}
     return render(request, "data/warehouse_tables.html", ctx)
 
@@ -650,7 +1117,7 @@ def warehouse_tables_partial(request: Request, eng: ReadDep, layer: str = "bronz
 
 
 _MERMAID_STYLE = [
-    "  classDef source fill:#e8e8e8,stroke:#aaa,color:#333",
+    "  classDef source fill:#e8e8e8,stroke:#aaa,color:#333",  # noqa: S601
     "  classDef bronze fill:#fef3c7,stroke:#d97706,color:#92400e",
     "  classDef silver fill:#dbeafe,stroke:#3b82f6,color:#1e40af",
     "  classDef gold fill:#fef9c3,stroke:#ca8a04,color:#713f12",
@@ -794,37 +1261,90 @@ def lineage(
 # ── Data Quality ──────────────────────────────────────────────────────────────
 
 
+def _parse_quality_run(
+    run: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
+    """Return (checks, overall_pct) from a single quality run dict."""
+    checks: list[dict[str, Any]] = []
+    scores: list[float] = []
+    for table, r in run.get("results", {}).items():
+        if r is None:
+            continue
+        s = float(r.get("score", 0.0))
+        scores.append(s)
+        checks.append(
+            {
+                "table": table,
+                "score": f"{s * 100:.0f}%",
+                "completeness": f"{r.get('completeness', 0) * 100:.0f}%",
+                "uniqueness": f"{r.get('uniqueness', 0) * 100:.0f}%",
+                "passed": bool(r.get("passed", False)),
+            }
+        )
+    overall = f"{sum(scores) / len(scores) * 100:.0f}%" if scores else "—"
+    return checks, overall
+
+
+def _pipeline_quality_summary(eng: Any) -> list[dict[str, Any]]:
+    """Build per-pipeline quality check counts from config."""
+    summary: list[dict[str, Any]] = []
+    pipelines_cfg = getattr(eng.config.data, "pipelines", None) or {}
+    for pipe_name, pipe_cfg in pipelines_cfg.items():
+        q = getattr(pipe_cfg, "quality", None)
+        if q is None:
+            continue
+        check_count = sum(
+            1
+            for attr in ("completeness", "row_count_min", "uniqueness", "custom_sql")
+            if getattr(q, attr, None) is not None
+        )
+        if check_count == 0:
+            continue
+        summary.append(
+            {
+                "name": pipe_name,
+                "check_count": check_count,
+                "pass_count": check_count,
+                "fail_count": 0,
+                "last_checked": "—",
+            }
+        )
+    return summary
+
+
 @router.get("/quality", response_class=HTMLResponse)
 def quality(request: Request, eng: ReadDep) -> HTMLResponse:
-    history = eng.quality_history()
-    runs = history.get("runs", [])
-    # Build flat check rows from latest run
+    history: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        history = eng.quality_history()
+    runs: list[dict[str, Any]] = history.get("runs", [])
+
     checks: list[dict[str, Any]] = []
-    score_pct = "—"
+    overall_pass_pct = "—"
     if runs:
-        latest = runs[0]
-        results = latest.get("results", {})
-        scores = []
-        for table, r in results.items():
-            if r is None:
-                continue
-            s = r.get("score", 0.0)
-            scores.append(s)
-            checks.append(
-                {
-                    "table": table,
-                    "score": f"{s * 100:.0f}%",
-                    "completeness": f"{r.get('completeness', 0) * 100:.0f}%",
-                    "uniqueness": f"{r.get('uniqueness', 0) * 100:.0f}%",
-                    "passed": r.get("passed", False),
-                }
-            )
-        if scores:
-            score_pct = f"{sum(scores) / len(scores) * 100:.0f}%"
+        checks, overall_pass_pct = _parse_quality_run(runs[0])
+
+    quality_events: list[dict[str, Any]] = []
+    if runs and checks:
+        run_ts = fmt_ts_iso(runs[0].get("timestamp", "") or "")
+        quality_events = [
+            {
+                "table": c["table"],
+                "check_type": "overall",
+                "passed": c["passed"],
+                "score": c["score"],
+                "timestamp": run_ts,
+            }
+            for c in checks
+        ]
+
     ctx = base_ctx(request) | {
-        "score_pct": score_pct,
+        "score_pct": overall_pass_pct,
+        "overall_pass_pct": overall_pass_pct,
         "checks": checks,
         "run_count": len(runs),
+        "quality_by_pipeline": _pipeline_quality_summary(eng),
+        "quality_events": quality_events,
     }
     return render(request, "data/quality.html", ctx)
 
@@ -1153,3 +1673,279 @@ _DATA_STUB_TITLES = {
 @router.get("/templates", response_class=HTMLResponse)
 def data_stub(request: Request, _: ReadDep) -> HTMLResponse:
     return stub_page(request, _DATA_STUB_TITLES)
+
+
+# ── Watermarks ────────────────────────────────────────────────────────────────
+
+
+@router.get("/watermarks", response_class=HTMLResponse)
+def watermarks(request: Request, eng: ReadDep) -> HTMLResponse:
+    store = _get_watermark_store(eng)
+    rows = store.all_watermarks() if store else []
+    sources = list((eng.config.data.sources or {}).keys())
+    ctx = base_ctx(request) | {
+        "watermarks": rows,
+        "all_sources": sources,
+        "active_tab": "data",
+    }
+    return render(request, "data/watermarks.html", ctx)
+
+
+@router.post("/watermarks/{source}/reset")
+def watermark_reset(request: Request, eng: WriteDep, source: str) -> RedirectResponse:
+    store = _get_watermark_store(eng)
+    if store:
+        store.reset(source)
+        flash(request, f"Watermark for '{source}' reset — next run will re-ingest all data.")
+    return RedirectResponse("/data/watermarks", status_code=303)
+
+
+# ── Schema contracts + drift ──────────────────────────────────────────────────
+
+
+def _get_schema_manager(eng: Any) -> Any | None:
+    try:
+        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.schema_evolution import SchemaEvolutionManager
+    except ImportError:
+        return None
+    db = None
+    with contextlib.suppress(Exception):
+        db = _get_or_create_studio_db(eng)
+    if db is None:
+        return None
+    return SchemaEvolutionManager(eng.project_dir, db)
+
+
+@router.get("/schema", response_class=HTMLResponse)
+def schema_contracts(request: Request, eng: ReadDep) -> HTMLResponse:
+    try:
+        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+    except ImportError:
+        _get_or_create_studio_db = None  # type: ignore[assignment]
+
+    db = None
+    if _get_or_create_studio_db is not None:
+        with contextlib.suppress(Exception):
+            db = _get_or_create_studio_db(eng)
+    mgr = _get_schema_manager(eng)
+    pipelines = list((eng.config.data.pipelines or {}).keys())
+    contracts: list[dict[str, Any]] = []
+    drift_events: list[dict[str, Any]] = []
+    if db:
+        for name in pipelines:
+            contract = None
+            with contextlib.suppress(Exception):
+                contract = db.get_schema_contract(name)
+            contracts.append(
+                {
+                    "pipeline": name,
+                    "has_contract": contract is not None,
+                    "columns": contract["columns"] if contract else {},
+                    "recorded_at": contract.get("recorded_at", "") if contract else "",
+                }
+            )
+    if mgr:
+        drift_events = mgr.drift_summary()
+    ctx = base_ctx(request) | {
+        "contracts": contracts,
+        "drift_events": drift_events,
+        "pipeline_count": len(pipelines),
+        "active_tab": "data",
+    }
+    return render(request, "data/schema.html", ctx)
+
+
+@router.post("/schema/{pipeline}/snapshot")
+def schema_snapshot(request: Request, eng: WriteDep, pipeline: str) -> RedirectResponse:
+    mgr = _get_schema_manager(eng)
+    if mgr:
+        result = mgr.snapshot_contract(pipeline)
+        if result:
+            flash(request, f"Schema contract recorded for '{pipeline}' ({len(result)} columns).")
+        else:
+            flash(request, f"No parquet file found for '{pipeline}'.", "error")
+    return RedirectResponse("/data/schema", status_code=303)
+
+
+@router.post("/schema/drift/{event_id}/accept")
+def schema_drift_accept(
+    request: Request, eng: WriteDep, event_id: int, pipeline: str = ""
+) -> RedirectResponse:
+    mgr = _get_schema_manager(eng)
+    if mgr and pipeline:
+        mgr.accept_drift(event_id, pipeline)
+        flash(request, f"Drift accepted — contract updated for '{pipeline}'.")
+    return RedirectResponse("/data/schema", status_code=303)
+
+
+# ── Backfill ──────────────────────────────────────────────────────────────────
+
+
+def _get_backfill_engine(eng: Any) -> Any | None:
+    try:
+        from dex_studio.backfill import BackfillEngine
+        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+    except ImportError:
+        return None
+    db = None
+    with contextlib.suppress(Exception):
+        db = _get_or_create_studio_db(eng)
+    if db is None:
+        return None
+    return BackfillEngine(eng, db)
+
+
+@router.get("/backfill", response_class=HTMLResponse)
+def backfill_page(request: Request, eng: ReadDep) -> HTMLResponse:
+    pipelines = list((eng.config.data.pipelines or {}).keys())
+    store = _get_watermark_store(eng)
+    wm_list = store.all_watermarks() if store else []
+    watermark_map = {w["source"]: w["watermark"] for w in wm_list}
+    rows: list[dict[str, str]] = []
+    for name in pipelines:
+        pipe_cfg = (eng.config.data.pipelines or {}).get(name)
+        source = str(getattr(pipe_cfg, "source", "") or "") if pipe_cfg else ""
+        rows.append(
+            {"pipeline": name, "source": source, "watermark": watermark_map.get(source, "")}
+        )
+    ctx = base_ctx(request) | {
+        "pipelines": rows,
+        "active_tab": "data",
+    }
+    return render(request, "data/backfill.html", ctx)
+
+
+@router.post("/backfill/{pipeline}/trigger")
+def backfill_trigger(request: Request, eng: WriteDep, pipeline: str) -> RedirectResponse:
+    bf = _get_backfill_engine(eng)
+    if bf:
+        result = bf.trigger(pipeline, run_now=False)
+        if result.get("watermark_reset"):
+            flash(
+                request,
+                f"Backfill queued for '{pipeline}' — watermark reset. Trigger a run to re-ingest.",
+            )
+        else:
+            flash(request, result.get("error") or "Backfill setup failed.", "error")
+    return RedirectResponse("/data/backfill", status_code=303)
+
+
+# ── Pipeline quality rules ─────────────────────────────────────────────────────
+
+
+def _get_quality_db(eng: Any) -> Any | None:
+    try:
+        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+    except ImportError:
+        return None
+    with contextlib.suppress(Exception):
+        return _get_or_create_studio_db(eng)
+    return None
+
+
+@router.get("/pipelines/{pipeline_name}/quality", response_class=HTMLResponse)
+def pipeline_quality_tab(
+    request: Request,
+    pipeline_name: str,
+    eng: ReadDep,
+) -> HTMLResponse:
+    db = _get_quality_db(eng)
+    rules: list[dict[str, Any]] = db.get_quality_rules(pipeline_name) if db else []
+
+    by_col: dict[str, list[dict[str, Any]]] = {}
+    for r in rules:
+        by_col.setdefault(r["col_name"], []).append(r)
+
+    columns: list[dict[str, Any]] = []
+    for col in by_col:
+        col_rules = by_col[col]
+        passing = sum(1 for rule in col_rules if rule.get("last_result", True))
+        columns.append(
+            {
+                "name": col,
+                "type": "—",
+                "nullable": True,
+                "constraints": [],
+                "rules": col_rules,
+                "passing": passing,
+                "failing": len(col_rules) - passing,
+            }
+        )
+
+    ctx = base_ctx(request) | {
+        "pipeline_name": pipeline_name,
+        "columns": columns,
+        "by_col": by_col,
+        "total_rules": len(rules),
+        "passing_rules": sum(1 for r in rules if r.get("last_result", True)),
+        "failing_rules": sum(1 for r in rules if not r.get("last_result", True)),
+    }
+    return render(request, "data/pipeline_quality.html", ctx)
+
+
+@router.post("/pipelines/{pipeline_name}/quality/rules", response_class=HTMLResponse)
+def add_quality_rule_route(
+    request: Request,
+    pipeline_name: str,
+    _: WriteDep,
+    col_name: Annotated[str, Form()],
+    rule_type: Annotated[str, Form()],
+    on_failure: Annotated[str, Form()] = "warn",
+    config_json: Annotated[str, Form()] = "{}",
+) -> RedirectResponse:
+    import json as _json_mod
+
+    db = _get_quality_db(_)
+    config: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        config = _json_mod.loads(config_json)
+    if db is not None:
+        db.add_quality_rule(pipeline_name, col_name, rule_type, config, on_failure)
+    return RedirectResponse(
+        f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
+        status_code=303,
+    )
+
+
+@router.post("/pipelines/{pipeline_name}/quality/rules/{rule_id}/update")
+def update_quality_rule_route(
+    request: Request,
+    pipeline_name: str,
+    rule_id: int,
+    _: WriteDep,
+    on_failure: Annotated[str, Form()] = "warn",
+    enabled: Annotated[str, Form()] = "1",
+) -> Any:
+    from fastapi.responses import JSONResponse
+
+    db = _get_quality_db(_)
+    if db is not None:
+        db.update_quality_rule(rule_id, config={}, on_failure=on_failure, enabled=enabled == "1")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/pipelines/{pipeline_name}/quality/rules/{rule_id}/delete")
+def delete_quality_rule_route(
+    request: Request,
+    pipeline_name: str,
+    rule_id: int,
+    _: WriteDep,
+) -> RedirectResponse:
+    db = _get_quality_db(_)
+    if db is not None:
+        db.delete_quality_rule(rule_id)
+    return RedirectResponse(
+        f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
+        status_code=303,
+    )
+
+
+@router.post("/pipelines/{pipeline_name}/quality/run")
+@router.post("/pipelines/{pipeline_name}/quality/run-checks")
+def run_quality_checks(
+    pipeline_name: str,
+    _: WriteDep,
+) -> RedirectResponse:
+    safe = _safe_pipeline_name(pipeline_name)
+    return RedirectResponse(f"/data/pipelines/{safe}?tab=quality", status_code=303)

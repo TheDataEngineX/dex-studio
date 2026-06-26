@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from dex_studio.logstore import log_store
@@ -97,7 +97,7 @@ def system_status(request: Request, eng: ReadDep) -> HTMLResponse:
 @router.get("/logs", response_class=HTMLResponse)
 def system_logs(request: Request, _: ReadDep, level: str = "INFO") -> HTMLResponse:
     level_upper = level.upper()
-    records = log_store.recent(limit=200, min_level=level_upper)
+    records = [r for r in log_store.recent(limit=500) if r.level >= level_upper][:200]
     log_rows = [{"ts": r.ts, "level": r.level, "msg": r.msg} for r in records]
     ctx = base_ctx(request) | {
         "logs": log_rows,
@@ -121,7 +121,9 @@ def logs_stream(request: Request, _: ReadDep, level: str = "INFO") -> EventSourc
             current_seq = log_store.seq
             if current_seq > last_seq:
                 new_count = current_seq - last_seq
-                records = log_store.recent(limit=new_count * 2, min_level=level_upper)
+                records = [
+                    r for r in log_store.recent(limit=new_count * 4) if r.level >= level_upper
+                ]
                 for r in reversed(records[:new_count]):
                     lc = _html_escape(r.level.lower())
                     row_html = (
@@ -142,6 +144,11 @@ def logs_stream(request: Request, _: ReadDep, level: str = "INFO") -> EventSourc
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
+
+
+@router.get("/metrics-live", response_class=JSONResponse)
+def system_metrics_live(_request: Request) -> JSONResponse:
+    return JSONResponse(_sys_metrics())
 
 
 @router.get("/metrics", response_class=HTMLResponse)
@@ -276,8 +283,33 @@ def system_costs(request: Request, eng: ReadDep) -> HTMLResponse:
         "month_label": _now.strftime("%B %Y"),
         "month_day": _now.day,
         "month_days": (_dt.date(_now.year, _now.month % 12 + 1, 1) - _dt.timedelta(days=1)).day,
+        "costs_config": getattr(getattr(eng.config, "observability", None), "costs", None),
     }
     return render(request, "system/costs.html", ctx)
+
+
+# ── Compaction ────────────────────────────────────────────────────────────────
+
+
+@router.get("/compaction", response_class=HTMLResponse)
+def system_compaction(request: Request, eng: ReadDep) -> HTMLResponse:
+    ctx = base_ctx(request) | {
+        "compaction_config": getattr(
+            getattr(eng.config, "observability", None), "compaction", None
+        ),
+    }
+    return render(request, "system/compaction.html", ctx)
+
+
+# ── Alerting ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/alerting", response_class=HTMLResponse)
+def system_alerting(request: Request, eng: ReadDep) -> HTMLResponse:
+    ctx = base_ctx(request) | {
+        "alerting_config": getattr(getattr(eng.config, "observability", None), "alerting", None),
+    }
+    return render(request, "system/alerting.html", ctx)
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────────

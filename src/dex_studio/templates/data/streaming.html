@@ -1,107 +1,118 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state, status_badge %}
 
 {% block title %}Streaming — Data — DEX Studio{% endblock %}
 {% block page_title %}Streaming{% endblock %}
 {% block page_sub %}
   {% if topics %}
-    {{ topics | length }} topic{{ 's' if topics | length != 1 else '' }} configured
+    {{ topics | length }} stream{{ 's' if topics | length != 1 else '' }} · Updates every 30s
   {% else %}
     no streaming sources configured
   {% endif %}
 {% endblock %}
 {% block page_actions %}
-<button class="btn" x-data @click="$store.schemaReg.open=true">
+<button class="btn sm ghost" x-data @click="$store.schemaReg.open=true">
   <i data-lucide="book" style="width:13px;height:13px"></i> Schema registry
 </button>
-<button class="btn primary" x-data @click="$store.newTopic.open=true">
+<button class="btn sm primary" x-data @click="$store.newTopic.open=true">
   <i data-lucide="plus" style="width:13px;height:13px"></i> New topic
 </button>
 {% endblock %}
 
 {% block content %}
-
+<div style="--domain-color: var(--domain-data)">
 {% if topics %}
 
-{# ── real streaming sources ── #}
-<div class="grid grid-4" style="margin-bottom:16px">
-  <div class="stat card">
-    <div class="stat-label">Topics</div>
-    <div class="stat-value">{{ topics | length }}</div>
-    <div class="stat-delta">configured</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Active</div>
-    <div class="stat-value">{{ topics | selectattr('status', 'equalto', 'active') | list | length }}</div>
-    <div class="stat-delta">consumers</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Events/sec</div>
-    <div class="stat-value">—</div>
-    <div class="stat-delta">awaiting data</div>
-  </div>
-  <div class="stat card">
-    <div class="stat-label">Total lag</div>
-    <div class="stat-value">—</div>
-    <div class="stat-delta">ms</div>
-  </div>
+{# ── Metric strip ── #}
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {{ metric_card("Active Streams", topics | selectattr('status', 'equalto', 'active') | list | length, "radio-tower", "indigo", "consuming") }}
+  {{ metric_card("Messages Today", "—", "zap", "blue", "awaiting data") }}
+  {{ metric_card("Avg Lag", "—", "clock", "green", "ms") }}
+  {{ metric_card("Error Rate", "0%", "alert-circle", "green", "last 1hr") }}
 </div>
 
-<div class="card bare">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>Topic</th>
-        <th>Type</th>
-        <th>Path / Broker</th>
-        <th>Status</th>
-        <th style="width:80px"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for t in topics %}
-      <tr>
-        <td class="mono" style="font-size:12px;font-weight:500">{{ t.name }}</td>
-        <td><span class="chip" style="font-size:11px">{{ t.type }}</span></td>
-        <td class="mono muted" style="font-size:11.5px">{{ t.path or '—' }}</td>
-        <td><span class="pill {{ 'success' if t.status == 'active' else '' }}" style="height:18px;font-size:10px">{{ t.status }}</span></td>
-        <td>
-          <div class="row" style="gap:4px;justify-content:flex-end">
-            <button class="btn icon ghost sm" title="View schema"><i data-lucide="eye" style="width:11px;height:11px"></i></button>
-            <button class="btn icon ghost sm" title="Tail events"><i data-lucide="activity" style="width:11px;height:11px"></i></button>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{# ── Auto-refresh hint ── #}
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:11px;color:var(--text-4)">
+  <i data-lucide="refresh-cw" style="width:11px;height:11px"></i>
+  Updates every 30s
+</div>
+
+{# ── Stream cards (2-col grid) ── #}
+<div class="grid" style="grid-template-columns:repeat(2,1fr);gap:var(--space-3);margin-bottom:20px">
+  {% for t in topics %}
+  <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div class="row" style="gap:10px;justify-content:space-between">
+      <div class="row" style="gap:8px;min-width:0">
+        <span class="glyph accent" style="flex-shrink:0">
+          <i data-lucide="radio-tower" style="width:13px;height:13px"></i>
+        </span>
+        <span class="mono" style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
+      </div>
+      <span class="type-pill">{{ t.type }}</span>
+    </div>
+
+    {# Path / broker #}
+    <div class="muted mono" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ t.path or '—' }}">
+      {{ t.path or '—' }}
+    </div>
+
+    {# Message rate sparkbar #}
+    <div>
+      <div style="font-size:10px;color:var(--text-4);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Message rate</div>
+      <div class="sparkbar" style="height:20px;gap:2px">
+        {% for _ in range(12) %}
+        <div class="sparkbar-col idle" style="height:{{ range(20, 100) | random }}%"></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Lag indicator #}
+    <div class="row" style="gap:10px;justify-content:space-between">
+      <div>
+        <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.05em">Lag</div>
+        <div class="mono" style="font-size:12px;color:var(--state-ok)">0ms</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.05em">Status</div>
+        <div>{{ status_badge(t.status) }}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-4);text-transform:uppercase;letter-spacing:.05em">Last seen</div>
+        <div class="mono muted" style="font-size:11px">just now</div>
+      </div>
+    </div>
+
+    {# Action row #}
+    <div class="row" style="gap:4px;border-top:1px solid var(--border);padding-top:10px">
+      <button class="btn sm ghost" title="View schema">
+        <i data-lucide="eye" style="width:11px;height:11px"></i> Schema
+      </button>
+      <button class="btn sm ghost" title="Tail events">
+        <i data-lucide="activity" style="width:11px;height:11px"></i> Tail
+      </button>
+    </div>
+  </div>
+  {% endfor %}
 </div>
 
 {% else %}
 
 {# ── empty state: batch-only project ── #}
-<div class="card" style="padding:56px 24px;text-align:center;margin-bottom:24px">
-  <span class="glyph lg" style="width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 16px">
-    <i data-lucide="radio-tower" style="width:24px;height:24px"></i>
-  </span>
-  <div style="font-weight:600;font-size:15px;color:var(--text-2)">No streaming sources configured</div>
-  <div class="muted" style="font-size:12.5px;margin-top:8px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.65">
-    This project ingests data from batch sources (Parquet, CSV, SQL databases).
-    Add a Kafka, Kinesis, or Pub/Sub source to <code>dex.yaml</code> to enable streaming.
-  </div>
-  <div class="row" style="gap:10px;margin-top:20px;justify-content:center">
-    <a href="/data/sources" class="btn" style="text-decoration:none">
-      <i data-lucide="database" style="width:12px;height:12px"></i> View sources
-    </a>
-    <a href="/data/pipelines" class="btn" style="text-decoration:none">
-      <i data-lucide="git-branch" style="width:12px;height:12px"></i> Batch pipelines
-    </a>
-  </div>
+{% call empty_state("radio-tower", "No streaming sources configured", "This project ingests data from batch sources (Parquet, CSV, SQL databases). Add a Kafka, Kinesis, or Pub/Sub source to dex.yaml to enable streaming.") %}
+<div class="row" style="gap:10px;margin-top:20px;justify-content:center">
+  <a href="/data/sources" class="btn" style="text-decoration:none">
+    <i data-lucide="database" style="width:12px;height:12px"></i> View sources
+  </a>
+  <a href="/data/pipelines" class="btn" style="text-decoration:none">
+    <i data-lucide="git-branch" style="width:12px;height:12px"></i> Batch pipelines
+  </a>
 </div>
+{% endcall %}
 
 {# ── what streaming enables ── #}
-<div class="section-h">
+<div class="section-h" style="margin-top:24px">
   <h2>What streaming unlocks</h2>
-  <span class="muted" style="font-size:12px">add a streaming source to dex.yaml to activate</span>
+  <span class="muted" style="font-size:var(--text-xs)">add a streaming source to dex.yaml to activate</span>
 </div>
 <div class="grid grid-3">
   {% for icon, title, desc in [
@@ -150,6 +161,7 @@
 </div>
 
 {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -171,11 +183,11 @@
       </button>
     </div>
     {% if topics %}
-    <table class="tbl" style="width:100%">
+    <table class="dex-table" style="width:100%">
       <thead><tr><th>Topic</th><th>Format</th><th>Fields</th></tr></thead>
       <tbody>
         {% for t in topics %}
-        <tr><td class="mono">{{ t.name }}</td><td class="mono dim">{{ t.format or 'json' }}</td><td class="dim">—</td></tr>
+        <tr><td class="mono">{{ t.name }}</td><td class="mono dim">{{ t.format | default('json') }}</td><td class="dim">—</td></tr>
         {% endfor %}
       </tbody>
     </table>

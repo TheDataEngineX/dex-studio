@@ -6,16 +6,16 @@
 {% block page_sub %}{{ pipelines | length }} pipeline{{ 's' if pipelines | length != 1 }} · {{ pipelines | selectattr('status','equalto','running') | list | length }} running · {{ pipelines | selectattr('status','in',['error','failed']) | list | length }} failed{% endblock %}
 
 {% block page_actions %}
-<button class="btn sm ghost">
-  <i data-lucide="download" style="width:12px;height:12px"></i> Import YAML
-</button>
+<a href="/data/pipelines/runs" class="btn sm ghost">
+  <i data-lucide="history" style="width:12px;height:12px"></i> Run history
+</a>
 <button class="btn sm primary" onclick="document.getElementById('add-pipeline-modal').showModal()">
   <i data-lucide="plus" style="width:12px;height:12px"></i> New pipeline
 </button>
 {% endblock %}
 
 {% block content %}
-
+<div style="--domain-color: var(--domain-data)">
 <div class="grid" style="grid-template-columns:1.1fr 1.8fr 1.1fr;gap:var(--space-3)">
 
   {# ── Pipeline list ──────────────────────────────────────────────────────── #}
@@ -35,7 +35,8 @@
       {% for p in pipelines %}
       {% set running = p.status == 'running' %}
       {% set failed  = p.status in ('error','failed') %}
-      <button class="pipe-item {{ 'active' if loop.first }}"
+      <div class="pipe-item {{ 'active' if loop.first }}"
+              role="button" tabindex="0"
               data-name="{{ p.name }}"
               data-status="{{ p.status }}"
               data-schedule="{{ p.schedule }}"
@@ -44,23 +45,44 @@
               data-rows-in="{{ p.rows_in }}"
               data-rows-out="{{ p.rows_out }}"
               onclick="selectPipeline(this)"
+              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectPipeline(this)}"
               style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:12px 14px 12px 11px;cursor:pointer;display:flex;gap:12px;align-items:center">
         <i data-lucide="workflow" style="width:14px;height:14px;opacity:.4;flex-shrink:0"></i>
         <div style="flex:1;min-width:0">
           <div class="row" style="gap:8px">
             <span class="mono" style="font-weight:500;font-size:13px;color:var(--text)">{{ p.name }}</span>
-            {% if running %}<span class="pill running" style="height:14px;font-size:9px">running</span>
-            {% elif failed %}<span class="pill error" style="height:14px;font-size:9px">failed</span>
-            {% elif p.status in ('success','succeeded') %}<span class="pill success" style="height:14px;font-size:9px">ok</span>
-            {% else %}<span class="pill" style="height:14px;font-size:9px">{{ p.status or 'idle' }}</span>
+            {% if running %}<span class="pill running" data-status-pill style="height:14px;font-size:9px">running</span>
+            {% elif failed %}<span class="pill error" data-status-pill style="height:14px;font-size:9px">failed</span>
+            {% elif p.status in ('success','succeeded') %}<span class="pill success" data-status-pill style="height:14px;font-size:9px">ok</span>
+            {% else %}<span class="pill" data-status-pill style="height:14px;font-size:9px">{{ p.status or 'idle' }}</span>
             {% endif %}
           </div>
-          <div class="muted" style="font-size:11px;margin-top:2px;pointer-events:none">
-            {{ p.schedule or 'manual' }} · last {{ p.last_run or 'never' }}
+          <div class="muted" style="font-size:11px;margin-top:2px">
+            {{ p.schedule or 'manual' }} · last <span data-last-run-text>{{ p.last_run or 'never' }}</span>
+            {% if p.next_run_at %}
+            · next <span data-ts="{{ p.next_run_at }}" style="color:var(--accent-9)">—</span>
+            {% endif %}
           </div>
         </div>
-        <div class="dim mono tnum" style="font-size:11px;flex-shrink:0">{{ p.duration_ms or '—' }}</div>
-      </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+          <div class="sparkbar" style="height:16px;width:50px">
+            {% set bars = sparkbar_by_pipeline.get(p.name, []) %}
+            {% for col in bars %}
+            <div class="sparkbar-col {{ col.status }}" style="height:100%"></div>
+            {% endfor %}
+          </div>
+          <div class="dim mono tnum" style="font-size:11px">{{ p.duration_ms or '—' }}</div>
+        </div>
+        <form method="post" action="/data/pipelines/delete/{{ p.name }}"
+              onsubmit="event.preventDefault();dexConfirm(this,'Delete pipeline?','This will permanently remove &quot;{{ p.name }}&quot; and its run history.')">
+          <button type="submit" class="btn icon ghost sm" title="Delete pipeline"
+                  style="color:var(--red-9);opacity:0;transition:opacity .15s"
+                  onclick="event.stopPropagation()"
+                  onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0'">
+            <i data-lucide="trash-2" style="width:11px;height:11px"></i>
+          </button>
+        </form>
+      </div>
       {% endfor %}
     </div>
     {% else %}
@@ -94,16 +116,22 @@
           {{ pipelines[0].schedule if pipelines else '—' }}
         </div>
       </div>
-      <button class="btn sm ghost">
-        <i data-lucide="eye" style="width:11px;height:11px"></i> YAML
-      </button>
-      <button class="btn sm ghost">
+      <a href="/data/pipelines/{{ pipelines[0].name if pipelines else '#' }}"
+         id="pipeline-detail-link" class="btn sm ghost">
         <i data-lucide="history" style="width:11px;height:11px"></i> History
-      </button>
+      </a>
+      <form method="post" action="/data/pipelines/run-all" style="display:contents">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn sm ghost" title="Queue all pipelines in dependency order">
+          <i data-lucide="play-circle" style="width:11px;height:11px"></i> Run all
+        </button>
+      </form>
       <form method="post" id="run-form"
             action="/data/pipelines/run/{{ pipelines[0].name if pipelines else '#' }}"
-            style="display:contents">
-        <button type="submit" class="btn sm primary">
+            style="display:contents"
+            onsubmit="this.querySelector('.run-btn').disabled=true;this.querySelector('.run-btn').innerHTML='<span style=\'display:inline-flex;align-items:center;gap:5px\'><span style=\'width:9px;height:9px;border:1.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite\'></span>Running…</span>'">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn sm primary run-btn">
           <i data-lucide="play" style="width:11px;height:11px"></i> Run now
         </button>
       </form>
@@ -144,28 +172,111 @@
     {# Footer tabs + nodes table #}
     <div class="tabs" style="padding-left:14px;flex-shrink:0">
       <button class="tab active" onclick="switchPipeTab('nodes',this)">Steps <span class="count" id="steps-count">—</span></button>
+      <button class="tab" onclick="switchPipeTab('add',this)">+ Add step</button>
       <button class="tab" onclick="switchPipeTab('triggers',this)">Schedule</button>
       <button class="tab" onclick="switchPipeTab('tests',this)">Quality</button>
     </div>
 
     <div style="flex:1;overflow-y:auto" id="pipe-tab-nodes">
-      <table class="tbl dex-table" style="font-size:12px">
+      <table class="dex-table" style="font-size:12px">
         <thead>
           <tr>
             <th>#</th>
             <th>Step</th>
             <th style="width:90px">Kind</th>
+            <th style="width:32px"></th>
           </tr>
         </thead>
         <tbody id="steps-body"></tbody>
       </table>
     </div>
 
+    {# Add step form — all 10 transform types #}
+    <div id="pipe-tab-add" style="display:none;padding:12px 14px"
+         x-data="{ t: 'filter' }">
+      <form method="post" id="add-step-form" action="#" style="display:flex;flex-direction:column;gap:8px">
+        <div class="row" style="gap:8px;align-items:start">
+          <select name="type" x-model="t" class="input" style="height:30px;width:140px;flex-shrink:0"
+                  onchange="document.getElementById('add-step-form').action='/data/transforms/'+encodeURIComponent(window._activePipeline||'')+'/add'">
+            <option value="filter">filter</option>
+            <option value="derive">derive</option>
+            <option value="fill_null">fill_null</option>
+            <option value="cast">cast</option>
+            <option value="deduplicate">deduplicate</option>
+            <option value="rename">rename</option>
+            <option value="drop_columns">drop_columns</option>
+            <option value="aggregate">aggregate</option>
+            <option value="window">window</option>
+            <option value="sql">sql</option>
+          </select>
+          <button type="submit" class="btn sm primary" style="flex-shrink:0;height:30px"
+                  onclick="this.form.action='/data/transforms/'+encodeURIComponent(window._activePipeline||'')+'/add'">
+            <i data-lucide="plus" style="width:11px;height:11px"></i> Add
+          </button>
+        </div>
+        {# filter #}
+        <div x-show="t==='filter'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="condition" class="input" style="height:30px;font-size:12px" placeholder="condition — e.g. rating > 5.0 AND year IS NOT NULL">
+          <span class="muted" style="font-size:10px">Keeps only rows where the condition is true.</span>
+        </div>
+        {# derive #}
+        <div x-show="t==='derive'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="name" class="input" style="height:30px;font-size:12px" placeholder="new column name — e.g. rating_pct">
+          <input name="expression" class="input" style="height:30px;font-size:12px;font-family:var(--font-mono)" placeholder="SQL expression — e.g. rating / 10.0 * 100">
+        </div>
+        {# fill_null #}
+        <div x-show="t==='fill_null'" style="display:flex;flex-direction:column;gap:4px">
+          <textarea name="fill_null_defaults" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                    placeholder="col: default (one per line)&#10;genres: Unknown&#10;runtime: 0"></textarea>
+          <span class="muted" style="font-size:10px">Replaces NULL with the given default per column.</span>
+        </div>
+        {# cast #}
+        <div x-show="t==='cast'" style="display:flex;flex-direction:column;gap:4px">
+          <textarea name="cast_columns" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                    placeholder="col: TYPE (one per line)&#10;release_year: INTEGER&#10;rating: DOUBLE"></textarea>
+          <span class="muted" style="font-size:10px">Casts each column to the specified DuckDB type.</span>
+        </div>
+        {# deduplicate #}
+        <div x-show="t==='deduplicate'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="key" class="input" style="height:30px;font-size:12px" placeholder="key columns comma-separated — e.g. movie_id">
+        </div>
+        {# rename #}
+        <div x-show="t==='rename'" style="display:flex;flex-direction:column;gap:4px">
+          <textarea name="rename_mapping" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                    placeholder="old_name: new_name (one per line)&#10;tconst: movie_id&#10;primaryTitle: title"></textarea>
+        </div>
+        {# drop_columns #}
+        <div x-show="t==='drop_columns'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="columns" class="input" style="height:30px;font-size:12px" placeholder="columns to drop comma-separated — e.g. _dex_layer, _dex_source">
+        </div>
+        {# aggregate #}
+        <div x-show="t==='aggregate'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="group_by" class="input" style="height:30px;font-size:12px" placeholder="group by columns comma-separated — e.g. genre, decade">
+          <textarea name="agg_exprs" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                    placeholder="output_col: expr (one per line)&#10;count: COUNT(*)&#10;avg_rating: AVG(imdb_rating)"></textarea>
+        </div>
+        {# window #}
+        <div x-show="t==='window'" style="display:flex;flex-direction:column;gap:4px">
+          <input name="name" class="input" style="height:30px;font-size:12px" placeholder="output column name — e.g. rank_in_decade">
+          <input name="expression" class="input" style="height:30px;font-size:12px;font-family:var(--font-mono)" placeholder="window fn — e.g. RANK()">
+          <input name="partition_by" class="input" style="height:30px;font-size:12px" placeholder="partition by columns comma-separated (optional)">
+          <input name="order_by" class="input" style="height:30px;font-size:12px" placeholder="order by — e.g. weighted_rating DESC">
+        </div>
+        {# sql #}
+        <div x-show="t==='sql'" style="display:flex;flex-direction:column;gap:4px">
+          <textarea name="sql" rows="4" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                    placeholder="SELECT * FROM _data WHERE ..."></textarea>
+          <span class="muted" style="font-size:10px">Use <code>_data</code> to reference the current table.</span>
+        </div>
+      </form>
+    </div>
+
     <div id="pipe-tab-triggers" style="display:none;padding:16px">
       <div class="muted" style="font-size:12px" id="trigger-detail">—</div>
     </div>
-    <div id="pipe-tab-tests" style="display:none;padding:16px">
-      <div class="muted" style="font-size:12px">Quality checks are configured in dex.yaml under each pipeline's <code>quality:</code> block.</div>
+    <div id="pipe-tab-tests" style="display:none;padding:12px 14px">
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Quality checks run after transforms. Configured per pipeline in <code>dex.yaml</code>.</div>
+      <div id="quality-summary" style="font-size:12px"></div>
     </div>
 
   </div>
@@ -188,6 +299,7 @@
     </div>
   </div>
 
+</div>
 </div>
 
 {# ── New Pipeline wizard ─────────────────────────────────────────────────── #}
@@ -563,21 +675,45 @@
     // Source row
     let html = '<tr><td class="mono dim">src</td>' +
       '<td class="mono">' + esc(p.source || '—') + '</td>' +
-      '<td><span class="pill" style="height:16px;font-size:9.5px">source</span></td></tr>';
+      '<td><span class="pill" style="height:16px;font-size:9.5px">source</span></td>' +
+      '<td></td></tr>';
 
     steps.forEach(function (s, i) {
+      const delUrl = '/data/transforms/' + encodeURIComponent(name) + '/delete/' + i;
       html += '<tr><td class="mono dim">' + (i + 1) + '</td>' +
-        '<td class="mono">' + esc(s.label) + '</td>' +
-        '<td><span class="pill" style="height:16px;font-size:9.5px">' + esc(s.type) + '</span></td></tr>';
+        '<td class="mono" style="font-size:11px">' + esc(s.label) + '</td>' +
+        '<td><span class="pill" style="height:14px;font-size:9px">' + esc(s.type) + '</span></td>' +
+        '<td><form method="post" action="' + delUrl + '" style="display:inline">' +
+          '<button type="submit" class="btn sm ghost" style="padding:0 4px;height:20px;color:var(--text-4)" ' +
+          'onclick="return confirm(\'Remove step ' + (i+1) + ' (' + esc(s.type) + ')?\')">×</button>' +
+        '</form></td></tr>';
     });
 
     // Destination row
     html += '<tr><td class="mono dim">dst</td>' +
       '<td class="mono">' + esc(p.destination || '—') + '</td>' +
-      '<td><span class="pill" style="height:16px;font-size:9.5px">output</span></td></tr>';
+      '<td><span class="pill" style="height:16px;font-size:9.5px">output</span></td>' +
+      '<td></td></tr>';
 
     tbody.innerHTML = html;
     if (count) count.textContent = steps.length + 2;
+
+    // Quality tab
+    const q = p.quality || {};
+    const qDiv = document.getElementById('quality-summary');
+    if (qDiv) {
+      if (!Object.keys(q).length) {
+        qDiv.innerHTML = '<span class="muted">No quality checks configured for this pipeline.</span>';
+      } else {
+        let qhtml = '<table class="dex-table" style="font-size:11.5px"><tbody>';
+        if (q.completeness != null) qhtml += '<tr><td>completeness ≥</td><td class="mono">' + q.completeness + '</td></tr>';
+        if (q.row_count_min != null) qhtml += '<tr><td>row count ≥</td><td class="mono">' + q.row_count_min.toLocaleString() + '</td></tr>';
+        if (q.uniqueness)            qhtml += '<tr><td>unique on</td><td class="mono">' + esc(q.uniqueness.join(', ')) + '</td></tr>';
+        if (q.custom_sql)            qhtml += '<tr><td>custom SQL</td><td class="mono" style="font-size:10px">' + esc(q.custom_sql) + '</td></tr>';
+        qhtml += '</tbody></table>';
+        qDiv.innerHTML = qhtml;
+      }
+    }
   }
 
   function refreshDag(name) {
@@ -590,7 +726,10 @@
 
   // Initial render for the first pipeline
   const firstPipe = document.querySelector('.pipe-item');
-  if (firstPipe) refreshDag(firstPipe.dataset.name);
+  if (firstPipe) {
+    window._activePipeline = firstPipe.dataset.name;
+    refreshDag(firstPipe.dataset.name);
+  }
 
   let rszTimer;
   window.addEventListener('resize', function () {
@@ -718,23 +857,71 @@
     const form = document.getElementById('run-form');
     if (form) form.action = '/data/pipelines/run/' + encodeURIComponent(name);
 
+    const detailLink = document.getElementById('pipeline-detail-link');
+    if (detailLink) detailLink.href = '/data/pipelines/' + encodeURIComponent(name);
+
     const triggerDetail = document.getElementById('trigger-detail');
     if (triggerDetail) triggerDetail.textContent = sched && sched !== '—' ? 'Schedule: ' + sched : 'No schedule — manual run only';
 
+    window._activePipeline = name;
     refreshDag(name);
     _startRunsRefresh(name);
   };
 
   // ── Pipe tabs ───────────────────────────────────────────────────────────
   globalThis.switchPipeTab = function (name, btn) {
-    document.querySelectorAll('#pipe-tab-nodes,#pipe-tab-triggers,#pipe-tab-tests,#pipe-tab-notifications').forEach(el => {
-      el.style.display = 'none';
-    });
+    document.querySelectorAll('[id^="pipe-tab-"]').forEach(el => { el.style.display = 'none'; });
     document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const pane = document.getElementById('pipe-tab-' + name);
     if (pane) pane.style.display = '';
   };
+
+  // ── Live pipeline status poll ────────────────────────────────────────────
+  (function () {
+    function _pollPipeStatus() {
+      fetch('/data/pipelines/status')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (rows) {
+          if (!rows) return;
+          rows.forEach(function (p) {
+            var el = document.querySelector('.pipe-item[data-name=' + JSON.stringify(p.name) + ']');
+            if (!el) return;
+            el.dataset.status = p.status;
+            // Status pill
+            var pill = el.querySelector('[data-status-pill]');
+            if (pill) {
+              var sc = statusClass(p.status);
+              pill.className = 'pill' + (sc ? ' ' + sc : '');
+              pill.style.height = '14px'; pill.style.fontSize = '9px';
+              pill.textContent = p.status === 'running' ? 'running'
+                : (p.status === 'error' || p.status === 'failed') ? 'failed'
+                : (p.status === 'success' || p.status === 'succeeded') ? 'ok'
+                : (p.status || 'idle');
+            }
+            // Last run text
+            var lrEl = el.querySelector('[data-last-run-text]');
+            if (lrEl) lrEl.textContent = p.last_run || 'never';
+            // Next run timestamp
+            var tsEl = el.querySelector('[data-ts]');
+            if (tsEl && p.next_run_at) {
+              tsEl.dataset.ts = p.next_run_at;
+              tsEl.textContent = relativeTime(p.next_run_at);
+            }
+            // Sync right panel if this pipeline is active
+            if (window._activePipeline === p.name) {
+              var sp = document.getElementById('dag-status-pill');
+              if (sp) { sp.textContent = p.status; sp.className = 'pill ' + statusClass(p.status); }
+              var strip = document.getElementById('dag-progress-strip');
+              if (strip) strip.style.display = p.status === 'running' ? '' : 'none';
+            }
+          });
+        })
+        .catch(function () {});
+    }
+    setInterval(_pollPipeStatus, 30000);
+  }());
+
 })();
 </script>
 {% endblock %}

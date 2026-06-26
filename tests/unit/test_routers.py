@@ -109,55 +109,45 @@ class TestDataRoutes:
         assert resp.status_code == 200
 
 
-class TestMLRoutes:
-    def test_ml_dashboard(self, client: TestClient) -> None:
-        resp = client.get("/ml/")
+class TestIntelligenceRoutes:
+    def test_dashboard(self, client: TestClient) -> None:
+        resp = client.get("/intelligence/")
         assert resp.status_code == 200
 
     def test_models(self, client: TestClient) -> None:
-        resp = client.get("/ml/models")
+        resp = client.get("/intelligence/models")
         assert resp.status_code == 200
 
     def test_experiments(self, client: TestClient) -> None:
-        resp = client.get("/ml/experiments")
+        resp = client.get("/intelligence/experiments")
         assert resp.status_code == 200
 
     def test_predictions(self, client: TestClient) -> None:
-        resp = client.get("/ml/predictions")
+        resp = client.get("/intelligence/predictions")
         assert resp.status_code == 200
 
     def test_features(self, client: TestClient) -> None:
-        resp = client.get("/ml/features")
+        resp = client.get("/intelligence/features")
         assert resp.status_code == 200
 
     def test_drift(self, client: TestClient) -> None:
-        resp = client.get("/ml/drift")
-        assert resp.status_code == 200
-
-
-class TestAIRoutes:
-    def test_ai_dashboard(self, client: TestClient) -> None:
-        resp = client.get("/ai/")
+        resp = client.get("/intelligence/drift")
         assert resp.status_code == 200
 
     def test_agents(self, client: TestClient) -> None:
-        resp = client.get("/ai/agents")
+        resp = client.get("/intelligence/agents")
         assert resp.status_code == 200
 
     def test_playground(self, client: TestClient) -> None:
-        resp = client.get("/ai/playground")
-        assert resp.status_code == 200
-
-    def test_memory(self, client: TestClient) -> None:
-        resp = client.get("/ai/memory")
+        resp = client.get("/intelligence/playground")
         assert resp.status_code == 200
 
     def test_tools(self, client: TestClient) -> None:
-        resp = client.get("/ai/tools")
+        resp = client.get("/intelligence/tools")
         assert resp.status_code == 200
 
     def test_traces(self, client: TestClient) -> None:
-        resp = client.get("/ai/traces")
+        resp = client.get("/intelligence/traces")
         assert resp.status_code == 200
 
 
