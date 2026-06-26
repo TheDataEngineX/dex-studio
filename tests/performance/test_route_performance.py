@@ -223,7 +223,7 @@ class TestConcurrentRequests:
 
     def test_20_concurrent_mixed_route_requests(self, perf_client: TestClient) -> None:
         """Mix of routes under concurrency: no crashes, all 2xx/3xx."""
-        routes = ["/", "/data/pipelines", "/data/sources", "/data/sql"] * 5  # 20 total
+        routes = ["/", "/data/pipelines", "/data/pipelines/status", "/data/sql"] * 5  # 20 total
         results: list[int] = []
         errors: list[Exception] = []
         lock = threading.Lock()
