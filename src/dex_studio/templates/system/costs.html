@@ -18,39 +18,6 @@
 {% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
-
-{# ── Metric strip ─────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:20px">
-  <div class="card dex-metric-card dex-metric-indigo" style="padding:14px">
-    <div class="stat-label">Total spend</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      ${{ "%.2f"|format(spend_total) }}
-    </div>
-    <div class="stat-delta">{{ month_label }}</div>
-  </div>
-  <div class="card dex-metric-card {{ 'dex-metric-red' if budget_pct > 85 else ('dex-metric-orange' if budget_pct > 50 else 'dex-metric-green') }}" style="padding:14px">
-    <div class="stat-label">Budget used</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ budget_pct }}%
-    </div>
-    <div class="stat-delta">of ${{ "%.2f"|format(budget) if budget else '—' }}</div>
-  </div>
-  <div class="card dex-metric-card dex-metric-violet" style="padding:14px">
-    <div class="stat-label">Providers</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ providers | length }}
-    </div>
-    <div class="stat-delta">with spend</div>
-  </div>
-  <div class="card dex-metric-card dex-metric-blue" style="padding:14px">
-    <div class="stat-label">Month progress</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ ((month_day / month_days) * 100) | round(0) | int }}%
-    </div>
-    <div class="stat-delta">day {{ month_day }} of {{ month_days }}</div>
-  </div>
-</div>
 
 {# ── Budget + by-provider ────────────────────────────────────────────────── #}
 <div class="grid" style="grid-template-columns:1.4fr 1fr;gap:var(--space-3)">
@@ -206,7 +173,6 @@
   </table>
 </div>
 
-</div>{# /domain-color #}
 {% endblock %}
 
 {% block scripts %}

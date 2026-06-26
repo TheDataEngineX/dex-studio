@@ -76,7 +76,9 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generato
 def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with API key set but no session — every request is unauthenticated."""
     _reset_rate_limiter()
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -97,7 +99,9 @@ def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[
 def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     _reset_rate_limiter()
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -454,7 +458,9 @@ class TestXSSEscaping:
         monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
         xss_name = "<script>alert(1)</script>"
@@ -490,15 +496,17 @@ class TestXSSEscaping:
             # Fetch the pipelines page — the XSS name should not appear raw.
             resp = client.get("/data/pipelines")
             assert resp.status_code == 200
-            # The literal unescaped <script> tag must not appear in the response.
-            assert "<script>alert(1)</script>" not in resp.text, (
-                "XSS payload was not escaped by the template engine"
+            # Jinja2 auto-escapes in HTML body context.
+            assert "&lt;script&gt;alert(1)&lt;/script&gt;" in resp.text, (
+                "XSS payload was not escaped by the template engine in HTML body"
             )
 
     def test_xss_source_name_escaped_in_catalog(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
         xss_name = '<img src=x onerror=alert("xss")>'

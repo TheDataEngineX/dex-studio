@@ -89,7 +89,9 @@ def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
 def authed_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Authenticated TestClient with a mocked engine — no real dex.yaml needed."""
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -342,7 +344,9 @@ class TestBug3SecopsRoutes404:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """New routes must be auth-protected — not public pages."""
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -367,7 +371,9 @@ class TestBug3SecopsRoutes404:
         monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):

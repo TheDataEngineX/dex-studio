@@ -254,13 +254,6 @@ def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
     from dex_studio.routers import api, data, intelligence, root, secops, system
 
-    try:
-        from importlib.metadata import version
-
-        __version__ = version("dex-studio")
-    except Exception:
-        __version__ = "0.1.0"
-
     app = FastAPI(
         title="DEX Studio",
         description="DataEngineX control plane",

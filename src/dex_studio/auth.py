@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import os
 import secrets
 import threading
 import time
@@ -77,8 +76,9 @@ def _verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(dk, dk_stored)
 
 
-def _generate_password() -> str:
-    return "-".join(secrets.token_urlsafe(8) for _ in range(3))
+def has_password() -> bool:
+    """Return True if a password is configured (hash file exists with content)."""
+    return _HASH_FILE.exists() and bool(_HASH_FILE.read_text().strip())
 
 
 def has_password() -> bool:
@@ -113,16 +113,21 @@ def setup_password() -> None:
     _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
     _HASH_FILE.write_text(_hash_password(password))
     _HASH_FILE.chmod(0o600)
-    print(  # noqa: T201 — intentional: must be visible on first boot
-        "\n"
-        "┌──────────────────────────────────────────────────────────────────┐\n"
-        "│  DEX Studio — password generated (shown once)                    │\n"
-        f"│  Password: {password:<55}│\n"
-        "│  Saved to: ~/.dex-studio/auth.hash  (hashed — not recoverable)   │\n"
-        "│  Override: DEX_STUDIO_PASSPHRASE env var                         │\n"
-        "└──────────────────────────────────────────────────────────────────┘\n",
-        flush=True,
-    )
+
+
+def reset_password() -> None:
+    """Unlink the password hash file, clearing all authentication."""
+    _HASH_FILE.unlink(missing_ok=True)
+
+
+def setup_password() -> None:
+    """Ensure hash file directory exists. Call once at app startup.
+
+    On first boot with no password set, the /setup route handles password creation.
+    """
+    if _HASH_FILE.exists() and _HASH_FILE.read_text().strip():
+        return
+    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 def is_authenticated(request: HTTPConnection) -> bool:
@@ -138,16 +143,12 @@ def auth_required(request: Request) -> RedirectResponse | None:
 
 
 def validate_and_login(request: Request, submitted: str) -> bool:
-    """Verify submitted password; set session on success."""
+    """Verify submitted password against stored PBKDF2 hash; set session on success."""
     submitted = submitted.strip()
-    env = os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip()
-    if env:
-        ok = hmac.compare_digest(submitted, env)
-    elif _HASH_FILE.exists():
+    ok = False
+    if _HASH_FILE.exists():
         stored = _HASH_FILE.read_text().strip()
         ok = bool(stored) and _verify_password(submitted, stored)
-    else:
-        ok = False
     if ok:
         request.session["authenticated"] = True
     return ok
