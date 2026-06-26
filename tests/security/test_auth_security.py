@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Generator
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+from dex_studio.auth import _hash_password
 
 _API_KEY = "test-security-key-xyz"  # gitleaks:allow
 _SESSION_SECRET = "s" * 32
@@ -23,6 +27,9 @@ def _make_engine_mock() -> MagicMock:
     eng.config.ai.agents = {}
     eng.agents = {}
     eng.pipeline_stats.return_value = {"total": 0, "scheduled": 0, "failed": 0, "running": 0}
+    eng.source_stats.return_value = {"row_count": 0, "column_count": 0}
+    eng.source_schema.return_value = []
+    eng.source_sample.return_value = []
     eng.health.return_value = {"status": "ok", "components": {}}
     eng.model_registry.list_models.return_value = []
     eng.warehouse_layers.return_value = []
@@ -36,6 +43,7 @@ def _make_engine_mock() -> MagicMock:
         "by_operation": {},
     }
     eng.store.get_memory.return_value = []
+    eng.pipeline_last_run.return_value = None
     eng.ai_memory = None
     eng.ai_long_memory = None
     eng.ai_episodic = None
@@ -59,10 +67,12 @@ def _reset_rate_limiter() -> None:
 
 
 @pytest.fixture
-def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
     """Client with API key set but no session — every request is unauthenticated."""
     _reset_rate_limiter()
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -74,10 +84,12 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     _reset_rate_limiter()
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -184,9 +196,7 @@ class TestBruteForce:
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers.get("location", "")
 
-    def test_wrong_password_three_times_stays_at_login(
-        self, unauthed_client: TestClient
-    ) -> None:
+    def test_wrong_password_three_times_stays_at_login(self, unauthed_client: TestClient) -> None:
         for _ in range(3):
             resp = unauthed_client.post("/login", data={"passphrase": "bad-attempt"})
             assert resp.status_code in (302, 303)
@@ -299,8 +309,7 @@ class TestCSRFTokenRotation:
         token2 = _extract_csrf(resp2.text)
         assert token1 and token2, "Both pages must embed the CSRF token"
         assert token1 == token2, (
-            "CSRF token must be stable within a session; "
-            f"got {token1!r} then {token2!r}"
+            f"CSRF token must be stable within a session; got {token1!r} then {token2!r}"
         )
 
     def test_csrf_token_nonempty_and_hex(self, authed_client: TestClient) -> None:
@@ -323,9 +332,7 @@ class TestCookieSecurity:
         resp = client.post("/login", data={"passphrase": _API_KEY})
         return resp.headers.get("set-cookie", "")
 
-    def test_session_cookie_is_set_after_login(
-        self, unauthed_client: TestClient
-    ) -> None:
+    def test_session_cookie_is_set_after_login(self, unauthed_client: TestClient) -> None:
         cookie = self._get_session_cookie(unauthed_client)
         assert cookie, "Set-Cookie header must be present after login"
 
@@ -386,7 +393,7 @@ class TestSQLInjection:
     _INJECTIONS = [
         "'; DROP TABLE users; --",
         "1 OR 1=1",
-        "\" OR \"\"=\"",
+        '" OR ""="',
         "1; SELECT * FROM information_schema.tables",
         "' UNION SELECT NULL, NULL --",
     ]
@@ -423,9 +430,11 @@ class TestXSSEscaping:
     """Jinja2 autoescapes by default — injected script tags must not appear raw in HTML."""
 
     def test_xss_pipeline_name_escaped_in_response(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
         xss_name = "<script>alert(1)</script>"
@@ -444,23 +453,25 @@ class TestXSSEscaping:
             resp = client.post("/login", data={"passphrase": _API_KEY})
             assert resp.status_code in (302, 303)
 
-            # Fetch the pipelines page — the XSS name should not appear raw.
+            # Fetch the pipelines page — the XSS name should be HTML-escaped.
             resp = client.get("/data/pipelines")
             assert resp.status_code == 200
-            # The literal unescaped <script> tag must not appear in the response.
-            assert "<script>alert(1)</script>" not in resp.text, (
-                "XSS payload was not escaped by the template engine"
+            # Jinja2 auto-escapes in HTML body context.
+            assert "&lt;script&gt;alert(1)&lt;/script&gt;" in resp.text, (
+                "XSS payload was not escaped by the template engine in HTML body"
             )
 
     def test_xss_source_name_escaped_in_catalog(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
         xss_name = '<img src=x onerror=alert("xss")>'
         mock_eng = _make_engine_mock()
-        mock_eng.config.data.sources = {xss_name: MagicMock()}
+        mock_eng.config.data.sources = {xss_name: SimpleNamespace(type="csv", path="/tmp/test.csv")}
 
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
             from dex_studio.app import create_app

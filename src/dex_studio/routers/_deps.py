@@ -14,8 +14,8 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from dex_studio._engine import get_engine
-from dex_studio.auth import RequiresEngine, RequiresLogin, is_authenticated
+from dex_studio import _engine as _dex_engine
+from dex_studio.auth import RequiresEngine, RequiresLogin, has_password, is_authenticated
 from dex_studio.config import load_projects
 from dex_studio.nav import (
     NAV_GROUPS,
@@ -253,7 +253,7 @@ def base_ctx(request: Request) -> dict[str, Any]:
     Heavy per-request engine stats (pipeline_count, agent_count, engine_latency_ms)
     are intentionally omitted. Routes that display them inject them explicitly.
     """
-    eng = get_engine()
+    eng = _dex_engine.get_engine()
     engine_offline = eng is None and _has_project_config()
     project_name = eng.config.project.name if eng else "No project"
     current_config = str(eng.config_path) if eng else ""
@@ -297,7 +297,7 @@ def base_ctx(request: Request) -> dict[str, Any]:
 
 def get_eng() -> DexBackend:
     """Return the engine or raise. Only for contexts where Depends isn't available (WebSocket)."""
-    eng = get_engine()
+    eng = _dex_engine.get_engine()
     if eng is None:  # pragma: no cover
         raise RuntimeError("Engine not initialized")
     return eng
@@ -309,14 +309,16 @@ def get_eng() -> DexBackend:
 
 
 def auth_dep(request: Request) -> None:
-    """Dependency: raises RequiresLogin if the session is unauthenticated."""
+    """Dependency: raises RequiresLogin if no password or session is unauthenticated."""
+    if not has_password():
+        raise RequiresLogin()
     if not is_authenticated(request):
         raise RequiresLogin()
 
 
 def engine_dep(_: Annotated[None, Depends(auth_dep)]) -> DexBackend:
     """Dependency: auth + loaded engine. Raises RequiresEngine if no project loaded."""
-    eng = get_engine()
+    eng = _dex_engine.get_engine()
     if eng is None:
         raise RequiresEngine()
     return eng
@@ -343,13 +345,15 @@ WriteDep = Annotated[DexBackend, Depends(engine_csrf_dep)]
 
 def json_auth_dep(request: Request) -> None:
     """Auth for JSON routes — raises HTTP 401, not a session redirect."""
+    if not has_password():
+        raise HTTPException(status_code=401, detail="No password configured")
     if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def json_engine_dep(_: Annotated[None, Depends(json_auth_dep)]) -> DexBackend:
     """Auth + loaded engine for JSON/SSE routes. Raises 503 when no project is loaded."""
-    eng = get_engine()
+    eng = _dex_engine.get_engine()
     if eng is None:
         raise HTTPException(status_code=503, detail="No project loaded")
     return eng

@@ -7,6 +7,7 @@ background thread wrote its first record.
 After the fix: is_pipeline_running(name) is checked; if True, status = "running"
 overrides whatever the DB says.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

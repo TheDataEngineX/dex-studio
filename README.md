@@ -6,9 +6,9 @@
 
 **Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
 
-[![DEX Studio demo](docs/demo.gif)](https://youtu.be/PLACEHOLDER)
+[![DEX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
 
-> 40-second highlight · [Full 5-min walkthrough →](https://youtu.be/PLACEHOLDER)
+> 40-second highlight · [Full walkthrough →](docs/demo-full.mp4)
 
 ______________________________________________________________________
 
@@ -39,14 +39,12 @@ ______________________________________________________________________
 
 Single page-of-glass UI for everything the [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) library does — no separate API server, no microservices.
 
-| Domain | Today | Phase 2/3 of [roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) |
+| Domain | Screenshots | Features |
 | --- | --- | --- |
-| **Data** | Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog | SQL transform editor, streaming source monitor, ER diagram view |
-| **ML** | Model registry, Experiments tracker, Drift detection, Feature store, Predictions | Per-experiment artifact view, prediction history, A/B test runner |
-| **AI** | Agents, Playground (SSE streaming chat), Memory browser, Tool registry, Trace viewer, Workflow list | Tool-call cards, conversation persistence, YAML workflow editor |
-| **Privacy** | PrivacyGuard overview, PII strategy config, Audit log, Alert rules (pipeline failure + drift) | Outbound-call quarantine, policy editor, budget threshold alerts |
-| **System** | Status, Live log tail (SSE), Metrics, Runs feed (filter by type/status), Cost dashboard | Unified timeline, Slack/email alert channels |
-| **Dashboards** | — | Vega-Lite chart grids built from SQL queries |
+| **Data** | [![Pipelines](docs/screenshots/data-pipelines.png)](docs/screenshots/data-pipelines.png) | Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog, Transforms, Streaming, Schema, Backfill |
+| **Intelligence** | [![Playground](docs/screenshots/intelligence-playground.png)](docs/screenshots/intelligence-playground.png) | Playground (SSE streaming chat), Models, Experiments, Dashboard, Agents, Traces, Drift, Embeddings, Features, Predictions, Tools, Finetune |
+| **SecOps** | [![Overview](docs/screenshots/secops-overview.png)](docs/screenshots/secops-overview.png) | PrivacyGuard overview, PII strategy config, Audit log, Alert rules, Policies |
+| **System** | [![Status](docs/screenshots/system-status.png)](docs/screenshots/system-status.png) | Status, Live log tail (SSE), Metrics, Runs feed, Scheduler, Compaction, Alerting, Costs, Components |
 
 ______________________________________________________________________
 
@@ -63,7 +61,7 @@ ______________________________________________________________________
 ## Configuration
 
 ```bash
-export DEX_STUDIO_API_KEY=your-key       # optional — disables auth if unset
+# Password set via /setup page on first boot — saved to ~/.dex-studio/auth.hash
 export DEX_STUDIO_HOST=0.0.0.0           # default
 export DEX_STUDIO_PORT=7860              # default
 ```
@@ -101,7 +99,7 @@ uv run poe check-all         # lint + typecheck + test
 uv run poe dev               # uvicorn dev server (port 7860, hot-reload)
 ```
 
-Design system reference for contributors: [DESIGN-BRIEF-2026.md](DESIGN-BRIEF-2026.md) (the brief used to commission the v0.5 visual design) — see also `src/dex_studio/static/studio.css` for current tokens.
+Design tokens: `src/dex_studio/static/studio.css`.
 
 ______________________________________________________________________
 
@@ -117,7 +115,7 @@ ______________________________________________________________________
 
 ## Status
 
-Pre-1.0, rebuilding scope through v0.5. See the [DEX scope-reset CHANGELOG](https://github.com/TheDataEngineX/dataenginex/blob/main/CHANGELOG.md) for the rationale and the [2026 roadmap](https://github.com/TheDataEngineX/docs/blob/main/docs/roadmap/DESIGN-2026.md) for what ships next.
+Pre-1.0 · v0.5.0 brings the unified Intelligence domain, two-rail navigation, and expanded Data/System dashboards. See [CHANGELOG](CHANGELOG.md) for the full diff.
 
 ______________________________________________________________________
 

@@ -20,12 +20,16 @@ from dex_studio._engine import (
     validate_config_file,
 )
 from dex_studio.auth import (
+    MIN_PASSWORD_LEN,
     clear_rate_limit,
     get_client_ip,
+    has_password,
     is_authenticated,
     logout,
     rate_limit_blocked,
     record_failed_login,
+    reset_password,
+    set_password,
     validate_and_login,
 )
 from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render
@@ -394,11 +398,58 @@ def _save_default(config_path: str) -> None:
     save_prefs(dataclasses.replace(load_prefs(), default_config_path=config_path))
 
 
+# ── First-boot setup ─────────────────────────────────────────────────────────
+
+
+@router.get("/setup", response_class=HTMLResponse, response_model=None)
+def setup_page(request: Request, reset: bool = False) -> HTMLResponse | RedirectResponse:
+    if not reset and has_password():
+        return RedirectResponse(url="/login", status_code=303)
+    if reset:
+        reset_password()
+        request.session["setup_error"] = ""
+        log.info("password reset — hash file removed")
+    ctx = {
+        "request": request,
+        "current_path": "/setup",
+        "project_name": "DEX Studio",
+        "engine_ready": False,
+        "error": request.session.pop("setup_error", ""),
+        "min_len": MIN_PASSWORD_LEN,
+    }
+    return render(request, "root/setup.html", ctx)
+
+
+@router.post("/setup", response_model=None)
+def setup_submit(
+    request: Request,
+    password: Annotated[str, Form()],
+) -> RedirectResponse | HTMLResponse:
+    if has_password():
+        return RedirectResponse(url="/login", status_code=303)
+    pw = password.strip()
+    if len(pw) < MIN_PASSWORD_LEN:
+        ctx = {
+            "request": request,
+            "current_path": "/setup",
+            "project_name": "DEX Studio",
+            "engine_ready": False,
+            "error": f"Password must be at least {MIN_PASSWORD_LEN} characters.",
+            "min_len": MIN_PASSWORD_LEN,
+        }
+        return render(request, "root/setup.html", ctx)
+    set_password(pw)
+    log.info("password set via setup page")
+    return RedirectResponse(url="/login", status_code=303)
+
+
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 
-@router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request) -> HTMLResponse:
+@router.get("/login", response_class=HTMLResponse, response_model=None)
+def login_page(request: Request) -> HTMLResponse | RedirectResponse:
+    if not has_password():
+        return RedirectResponse(url="/setup", status_code=303)
     log.debug("login page viewed")
     ctx = {
         "request": request,
@@ -406,6 +457,7 @@ def login_page(request: Request) -> HTMLResponse:
         "project_name": "DEX Studio",
         "engine_ready": False,
         "error": request.session.pop("login_error", ""),
+        "can_reset": True,
     }
     return render(request, "root/login.html", ctx)
 

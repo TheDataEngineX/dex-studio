@@ -57,7 +57,6 @@ NAV_GROUPS: list[dict[str, Any]] = [
             _item("Streaming", "/data/streaming", "radio", "SSE / Kafka consumers"),
             _item("Watermarks", "/data/watermarks", "droplets", "Ingestion cursors / dedup state"),
             _item("Backfill", "/data/backfill", "rewind", "Reset watermarks and re-ingest"),
-            _item("Scheduler", "/system/scheduler", "clock", "Cron schedules + DAG triggers"),
             _item("Runs", "/system/runs", "list", "Unified run history"),
         ],
     },
@@ -361,9 +360,6 @@ NAV_DOMAINS: list[dict[str, Any]] = [
             {
                 "label": "Build",
                 "items": [
-                    _D(
-                        "Scheduler", "/system/scheduler", "clock", "Cron schedules and DAG triggers"
-                    ),
                     _D("Compaction", "/system/compaction", "minimize-2", "Table compaction jobs"),
                     _D("Settings", "/system/settings", "sliders", "dex.yaml configuration"),
                 ],

@@ -6,14 +6,14 @@
 {% block page_actions %}
   {% if scheduler.enabled %}
     {% if scheduler.paused %}
-      <form method="post" action="/system/scheduler/resume" style="display:inline">
+      <form method="post" action="/api/scheduler/resume" style="display:inline">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn sm primary">
           <i data-lucide="play" style="width:11px;height:11px"></i> Resume
         </button>
       </form>
     {% else %}
-      <form method="post" action="/system/scheduler/pause" style="display:inline">
+      <form method="post" action="/api/scheduler/pause" style="display:inline">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn sm ghost">
           <i data-lucide="pause" style="width:11px;height:11px"></i> Pause
@@ -85,7 +85,7 @@
         </div>
       </div>
       {% if p.schedule %}
-      <form method="post" action="/system/scheduler/trigger/{{ p.name }}" style="display:inline;flex-shrink:0">
+      <form method="post" action="/api/scheduler/trigger/{{ p.name }}" style="display:inline;flex-shrink:0">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn icon ghost sm" title="Run now" onclick="event.stopPropagation()">
           <i data-lucide="play" style="width:11px;height:11px"></i>
@@ -107,12 +107,12 @@
       <div class="cap" style="margin-bottom:8px">Global Controls</div>
       <div class="row" style="gap:8px">
         {% if scheduler.paused %}
-        <form method="post" action="/system/scheduler/resume" style="display:inline">
+        <form method="post" action="/api/scheduler/resume" style="display:inline">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button class="btn sm primary"><i data-lucide="play" style="width:11px;height:11px"></i> Resume all</button>
         </form>
         {% else %}
-        <form method="post" action="/system/scheduler/pause" style="display:inline">
+        <form method="post" action="/api/scheduler/pause" style="display:inline">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button class="btn sm ghost"><i data-lucide="pause" style="width:11px;height:11px"></i> Pause all</button>
         </form>
@@ -179,7 +179,7 @@
             </td>
             <td class="dim" style="font-size:11px">{{ dl.recorded_at[:19].replace('T', ' ') if dl.recorded_at else '—' }}</td>
             <td style="text-align:right;white-space:nowrap">
-              <form method="post" action="/system/scheduler/dead-letter/{{ dl.pipeline }}/clear" style="display:inline">
+              <form method="post" action="/api/scheduler/dead-letter/{{ dl.pipeline }}/clear" style="display:inline">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button class="btn sm">Retry</button>
               </form>

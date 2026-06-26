@@ -29,8 +29,8 @@ from typing import Any
 import structlog
 import yaml
 from croniter import croniter  # type: ignore[import-untyped]
+from dataenginex.data.pipeline.dag import build_dag, downstream_of, root_pipelines
 
-from dex_studio.dag import build_dag, downstream_of, root_pipelines
 from dex_studio.studio_db import StudioDb, get_studio_db
 from dex_studio.watermark import WatermarkStore
 
@@ -39,10 +39,6 @@ log = structlog.get_logger().bind(src="scheduler")
 _MAX_TICK_S = 30  # upper bound on adaptive sleep
 _MIN_TICK_S = 5  # lower bound — avoid busy-spinning
 _LOCK_TIMEOUT_S = 7200  # 2 h — releases locks from crashed runs
-
-# Kept for backward compat — module now delegates to studio_db.get_studio_db.
-_studio_db: StudioDb | None = None
-_studio_db_path: _Path | None = None
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -453,16 +449,7 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
     Sleeps adaptively — wakes when the next cron fires rather than on a
     fixed interval.
     """
-    import os
-
     from dex_studio._engine import get_engine
-
-    _legacy_env = os.getenv("DEX_SCHEDULER_AUTORUN", "")
-    if _legacy_env:
-        log.warning(
-            "DEX_SCHEDULER_AUTORUN env var is no longer used; "
-            "set 'scheduler: {enabled: true}' in dex.yaml instead",
-        )
 
     log.info("scheduler started", max_tick_s=_MAX_TICK_S)
 

@@ -1,155 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Compaction — System — DEX Studio{% endblock %}
 
+{% block title %}Compaction — System — DEX Studio{% endblock %}
 {% block page_title %}Compaction{% endblock %}
-{% block page_sub %}merge small parquet files · reduce file count · reclaim storage{% endblock %}
-{% block page_actions %}
-  <form method="post" action="/system/compaction/run-all" style="display:inline"
-        onsubmit="event.preventDefault();dexConfirm(this,'Compact all pipelines?','This will merge small parquet files across every configured pipeline. Runs in the background — track progress in Run History below.')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <button class="btn sm primary">
-      <i data-lucide="layers" style="width:11px;height:11px"></i> Compact all pipelines
-    </button>
-  </form>
-{% endblock %}
+{% block page_sub %}Storage compaction configuration{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
-
-{# ── Metric strip ─────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:20px">
-  <div class="card dex-metric-card dex-metric-indigo" style="padding:14px">
-    <div class="stat-label">Pipelines</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ pipelines | length }}</div>
-    <div class="stat-delta">configured</div>
-  </div>
-  <div class="card dex-metric-card dex-metric-green" style="padding:14px">
-    <div class="stat-label">Compaction runs</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ runs | length }}</div>
-    <div class="stat-delta">all time</div>
-  </div>
-  {% if runs %}
-  <div class="card dex-metric-card dex-metric-violet" style="padding:14px">
-    <div class="stat-label">Best savings</div>
-    {% set best = runs | sort(attribute='bytes_before', reverse=True) | first %}
-    {% set bsavings = (1 - best.bytes_after / best.bytes_before) * 100 if best.bytes_before else 0 %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ "%.0f"|format(bsavings) }}%</div>
-    <div class="stat-delta">{{ best.pipeline }}</div>
+<div class="card">
+  <div class="card-header"><h3>Compaction Configuration</h3></div>
+  {% if compaction_config %}
+  <div style="padding:16px">
+    <pre style="font-size:12px;white-space:pre-wrap">{{ compaction_config }}</pre>
   </div>
   {% else %}
-  <div class="card dex-metric-card dex-metric-violet" style="padding:14px">
-    <div class="stat-label">Best savings</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">—</div>
-    <div class="stat-delta">no runs yet</div>
+  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
+    No compaction configuration found.
   </div>
   {% endif %}
-  <div class="card dex-metric-card dex-metric-blue" style="padding:14px">
-    <div class="stat-label">Files merged</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ runs | sum(attribute='files_before') - runs | sum(attribute='files_after') if runs else 0 }}
-    </div>
-    <div class="stat-delta">total across runs</div>
-  </div>
-</div>
-
-{# ── Pipelines ── #}
-<div class="section-h" style="margin-bottom:12px">
-  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Pipelines</span>
-</div>
-  <div class="card bare" style="margin-bottom:20px">
-    <div style="padding:12px 14px 0">
-      <span style="font-size:13px;font-weight:600">Pipelines</span>
-    </div>
-    <div class="table-wrap" style="margin-top:8px">
-      <table class="dex-table">
-        <thead>
-          <tr>
-            <th>Pipeline</th>
-            <th style="text-align:right;width:120px">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in pipelines %}
-          <tr>
-            <td class="mono" style="font-size:12px;font-weight:500">{{ p }}</td>
-            <td style="text-align:right">
-              <form method="post" action="/system/compaction/run/{{ p }}" style="display:inline"
-                    onsubmit="event.preventDefault();dexConfirm(this,'Compact {{ p }}?','Merge small parquet files for this pipeline. Runs in the background.')">
-                <button class="btn sm ghost">
-                  <i data-lucide="layers" style="width:11px;height:11px"></i> Compact
-                </button>
-              </form>
-            </td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="2" style="padding:32px 14px;text-align:center">
-              <i data-lucide="layers" style="width:28px;height:28px;color:var(--text-4);margin-bottom:8px;display:block;margin-left:auto;margin-right:auto"></i>
-              <p style="font-size:13px;color:var(--text-3);margin:0">No pipelines configured.</p>
-              <p class="muted" style="font-size:12px;margin:4px 0 0">
-                <a href="/data/pipelines" style="color:var(--accent-11)">Configure pipelines</a> to enable compaction.
-              </p>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# ── Run history ── #}
-  <div class="section-h" style="margin-bottom:12px">
-    <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Run History</span>
-  </div>
-  <div class="card bare">
-    <div style="padding:12px 14px 0">
-      <span style="font-size:13px;font-weight:600">Run History</span>
-    </div>
-    {% if runs %}
-    <div class="table-wrap" style="margin-top:8px">
-      <table class="dex-table" data-sortable>
-        <thead>
-          <tr>
-            <th class="sortable">Pipeline</th>
-            <th class="sortable" style="text-align:right">Files before</th>
-            <th class="sortable" style="text-align:right">Files after</th>
-            <th class="sortable" style="text-align:right">Size before</th>
-            <th class="sortable" style="text-align:right">Size after</th>
-            <th class="sortable" style="text-align:right">Savings</th>
-            <th class="sortable" style="text-align:right">Duration</th>
-            <th class="sortable">Run at</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in runs %}
-          {% set savings = (1 - r.bytes_after / r.bytes_before) * 100 if r.bytes_before else 0 %}
-          {% set files_saved = r.files_before - r.files_after %}
-          <tr>
-            <td class="mono" style="font-size:12px">{{ r.pipeline }}</td>
-            <td style="text-align:right">{{ r.files_before }}</td>
-            <td style="text-align:right">
-              {{ r.files_after }}
-              {% if files_saved > 0 %}
-              <span class="muted" style="font-size:11px"> −{{ files_saved }}</span>
-              {% endif %}
-            </td>
-            <td style="text-align:right;color:var(--text-3)">{{ "%.1f KB" | format(r.bytes_before / 1024) }}</td>
-            <td style="text-align:right;color:var(--text-3)">{{ "%.1f KB" | format(r.bytes_after / 1024) }}</td>
-            <td style="text-align:right;color:var(--green-11);font-weight:600">{{ "%.1f%%" | format(savings) }}</td>
-            <td style="text-align:right;color:var(--text-3)">{{ "%.2fs" | format(r.duration_s) }}</td>
-            <td class="muted" style="font-size:12px">{{ r.ran_at[:19] | replace('T', ' ') }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div style="padding:32px 14px;text-align:center">
-      <i data-lucide="layers" style="width:32px;height:32px;color:var(--text-4);margin-bottom:10px"></i>
-      <p style="font-size:13px;color:var(--text-3);margin:0">No compaction runs recorded yet.</p>
-      <p class="muted" style="font-size:12px;margin:4px 0 0">Click "Compact" above to merge files for a pipeline.</p>
-    </div>
-    {% endif %}
-  </div>
 </div>
 {% endblock %}

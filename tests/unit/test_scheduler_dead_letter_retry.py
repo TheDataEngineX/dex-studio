@@ -6,6 +6,7 @@ trigger a re-run. User had to click a separate "Retry" button.
 After fix: scheduler_clear_dead_letter clears the dead letter + run state AND
 immediately calls run_pipeline_bg(pipeline) to start a new run.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

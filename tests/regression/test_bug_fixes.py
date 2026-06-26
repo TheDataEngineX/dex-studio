@@ -27,6 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import dex_studio.jobs as jobs_mod
+from dex_studio.auth import _hash_password
 from dex_studio.routers.data import _build_pipeline_rows
 from dex_studio.scheduler import scheduler_clear_dead_letter
 from dex_studio.studio_db import StudioDb
@@ -81,9 +82,11 @@ def _make_engine_mock() -> MagicMock:
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     """Authenticated TestClient with a mocked engine — no real dex.yaml needed."""
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -225,8 +228,9 @@ class TestBug2DeadLetterRetry:
             mock_run.return_value = "started"
             scheduler_clear_dead_letter(eng, "stuck_pipeline")
 
-        mock_run.assert_called_once_with("stuck_pipeline"), (
-            "Regression: run_pipeline_bg must be called to re-queue the pipeline"
+        (
+            mock_run.assert_called_once_with("stuck_pipeline"),
+            ("Regression: run_pipeline_bg must be called to re-queue the pipeline"),
         )
 
     def test_pipeline_added_to_running_set_after_real_run_pipeline_bg(self) -> None:
@@ -324,10 +328,12 @@ class TestBug3SecopsRoutes404:
         assert resp.status_code == 200
 
     def test_unauthenticated_privacy_redirects_to_login(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """New routes must be auth-protected — not public pages."""
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
@@ -345,9 +351,11 @@ class TestBug3SecopsRoutes404:
         assert "/login" in resp.headers.get("location", "")
 
     def test_unauthenticated_policies_redirects_to_login(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+        hash_file = tmp_path / "auth.hash"
+        hash_file.write_text(_hash_password(_API_KEY))
+        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):

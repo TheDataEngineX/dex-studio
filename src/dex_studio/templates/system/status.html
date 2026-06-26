@@ -18,7 +18,7 @@
     <span style="flex:1"></span>
     <a href="/system/logs" class="btn sm ghost"><i data-lucide="terminal" style="width:11px;height:11px"></i> Logs</a>
     <a href="/system/metrics" class="btn sm ghost"><i data-lucide="gauge" style="width:11px;height:11px"></i> Metrics</a>
-    <a href="/system/scheduler" class="btn sm ghost"><i data-lucide="calendar-clock" style="width:11px;height:11px"></i> Scheduler</a>
+    <a href="/system/runs" class="btn sm ghost"><i data-lucide="calendar-clock" style="width:11px;height:11px"></i> Runs</a>
   </div>
 </div>
 
@@ -92,7 +92,7 @@
   <div class="hub-panel">
     <div class="hub-panel-head">
       <span class="hub-panel-title">Scheduler</span>
-      <a href="/system/scheduler" class="hub-panel-link">View →</a>
+      <a href="/system/runs" class="hub-panel-link">View →</a>
     </div>
     {% if scheduler_overview %}
     <div class="hub-row">
@@ -114,12 +114,12 @@
     </div>
     <div class="hub-row" style="padding-top:8px;border-top:1px solid var(--border)">
       {% if scheduler_overview.paused %}
-      <form method="post" action="/system/scheduler/resume" style="display:block;width:100%">
+      <form method="post" action="/api/scheduler/resume" style="display:block;width:100%">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn sm primary" style="width:100%"><i data-lucide="play" style="width:11px;height:11px"></i> Resume</button>
       </form>
       {% elif scheduler_overview.enabled %}
-      <form method="post" action="/system/scheduler/pause" style="display:block;width:100%">
+      <form method="post" action="/api/scheduler/pause" style="display:block;width:100%">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn sm ghost" style="width:100%"><i data-lucide="pause" style="width:11px;height:11px"></i> Pause</button>
       </form>

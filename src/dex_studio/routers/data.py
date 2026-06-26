@@ -8,6 +8,7 @@ import os
 import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any
 
 import duckdb
@@ -655,6 +656,36 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
                     "sql": getattr(s, "sql", ""),
                 }
             )
+    # Build source_info / dest_info for the template
+    src_cfg = (eng.config.data.sources or {}).get(cfg.source or "")
+    src_query = getattr(src_cfg, "query", None) if src_cfg else None
+    source_info = SimpleNamespace(
+        name=cfg.source or "—",
+        schedule=fmt_cron(cfg.schedule or ""),
+        endpoint=getattr(src_cfg, "url", None) if src_cfg else "—",
+        auth="—",
+        fetch_mode="incremental" if src_query else "full",
+        watermark_col="",
+        last_watermark="—",
+    )
+    dst = getattr(cfg, "destination", None) or name
+    dest_info = SimpleNamespace(
+        table=dst,
+        layer="bronze",
+        scd_type=1,
+        pk_col="id",
+        current_flag="",
+        effective_from="",
+        effective_to="",
+    )
+    # Compute stats summary from history
+    total_runs = len(history)
+    success_count = sum(1 for h in history if h["success"])
+    stats = SimpleNamespace(
+        rows_total=str(total_runs) if total_runs else "—",
+        success_rate=f"{success_count / total_runs * 100:.0f}%" if total_runs else "—",
+        next_run=_next_run_iso(cfg.schedule or "", history[0]["timestamp"] if history else None),
+    )
     ctx = base_ctx(request) | {
         "pipeline_name": name,
         "schedule": fmt_cron(cfg.schedule or ""),
@@ -662,6 +693,9 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
         "destination": getattr(cfg, "destination", None) or "—",
         "history": history,
         "steps": steps,
+        "source_info": source_info,
+        "dest_info": dest_info,
+        "stats": stats,
     }
     return render(request, "data/pipeline_detail.html", ctx)
 
@@ -697,9 +731,7 @@ def _mask_config_value(k: str, v: Any) -> str:
 def _build_source_rows(eng: Any) -> list[dict[str, str]]:
     store = _get_watermark_store(eng)
     wm_rows = store.all_watermarks() if store else []
-    last_synced_map = {
-        w["source"]: fmt_ts_iso(w.get("updated_at") or "") for w in wm_rows
-    }
+    last_synced_map = {w["source"]: fmt_ts_iso(w.get("updated_at") or "") for w in wm_rows}
     rows = []
     for name, cfg in (eng.config.data.sources or {}).items():
         connector_type = str(getattr(cfg, "type", "http"))

@@ -1,120 +1,43 @@
 {% extends "base.html" %}
 
 {% block title %}Policies — SecOps — DEX Studio{% endblock %}
-{% block page_title %}Data Policies{% endblock %}
-{% block page_sub %}PII handling rules · data governance · access controls{% endblock %}
-
-{% block page_actions %}
-<a href="/secops/privacy" class="btn sm ghost" style="text-decoration:none">
-  <i data-lucide="shield" style="width:11px;height:11px"></i> Privacy guard
-</a>
-<a href="/secops/audit" class="btn sm ghost" style="text-decoration:none">
-  <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Audit log
-</a>
-{% endblock %}
+{% block page_title %}Policies{% endblock %}
+{% block page_sub %}Security policy rules{% endblock %}
 
 {% block content %}
-{% from "components/macros.html" import metric_card, empty_state %}
-<div style="--domain-color: var(--domain-secops)">
-
-{# ── Summary strip ── #}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-  {{ metric_card("Active policies", policies | length, "file-text", "indigo", "from dex.yaml secops config") }}
-  {{ metric_card("Default PII action", pii_action, "shield-alert", "amber", "global fallback") }}
-  {{ metric_card("Guard enforcement", "block" if block_on_detect else "warn", "ban", "red" if block_on_detect else "orange", "on PII detection") }}
-  {{ metric_card("Outbound logging", "all" if log_all_outbound else "violations", "scroll-text", "green", "outbound call recording") }}
-</div>
-
-{# ── Global settings ── #}
-<div class="card" style="padding:0;margin-bottom:16px">
-  <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-    <span style="font-weight:600;font-size:13px">Global data governance settings</span>
-  </div>
-  <div style="padding:4px 0">
-    <div class="row" style="padding:11px 16px;gap:14px;border-bottom:1px solid var(--border)">
-      <div style="width:180px;font-size:12px;font-weight:500;color:var(--text-2)">Default PII action</div>
-      <div class="mono" style="font-size:12px">{{ pii_action }}</div>
-      <div class="dim" style="font-size:11px;margin-left:auto">Applied when no specific strategy matches</div>
-    </div>
-    <div class="row" style="padding:11px 16px;gap:14px;border-bottom:1px solid var(--border)">
-      <div style="width:180px;font-size:12px;font-weight:500;color:var(--text-2)">Enforcement mode</div>
-      <div class="mono" style="font-size:12px">{{ 'block' if block_on_detect else 'warn' }}</div>
-      <div class="dim" style="font-size:11px;margin-left:auto">{{ 'Outbound calls blocked when PII detected' if block_on_detect else 'Warning logged, calls allowed' }}</div>
-    </div>
-    <div class="row" style="padding:11px 16px;gap:14px;border-bottom:1px solid var(--border)">
-      <div style="width:180px;font-size:12px;font-weight:500;color:var(--text-2)">Local model scope</div>
-      <div class="mono" style="font-size:12px">{{ 'allowed' if allow_local else 'restricted' }}</div>
-      <div class="dim" style="font-size:11px;margin-left:auto">{{ 'Local Ollama models bypass guard' if allow_local else 'Guard applies to all models' }}</div>
-    </div>
-    <div class="row" style="padding:11px 16px;gap:14px">
-      <div style="width:180px;font-size:12px;font-weight:500;color:var(--text-2)">Audit logging</div>
-      <div class="mono" style="font-size:12px">{{ 'all outbound' if log_all_outbound else 'violations only' }}</div>
-      <div class="dim" style="font-size:11px;margin-left:auto">{{ 'Every outbound call recorded' if log_all_outbound else 'Only policy violations logged' }}</div>
-    </div>
-  </div>
-</div>
-
-{# ── Policy table ── #}
-<div class="card" style="padding:0;margin-bottom:16px">
-  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
-    <span style="font-weight:600;font-size:13px">PII handling policies</span>
-    <span class="dim" style="font-size:11px">· {{ policies | length }} rule{{ 's' if policies | length != 1 else '' }}</span>
-  </div>
-  {% if policies %}
-  <table class="dex-table" style="width:100%">
-    <thead>
-      <tr>
-        <th>Rule</th>
-        <th>PII type</th>
-        <th>Action</th>
-        <th>Mode</th>
-      </tr>
-    </thead>
+<div class="card" style="margin-bottom:24px">
+  <div class="card-header"><h3>Global data governance</h3></div>
+  <table class="table">
     <tbody>
-      {% for p in policies %}
-      <tr>
-        <td style="font-size:13px;font-weight:500">{{ p.name }}</td>
-        <td class="mono dim" style="font-size:11px">{{ p.rule }}</td>
-        <td class="mono" style="font-size:12px">{{ p.action }}</td>
-        <td>
-          {% if p.mode == 'mask' %}
-            <span class="pill warn" style="height:16px;font-size:9px">mask</span>
-          {% elif p.mode == 'block' %}
-            <span class="pill error" style="height:16px;font-size:9px">block</span>
-          {% else %}
-            <span class="pill neutral" style="height:16px;font-size:9px">allow</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
+      <tr><td style="color:var(--text-3);width:200px">Enforcement mode</td><td>{{ "Block" if block_on_detect else "Warn" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Default PII action</td><td>{{ pii_action }}</td></tr>
+      <tr><td style="color:var(--text-3)">Guard enabled</td><td>{{ "Yes" if guard_enabled else "No" }}</td></tr>
+      <tr><td style="color:var(--text-3)">Allow local providers</td><td>{{ "Yes" if allow_local else "No" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3>Policy Rules</h3></div>
+  {% if config_policies %}
+  <table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Rule</th><th>Severity</th><th>Tables</th></tr></thead>
+    <tbody>
+    {% for p in config_policies %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{{ p.description or "—" }}</td>
+      <td><code>{{ p.rule or "—" }}</code></td>
+      <td>{{ p.severity or "—" }}</td>
+      <td>{{ (p.tables or []) | join(", ") or "—" }}</td>
+    </tr>
+    {% endfor %}
     </tbody>
   </table>
   {% else %}
-  {{ empty_state("file-text", "No policies configured", "Add PII strategies under secops: in dex.yaml to define policies") }}
+  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
+    No policies configured.
+  </div>
   {% endif %}
-</div>
-
-{# ── Trusted targets ── #}
-{% if local_targets %}
-<div class="card" style="padding:0">
-  <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-    <span style="font-weight:600;font-size:13px">Trusted local endpoints</span>
-  </div>
-  <div style="padding:12px 16px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      {% for t in local_targets %}
-      <span class="mono" style="font-size:11px;padding:4px 10px;border-radius:4px;background:var(--bg-subtle);border:1px solid var(--border)">{{ t }}</span>
-      {% endfor %}
-    </div>
-    <div class="muted" style="font-size:11px">These endpoints bypass the privacy guard. Configure under <span class="mono">secops.local_targets</span> in dex.yaml.</div>
-  </div>
-</div>
-{% else %}
-<div class="card" style="padding:16px">
-  <div style="font-size:12px;font-weight:500;margin-bottom:4px">Trusted local endpoints</div>
-  <div class="muted" style="font-size:11px">No local targets configured. Add trusted endpoints under <span class="mono">secops.local_targets</span> in dex.yaml to allow them to bypass the guard.</div>
-</div>
-{% endif %}
-
 </div>
 {% endblock %}

@@ -324,6 +324,12 @@ def secops_overview(request: Request, eng: ReadDep) -> HTMLResponse:  # noqa: C9
         "calls_blocked_today": sum(1 for e in recent_events if e.get("operation") == "blocked"),
         "external_spend_today": "0.00",
         "chart_zeros": chart_json,
+        # ponytail: nested getattr chain, refactor if secops config grows
+        "pii_masking": getattr(
+            getattr(getattr(eng.config, "secops", None), "pii", None),
+            "masking",
+            None,
+        ),
     }
     return render(request, "secops/overview.html", ctx)
 
@@ -351,15 +357,25 @@ def secops_privacy(request: Request, eng: ReadDep) -> HTMLResponse:
     audit = _secops_audit(eng)
     audit_count, audit_today, recent_events, top_masked_fields = _load_audit_data(audit)
 
+    pii_cfg = None
+    with contextlib.suppress(Exception):
+        sec = getattr(eng.config, "secops", None)
+        pii_cfg = getattr(sec, "pii", None) if sec else None
+
     ctx = base_ctx(request) | {
         "guard_enabled": guard_enabled,
         "block_on_detect": block_on_detect,
         "allow_local": allow_local,
         "log_all_outbound": log_all_outbound,
         "local_targets": local_targets,
+        "guard_local_targets": local_targets,
+        "guard_strategies": {s["name"]: s["mode"] for s in strategy_display},
         "strategy_display": strategy_display,
         "active_rules": active_rules,
         "pii_action": pii_action,
+        "pii_scan": getattr(pii_cfg, "scan", False) if pii_cfg else False,
+        "pii_patterns": getattr(pii_cfg, "patterns", []) if pii_cfg else [],
+        "pii_masking": getattr(pii_cfg, "masking", None) if pii_cfg else None,
         "audit_count": audit_count,
         "audit_today": audit_today,
         "top_masked_fields": top_masked_fields,
@@ -397,6 +413,21 @@ def secops_policies(request: Request, eng: ReadDep) -> HTMLResponse:
         for s in strategy_display
     ]
 
+    config_policies: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        sec_pol = getattr(getattr(eng.config, "secops", None), "policies", None)
+        if sec_pol:
+            config_policies = [
+                {
+                    "name": p.name,
+                    "description": p.description,
+                    "rule": p.rule,
+                    "severity": p.severity,
+                    "tables": p.tables,
+                }
+                for p in sec_pol
+            ]
+
     ctx = base_ctx(request) | {
         "guard_enabled": guard_enabled,
         "block_on_detect": block_on_detect,
@@ -405,6 +436,7 @@ def secops_policies(request: Request, eng: ReadDep) -> HTMLResponse:
         "local_targets": local_targets,
         "policies": policies,
         "pii_action": pii_action,
+        "config_policies": config_policies,
     }
     return render(request, "secops/policies.html", ctx)
 
@@ -514,6 +546,20 @@ def secops_alerts(request: Request, eng: ReadDep) -> HTMLResponse:
     )
     info_count = sum(1 for r in alert_rules if r.get("severity") not in ("high", "med"))
 
+    config_alerts: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        sec_alerts = getattr(getattr(eng.config, "secops", None), "alerts", None)
+        if sec_alerts:
+            config_alerts = [
+                {
+                    "name": a.name,
+                    "condition": a.condition,
+                    "severity": a.severity,
+                    "channels": a.channels,
+                }
+                for a in sec_alerts
+            ]
+
     ctx = base_ctx(request) | {
         "alert_rules": alert_rules,
         "firing_count": firing_count,
@@ -521,5 +567,6 @@ def secops_alerts(request: Request, eng: ReadDep) -> HTMLResponse:
         "critical_count": critical_count,
         "info_count": info_count,
         "active_tab": "secops",
+        "config_alerts": config_alerts,
     }
     return render(request, "secops/alerts.html", ctx)

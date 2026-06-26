@@ -137,12 +137,50 @@ print('OpenAPI schema written to', out, '—', len(schema.get('paths', {})), 'pa
 env = { PYTHONPATH = "src" }
 help = "Export OpenAPI schema to docs/openapi.json"
 
-# ── Demo & Screenshots ────────────────────────────────────────────────────────
-[tool.poe.tasks.demo]
-cmd  = "python scripts/demo/record.py"
-env  = { PYTHONPATH = "src" }
-help = "Generate full demo video + screenshots (requires ffmpeg, agg)"
+# ── AI Agents (Playwright) —───────────────────────────────────────────────────
+[tool.poe.tasks.agents-install]
+shell = "npm install && npx playwright install chromium"
+help = "Install npm packages and Playwright browser for e2e tests"
 
+[tool.poe.tasks.test-e2e-core]
+cmd = "npx playwright test"
+help = "Internal: run Playwright e2e tests (server must already be running)"
+
+[tool.poe.tasks.test-e2e]
+shell = """
+trap 'kill %1 2>/dev/null' EXIT
+uv run dex-studio --port 7860 &
+attempt=0
+while [ $attempt -lt 30 ]; do
+  if curl -s -o /dev/null http://127.0.0.1:7860/ 2>/dev/null; then break; fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+npx playwright test
+"""
+help = "Start dex-studio and run Playwright e2e tests"
+
+[tool.poe.tasks.hunt]
+shell = """
+echo '🎭 DEX Studio — Autonomous Test Hunt'
+echo ''
+echo '1. Start the server (in another terminal):'
+echo '   uv run dex-studio --port 7860'
+echo ''
+echo '2. Tell your AI assistant (Claude Code, Copilot, etc.):'
+echo '   "Using the playwright-test-planner agent, explore'
+echo '    http://localhost:7860, then generate and heal tests'
+echo '    for all routes. Seed: seed.spec.ts"'
+echo ''
+echo '3. Run the generated tests:'
+echo '   uv run poe test-e2e'
+echo ''
+echo '4. View the HTML report:'
+echo '   npx playwright show-report'
+"""
+help = "Print instructions for running the autonomous agent pipeline"
+
+# ── Demo & Screenshots ────────────────────────────────────────────────────────
 [tool.poe.tasks.screenshots]
 cmd  = "python scripts/demo/browser_segments.py --screenshots-only"
 env  = { PYTHONPATH = "src" }

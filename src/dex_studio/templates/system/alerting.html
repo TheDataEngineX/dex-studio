@@ -1,160 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Alerting — System — DEX Studio{% endblock %}
 
+{% block title %}Alerting — System — DEX Studio{% endblock %}
 {% block page_title %}Alerting{% endblock %}
-{% block page_sub %}webhook + log alerts · pipeline freshness SLA · dispatch pending{% endblock %}
-{% block page_actions %}
-  {% if undelivered > 0 %}
-  <form method="post" action="/system/alerting/dispatch" style="display:inline">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <button class="btn sm primary">
-      <i data-lucide="send" style="width:11px;height:11px"></i>
-      Dispatch {{ undelivered }} pending
-    </button>
-  </form>
-  {% endif %}
-{% endblock %}
+{% block page_sub %}Observability alerting configuration{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
-
-{# ── Metric strip ─────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:20px">
-  <div class="card dex-metric-card {{ 'dex-metric-red' if undelivered > 0 else 'dex-metric-green' }}" style="padding:14px">
-    <div class="stat-label">Pending alerts</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ undelivered }}</div>
-    <div class="stat-delta">{{ 'awaiting dispatch' if undelivered > 0 else 'all delivered' }}</div>
+<div class="card">
+  <div class="card-header"><h3>Alerting Configuration</h3></div>
+  {% if alerting_config %}
+  <div style="padding:16px">
+    <pre style="font-size:12px;white-space:pre-wrap">{{ alerting_config }}</pre>
   </div>
-  <div class="card dex-metric-card dex-metric-indigo" style="padding:14px">
-    <div class="stat-label">Total alerts</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ alerts | length }}</div>
-    <div class="stat-delta">in log</div>
-  </div>
-  <div class="card dex-metric-card dex-metric-blue" style="padding:14px">
-    <div class="stat-label">Pipelines monitored</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ freshness | length }}</div>
-    <div class="stat-delta">freshness SLA</div>
-  </div>
-  <div class="card dex-metric-card {{ 'dex-metric-red' if freshness | selectattr('status','equalto','stale') | list | length > 0 else 'dex-metric-green' }}" style="padding:14px">
-    <div class="stat-label">Stale pipelines</div>
-    {% set stale_ct = freshness | selectattr('status','equalto','stale') | list | length %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">{{ stale_ct }}</div>
-    <div class="stat-delta">{{ 'SLA breached' if stale_ct > 0 else 'all fresh' }}</div>
-  </div>
-</div>
-
-  {# ── Freshness signals ── #}
-  {% if freshness %}
-  <div class="section-h" style="margin-bottom:12px">
-    <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Pipeline Freshness</span>
-  </div>
-  <div class="card bare" style="margin-bottom:20px">
-    <div style="padding:12px 14px 0">
-      <span style="font-size:13px;font-weight:600">Pipeline Freshness</span>
-    </div>
-    <div class="table-wrap" style="margin-top:8px">
-      <table class="dex-table">
-        <thead>
-          <tr>
-            <th>Pipeline</th>
-            <th>Last run</th>
-            <th style="text-align:right">Age</th>
-            <th style="text-align:right">SLA</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in freshness %}
-          <tr>
-            <td class="mono" style="font-size:12px;font-weight:500">{{ f.pipeline }}</td>
-            <td class="muted" style="font-size:12px">
-              {{ f.last_run[:19] | replace('T', ' ') if f.last_run else '—' }}
-            </td>
-            <td style="text-align:right;font-variant-numeric:tabular-nums">
-              {% if f.age_hours is not none %}
-                {{ "%.1fh" | format(f.age_hours) }}
-              {% else %}—{% endif %}
-            </td>
-            <td style="text-align:right;color:var(--text-3)">
-              {{ ("%.0fh" | format(f.sla_hours)) if f.sla_hours else '—' }}
-            </td>
-            <td>
-              {% if f.status == 'ok' %}
-              <span class="pill ok" style="font-size:10px">
-                <i data-lucide="check-circle-2" style="width:10px;height:10px"></i> Fresh
-              </span>
-              {% elif f.status == 'stale' %}
-              <span class="pill error" style="font-size:10px">
-                <i data-lucide="alert-circle" style="width:10px;height:10px"></i> Stale
-              </span>
-              {% else %}
-              <span class="pill" style="font-size:10px;color:var(--text-4)">Unknown</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  {% else %}
+  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
+    No alerting configuration found.
   </div>
   {% endif %}
-
-  {# ── Alert events ── #}
-  <div class="section-h" style="margin-bottom:12px">
-    <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Alert Events</span>
-    {% if alerts %}
-    <span class="muted" style="font-size:11px">{{ alerts | length }} total · {{ undelivered }} pending</span>
-    {% endif %}
-  </div>
-  <div class="card bare">
-    {% if alerts %}
-    <div class="table-wrap" style="margin-top:8px">
-      <table class="dex-table" data-sortable>
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Pipeline</th>
-            <th>Message</th>
-            <th class="sortable">Created at</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for a in alerts %}
-          <tr {% if not a.delivered %}style="background:color-mix(in oklch,var(--amber-9) 4%,transparent)"{% endif %}>
-            <td>
-              <span class="badge" style="font-size:10px">{{ a.event_type }}</span>
-            </td>
-            <td class="mono" style="font-size:12px">{{ a.pipeline or '—' }}</td>
-            <td style="font-size:12px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ a.message }}">
-              {{ a.message }}
-            </td>
-            <td class="muted" style="font-size:12px">{{ a.created_at[:19] | replace('T', ' ') }}</td>
-            <td>
-              {% if a.delivered %}
-              <span class="pill ok" style="font-size:10px">
-                <i data-lucide="check-circle-2" style="width:10px;height:10px"></i> Delivered
-              </span>
-              {% else %}
-              <span class="pill warn" style="font-size:10px">
-                <i data-lucide="clock" style="width:10px;height:10px"></i> Pending
-              </span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div style="padding:32px 14px;text-align:center">
-      <i data-lucide="bell" style="width:32px;height:32px;color:var(--text-4);margin-bottom:10px"></i>
-      <p style="font-size:13px;color:var(--text-3);margin:0">No alert events recorded yet.</p>
-      <p class="muted" style="font-size:12px;margin:4px 0 0">
-        Alerts are fired when pipelines fail, drift is detected, or backfills are triggered.
-      </p>
-    </div>
-    {% endif %}
-  </div>
 </div>
 {% endblock %}

@@ -1,12 +1,12 @@
 [project]
 name = "dex-studio"
-version = "0.4.0"
-description = "DEX Studio – local control plane for DataEngineX/DEX"
+version = "0.5.0"
+description = "DEX Studio – Data & Intelligence Platform"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "TheDataEngineX" }]
-keywords = ["data-engineering", "ml", "ui", "dashboard", "dataenginex"]
+keywords = ["data-engineering", "ml", "ai", "mlops", "dataenginex", "open-source", "self-hosted"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dataenginex>=0.4.1",
+    "dataenginex>=0.4.3",
     "fastapi[standard]>=0.115.0",
     "jinja2>=3.1.4",
     "itsdangerous>=2.2.0",
@@ -26,10 +26,8 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "structlog>=25.5.0",
     "scikit-learn>=1.8.0",
-    "gtts>=2.2.4",
     "orjson>=3.11.0",
     "uvloop>=0.22.0; sys_platform != 'win32'",
-    "pytz>=2024.1",
     "psutil>=7.2.2",
 ]
 

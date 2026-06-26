@@ -71,26 +71,3 @@ class WatermarkStore:
 
     def record_hash(self, source: str, content_hash: str) -> None:
         self._db.record_hash(source, content_hash)
-
-    def filter_new(
-        self,
-        source: str,
-        rows: list[dict[str, Any]],
-        hash_columns: list[str] | None = None,
-    ) -> tuple[list[dict[str, Any]], int]:
-        """Return (new_rows, skipped_count) after dedup filtering.
-
-        New rows have their hash recorded. Duplicate rows are dropped.
-        """
-        new_rows: list[dict[str, Any]] = []
-        skipped = 0
-        for row in rows:
-            h = self.compute_hash(row, hash_columns)
-            if self._db.is_duplicate(source, h):
-                skipped += 1
-            else:
-                self._db.record_hash(source, h)
-                new_rows.append(row)
-        if skipped:
-            log.debug("dedup filtered", source=source, skipped=skipped, new=len(new_rows))
-        return new_rows, skipped

@@ -10,13 +10,8 @@ import os
 import threading
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from dataenginex.engine import DexBackend, DexEngine
-
-# Re-export so existing imports from dex_studio._engine still work
-from dataenginex.engine import DexBackend, DexEngine  # noqa: F401
+from dataenginex.engine import DexEngine
 
 _ENGINE: DexEngine | None = None
 # Protects _ENGINE mutation. DexEngine.__init__ is synchronous and potentially
@@ -71,10 +66,6 @@ def get_engine() -> DexEngine | None:
     if starter:
         return init_engine(starter)
     return None
-
-
-def get_backend() -> DexEngine | None:
-    return get_engine()
 
 
 def find_user_projects() -> list[tuple[str, Path]]:

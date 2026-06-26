@@ -4,11 +4,10 @@
 
 ## Features
 
-- **Data** — Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog
-- **ML** — Model registry, Experiments tracker, Drift detection, Feature store, Predictions
-- **AI** — Agents, Playground (SSE streaming chat), Memory browser, Tool registry, Trace viewer, Workflow list
-- **Privacy** — PrivacyGuard overview, PII strategy config, Audit log, Alert rules
-- **System** — Status, Live log tail (SSE), Metrics, Runs feed, Cost dashboard
+- **Data** — Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog, Transforms, Streaming, Schema, Backfill
+- **Intelligence** — Playground (SSE streaming chat), Models, Experiments, Dashboard, Agents, Traces, Drift, Embeddings, Features, Predictions, Tools, Finetune
+- **SecOps** — PrivacyGuard overview, PII strategy config, Audit log, Alert rules, Policies
+- **System** — Status, Live log tail (SSE), Metrics, Runs feed, Scheduler, Compaction, Alerting, Costs, Components
 
 ## Quick Links
 

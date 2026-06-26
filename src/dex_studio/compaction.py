@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import time
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +22,7 @@ import structlog
 
 from dex_studio.studio_db import StudioDb
 
-__all__ = ["CompactionEngine", "RetentionManager", "CompactionResult"]
+__all__ = ["CompactionEngine", "CompactionResult"]
 
 log = structlog.get_logger().bind(src="compaction")
 
@@ -146,37 +145,3 @@ class CompactionEngine:
             if r:
                 results.append(r)
         return results
-
-
-class RetentionManager:
-    """Deletes files from the lakehouse older than a retention window."""
-
-    def __init__(self, project_dir: Path) -> None:
-        self._root = project_dir / ".dex" / "lakehouse"
-
-    def apply(self, retention_days: int) -> dict[str, int]:
-        """Delete parquet files older than *retention_days*. Returns {layer: count}."""
-        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        counts: dict[str, int] = {}
-        for layer in ("bronze", "silver", "gold"):
-            layer_dir = self._root / layer
-            if not layer_dir.exists():
-                continue
-            deleted = 0
-            for f in layer_dir.rglob("*.parquet"):
-                try:
-                    mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=UTC)
-                except OSError:
-                    continue
-                if mtime < cutoff:
-                    try:
-                        f.unlink()
-                        deleted += 1
-                        log.info("retention delete", layer=layer, file=f.name)
-                    except OSError as exc:
-                        log.warning(
-                            "retention: could not delete", layer=layer, file=f.name, error=str(exc)
-                        )
-            if deleted:
-                counts[layer] = deleted
-        return counts

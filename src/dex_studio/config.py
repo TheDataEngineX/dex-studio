@@ -79,11 +79,11 @@ def save_projects(projects: list[ProjectEntry]) -> None:
     _PROJECTS_FILE.write_text(yaml.safe_dump(data, default_flow_style=False))
 
 
-def add_project(name: str, config_path: Path) -> list[ProjectEntry]:
+def add_project(name: str, config_path: str | Path) -> list[ProjectEntry]:
     """Add a project to the registry and persist. Returns updated list."""
     projects = load_projects()
     projects = [p for p in projects if p.name != name]  # replace if exists
-    projects.append(ProjectEntry(name=name, config_path=config_path.resolve()))
+    projects.append(ProjectEntry(name=name, config_path=Path(config_path).resolve()))
     save_projects(projects)
     return projects
 

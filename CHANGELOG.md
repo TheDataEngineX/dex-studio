@@ -5,6 +5,37 @@ All notable changes to `dex-studio` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-23
+
+### Added
+
+- **Two-rail navigation** — sidebar nav groups (Data, Pipelines, Intelligence, Platform, System) with icon badges; active-rail highlighting
+- **Intelligence domain** — unified `intelligence` router (replaces separate `ml` + `ai` routers): Playground (SSE streaming chat), Models, Experiments, Dashboard, Agents, Traces, Drift, Embeddings, Features, Predictions, Tools, Finetune
+- **System domain expansion** — Scheduler, Runs, Compaction, Alerting, Costs dashboards
+- **Data domain expansion** — Quality checks, Lineage graph, Transform editor, Streaming monitors, Backfill management, Watermark tracking
+- **Scripts** — `scripts/demo/browser_segments.py` (Playwright screenshot capture), `scripts/demo/record.py` (Playwright video recording)
+- **nav.py** — single source of truth for sidebar nav structure
+- **studio_db.py** — Studio-level SQLite backing store
+- **dag.py** — pipeline DAG utilities
+- **tools/** — Tool registry
+- **Quality module** (`quality.py`) — data quality check framework
+- **Embeddings module** (`embeddings.py`) — embedding management UI
+- **Execution UI** (`execution.py`) — pipeline execution tracking
+- **Backfill tracker** (`backfill.py`) — backfill pipeline management
+- **Compaction manager** (`compaction.py`) — storage compaction UI
+
+### Changed
+
+- **Router consolidation** — `ml` and `ai` routers merged into single `intelligence` router with `/intelligence` prefix
+- **Template reorganization** — `templates/intelligence/` replaces `templates/ml/` and `templates/ai/`
+- **Navigation** — `nav.py` drives all sidebar rendering; router names normalized to match nav groups
+- **Version** — bumped to 0.5.0
+
+### Removed
+
+- `routers/ml.py` and `routers/ai.py` — replaced by `routers/intelligence.py`
+- `templates/ml/` and `templates/ai/` — replaced by `templates/intelligence/`
+
 ## [0.4.0] - 2026-06-12
 
 First public release.

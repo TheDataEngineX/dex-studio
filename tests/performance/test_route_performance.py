@@ -5,10 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Generator
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+from dex_studio.auth import _hash_password
 
 _API_KEY = "test-perf-key-abc"  # gitleaks:allow
 _SESSION_SECRET = "p" * 32
@@ -58,10 +61,12 @@ def _reset_rate_limiter() -> None:
 
 
 @pytest.fixture
-def perf_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def perf_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
     """Authenticated TestClient for each performance test."""
     _reset_rate_limiter()
-    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
+    hash_file = tmp_path / "auth.hash"
+    hash_file.write_text(_hash_password(_API_KEY))
+    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
     mock_eng = _make_engine_mock()
@@ -127,9 +132,7 @@ class TestBaselineLatency:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         assert resp.status_code == 200
-        assert elapsed_ms < _LATENCY_LIMIT_MS, (
-            f"Login page took {elapsed_ms:.1f}ms"
-        )
+        assert elapsed_ms < _LATENCY_LIMIT_MS, f"Login page took {elapsed_ms:.1f}ms"
 
 
 # ── Sequential throughput ─────────────────────────────────────────────────────
@@ -147,8 +150,7 @@ class TestSequentialThroughput:
         elapsed = time.perf_counter() - start
 
         assert elapsed < _SEQUENTIAL_50_LIMIT_S, (
-            f"{n} sequential requests took {elapsed:.2f}s, "
-            f"budget is {_SEQUENTIAL_50_LIMIT_S}s"
+            f"{n} sequential requests took {elapsed:.2f}s, budget is {_SEQUENTIAL_50_LIMIT_S}s"
         )
 
     def test_20_sequential_data_pipeline_requests(self, perf_client: TestClient) -> None:
@@ -174,9 +176,7 @@ class TestSequentialThroughput:
             assert resp.status_code == 200
         elapsed = time.perf_counter() - start
 
-        assert elapsed < _SEQUENTIAL_50_LIMIT_S, (
-            f"{n} login page requests took {elapsed:.2f}s"
-        )
+        assert elapsed < _SEQUENTIAL_50_LIMIT_S, f"{n} login page requests took {elapsed:.2f}s"
 
 
 # ── Concurrent requests ───────────────────────────────────────────────────────
@@ -261,9 +261,7 @@ class TestConcurrentRequests:
             t.join(timeout=10.0)
 
         assert not errors, f"Concurrent login page errors: {errors}"
-        assert all(s == 200 for s in results), (
-            f"Some login page requests failed: {results}"
-        )
+        assert all(s == 200 for s in results), f"Some login page requests failed: {results}"
 
 
 # ── Memory safety ─────────────────────────────────────────────────────────────
@@ -280,8 +278,7 @@ class TestMemorySafety:
                 failed.append((i, resp.status_code))
 
         assert not failed, (
-            f"Requests failed at indices: {failed[:5]} "
-            f"(showing first 5 of {len(failed)})"
+            f"Requests failed at indices: {failed[:5]} (showing first 5 of {len(failed)})"
         )
 
     def test_100_sequential_json_endpoint_requests(self, perf_client: TestClient) -> None:
@@ -292,6 +289,4 @@ class TestMemorySafety:
             if resp.status_code != 200:
                 failed.append((i, resp.status_code))
 
-        assert not failed, (
-            f"JSON endpoint requests failed at indices: {failed[:5]}"
-        )
+        assert not failed, f"JSON endpoint requests failed at indices: {failed[:5]}"

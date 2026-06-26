@@ -30,8 +30,9 @@ HTMX handles server round-trips. Alpine.js is used only for local UI state (drop
 
 ## Auth
 
-- `POST /login` — validates submitted API key against `_expected_key()` in `auth.py`
-- On success: SHA-256 session token written into a signed session cookie (`dex_session`)
+- `POST /login` — validates submitted password via PBKDF2-SHA256 against `~/.dex-studio/auth.hash`
+- On success: `session["authenticated"] = True` written into a signed session cookie (`dex_session`)
+- Password is set on first boot via `GET /setup`; rate limiter blocks 5 failed attempts for 5 minutes per IP
 - All routes call `auth_required(request)` at the top of the handler; unauthenticated requests are redirected to `/login` (303)
 - Session cookie is signed by a secret stored at `~/.dex-studio/session.key` (auto-generated on first boot)
 - `DEX_HTTPS=1` sets `https_only=True` on the `SessionMiddleware`
@@ -52,10 +53,12 @@ HTMX handles server round-trips. Alpine.js is used only for local UI state (drop
 | -------- | --------- |
 | `root` | `/` |
 | `data` | `/data` |
-| `ml` | `/ml` |
-| `ai` | `/ai` |
+| `intelligence` | `/intelligence` |
 | `secops` | `/secops` |
 | `system` | `/system` |
+| `api` | `/api` |
+
+Navigation is driven by `src/dex_studio/nav.py` with two-rail sidebar layout (nav groups: Data, Pipelines, Intelligence, Platform, System).
 
 Shared FastAPI dependencies (engine, auth, template handle) live in `src/dex_studio/routers/_deps.py`.
 

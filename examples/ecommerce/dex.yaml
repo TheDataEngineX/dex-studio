@@ -140,6 +140,11 @@ ai:
       system_prompt: ''
       max_iterations: 10
       memory: short_term
+    mybot:
+      runtime: builtin
+      system_prompt: ''
+      max_iterations: 10
+      memory: short_term
 secops:
   pii:
     scan: false

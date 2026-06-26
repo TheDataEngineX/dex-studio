@@ -139,7 +139,7 @@
 
   {# 4. ML #}
   {% set ml_count = model_count %}
-  <a href="/ml/models" class="accent-card" style="--card-accent: var(--domain-ml); text-decoration:none">
+  <a href="/intelligence/models" class="accent-card" style="--card-accent: var(--domain-ml); text-decoration:none">
     <div class="accent-card-bar"></div>
     <div class="accent-card-head">
       <span class="accent-card-domain">ML</span>
@@ -167,7 +167,7 @@
 
   {# 5. AI #}
   {% set ai_count = agent_count %}
-  <a href="/ai/playground" class="accent-card" style="--card-accent: var(--domain-ai); text-decoration:none">
+  <a href="/intelligence/playground" class="accent-card" style="--card-accent: var(--domain-ai); text-decoration:none">
     <div class="accent-card-bar"></div>
     <div class="accent-card-head">
       <span class="accent-card-domain">AI</span>
@@ -290,7 +290,7 @@
     {% else %}
     <div class="hub-row" style="color:var(--text-4);font-style:italic">No components</div>
     {% endfor %}
-    <a href="/system/scheduler" class="hub-row">
+    <a href="/system/status" class="hub-row">
       <span class="sdot ok"></span>
       <span class="hub-row-name">Scheduler</span>
       <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok)">OK</span>

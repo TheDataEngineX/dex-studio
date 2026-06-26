@@ -18,6 +18,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from dex_studio import __version__
 from dex_studio.logstore import install_stdlib_handler, structlog_capture_processor
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
 
@@ -90,7 +91,7 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     from dex_studio.scheduler import start_scheduler, stop_scheduler
 
     setup_password()
-    logger.info("DEX Studio starting up", version="0.3.0", port=7860)
+    logger.info("DEX Studio starting up", version=__version__, port=7860)
 
     # Mirror all stdlib logging (uvicorn, fastapi, libraries) into the log viewer.
     # Must run here — AFTER uvicorn has configured its own logging handlers so we
@@ -135,10 +136,12 @@ def _register_exception_handlers(app: FastAPI) -> None:
     from fastapi import Request
     from fastapi.responses import RedirectResponse
 
-    from dex_studio.auth import RequiresEngine, RequiresLogin
+    from dex_studio.auth import RequiresEngine, RequiresLogin, has_password
 
     @app.exception_handler(RequiresLogin)
     async def _handle_requires_login(request: Request, exc: RequiresLogin) -> RedirectResponse:
+        if not has_password():
+            return RedirectResponse(url="/setup", status_code=303)
         return RedirectResponse(url="/login", status_code=303)
 
     @app.exception_handler(RequiresEngine)
@@ -191,13 +194,6 @@ def _register_exception_handlers(app: FastAPI) -> None:
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
     from dex_studio.routers import api, data, intelligence, root, secops, system
-
-    try:
-        from importlib.metadata import version
-
-        __version__ = version("dex-studio")
-    except Exception:
-        __version__ = "0.1.0"
 
     app = FastAPI(
         title="DEX Studio",
@@ -303,7 +299,3 @@ def create_app() -> FastAPI:
 
 
 # ── Template helpers used across routers ────────────────────────────────────
-
-
-def get_templates(app: Any) -> Jinja2Templates:
-    return app.state.templates  # type: ignore[no-any-return]

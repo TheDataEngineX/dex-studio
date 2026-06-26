@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import pytest
-
-from dex_studio.dag import build_dag, downstream_of, root_pipelines, topological_order
+from dataenginex.data.pipeline.dag import (
+    build_dag,
+    downstream_of,
+    root_pipelines,
+    topological_order,
+)
 
 
 def _cfg(**kwargs: list[str]):

@@ -30,7 +30,7 @@
         <label for="passphrase" style="display:block;font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:4px">Passphrase</label>
         <div style="position:relative">
           <input id="passphrase" :type="show ? 'text' : 'password'" name="passphrase"
-                 placeholder="word-word-0000"
+                 placeholder="your passphrase"
                  autocomplete="current-password" autofocus required
                  class="input"
                  style="width:100%;padding-right:36px;font-family:var(--font-mono);font-size:13px">
@@ -46,9 +46,13 @@
       </button>
     </form>
 
+    {% if can_reset %}
+    <p style="font-size:12px;text-align:center;margin-top:16px">
+      <a href="/setup?reset=1" style="color:var(--text-3);text-decoration:underline">Forgot your passphrase? Reset it</a>
+    </p>
+    {% endif %}
     <p style="font-size:11px;color:var(--text-4);text-align:center;margin-top:20px">
-      Passphrase saved to <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">~/.dex-studio/passphrase</code><br>
-      Override with <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">DEX_STUDIO_PASSPHRASE</code> env var
+      Password hash stored in <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">~/.dex-studio/auth.hash</code>
     </p>
   </div>
 

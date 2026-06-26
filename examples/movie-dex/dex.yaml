@@ -507,6 +507,65 @@ ml:
         random_state: 42
   serving:
     engine: builtin
+    endpoints:
+    - name: rating_predictor
+      model: rating_predictor
+      version: latest
+      description: Predict IMDB rating for a movie from its features
+      input_schema:
+      - year_norm
+      - runtime_norm
+      - log_votes_norm
+      - director_avg_rating
+      - director_filmcount
+      - g_action
+      - g_drama
+      - g_comedy
+      - g_thriller
+      - g_crime
+      - g_romance
+      - g_scifi
+      - g_horror
+      - g_adventure
+      - g_animation
+      - g_biography
+      - g_documentary
+      - g_fantasy
+      - g_mystery
+    - name: content_recommender
+      model: content_recommender
+      version: latest
+      description: Find similar movies by genre profile and directorial style
+      input_schema:
+      - g_action
+      - g_drama
+      - g_comedy
+      - g_thriller
+      - g_crime
+      - g_romance
+      - g_scifi
+      - g_horror
+      - g_adventure
+      - g_animation
+      - g_fantasy
+      - g_mystery
+      - year_norm
+      - director_avg_rating
+    - name: decade_classifier
+      model: decade_classifier
+      version: latest
+      description: Classify which decade a movie most likely belongs to
+      input_schema:
+      - target_rating
+      - log_votes_norm
+      - g_action
+      - g_drama
+      - g_comedy
+      - g_thriller
+      - g_scifi
+      - g_horror
+      - g_romance
+      - g_animation
   drift:
     monitor:
     - target_rating
@@ -518,6 +577,11 @@ ai:
   llm:
     provider: ollama
     model: qwen3:8b
+    fallback: llama3.2
+    options:
+      temperature: 0.3
+      max_tokens: 2048
+      top_p: 0.9
   retrieval:
     strategy: hybrid
     top_k: 10
@@ -552,6 +616,7 @@ ai:
         \ — use query directly.\n"
       tools:
       - query
+      - rag_search
       model: qwen3:8b
       max_iterations: 5
       memory: short_term
@@ -599,6 +664,7 @@ ai:
         '
       tools:
       - query
+      - rag_search
       model: qwen3:8b
       max_iterations: 10
       memory: short_term
@@ -620,6 +686,8 @@ secops:
     - ssn
     - phone
     - credit_card
+    - ip_address
+    - date_of_birth
     action: warn
   audit:
     enabled: true
