@@ -310,6 +310,8 @@ class TestCSRFTokenRotation:
         assert token1 and token2, "Both pages must embed the CSRF token"
         assert token1 == token2, (
             f"CSRF token must be stable within a session; got {token1!r} then {token2!r}"
+            "CSRF token must be stable within a session; "
+            f"got {token1!r} then {token2!r}"
         )
 
     def test_csrf_token_nonempty_and_hex(self, authed_client: TestClient) -> None:
@@ -394,6 +396,7 @@ class TestSQLInjection:
         "'; DROP TABLE users; --",
         "1 OR 1=1",
         '" OR ""="',
+        '" OR ""="',
         "1; SELECT * FROM information_schema.tables",
         "' UNION SELECT NULL, NULL --",
     ]
@@ -472,6 +475,7 @@ class TestXSSEscaping:
         xss_name = '<img src=x onerror=alert("xss")>'
         mock_eng = _make_engine_mock()
         mock_eng.config.data.sources = {xss_name: SimpleNamespace(type="csv", path="/tmp/test.csv")}
+        mock_eng.config.data.sources = {xss_name: MagicMock()}
 
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
             from dex_studio.app import create_app

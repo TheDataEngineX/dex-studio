@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from dex_studio.auth import (
     SESSION_COOKIE,
+    _generate_password,
     _hash_password,
     _verify_password,
     has_password,
@@ -42,6 +43,18 @@ class TestPasswordHashing:
         assert not _verify_password("not-empty", stored)
 
 
+class TestGeneratePassword:
+    def test_format_three_groups(self) -> None:
+        pw = _generate_password()
+        assert pw.count("-") >= 2
+
+    def test_minimum_length(self) -> None:
+        assert len(_generate_password()) >= 20
+
+    def test_unique_each_call(self) -> None:
+        assert _generate_password() != _generate_password()
+
+
 class TestSetupPassword:
     def test_noop_when_hash_file_exists(self, tmp_path: Path) -> None:
         hash_file = tmp_path / "auth.hash"
@@ -51,11 +64,13 @@ class TestSetupPassword:
             setup_password()
         assert hash_file.read_text().strip() == original
 
-    def test_no_password_generated_on_first_boot(self, tmp_path: Path) -> None:
+    def test_password_auto_generated_on_first_boot(self, tmp_path: Path) -> None:
+        """DEX auto-generates a password on first boot and writes the hash file."""
         hash_file = tmp_path / "auth.hash"
         with patch("dex_studio.auth._HASH_FILE", hash_file):
             setup_password()
-        assert not hash_file.exists()
+        assert hash_file.exists(), "hash file should be created on first boot"
+        assert hash_file.stat().st_size > 0, "hash file should not be empty"
 
 
 class TestHasPassword:

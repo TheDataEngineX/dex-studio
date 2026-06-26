@@ -77,6 +77,10 @@ def _verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(dk, dk_stored)
 
 
+def _generate_password() -> str:
+    return "-".join(secrets.token_urlsafe(8) for _ in range(3))
+
+
 def has_password() -> bool:
     """Return True if a password is configured (hash file exists with content)."""
     return _HASH_FILE.exists() and bool(_HASH_FILE.read_text().strip())
@@ -95,13 +99,20 @@ def reset_password() -> None:
 
 
 def setup_password() -> None:
-    """Ensure hash file directory exists. Call once at app startup.
+    """Ensure a password exists. Call once at app startup.
 
-    On first boot with no password set, the /setup route handles password creation.
+    No-op when DEX_STUDIO_PASSPHRASE env var is set.
+    Generates and hashes a random password on first boot; on subsequent boots
+    with no PASSPHRASE env var, the /setup route handles password creation.
     """
+    if os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip():
+        return
     if _HASH_FILE.exists() and _HASH_FILE.read_text().strip():
         return
+    password = _generate_password()
     _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _HASH_FILE.write_text(_hash_password(password))
+    _HASH_FILE.chmod(0o600)
 
 
 def is_authenticated(request: HTTPConnection) -> bool:

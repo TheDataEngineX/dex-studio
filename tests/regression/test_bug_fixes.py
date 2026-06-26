@@ -228,10 +228,7 @@ class TestBug2DeadLetterRetry:
             mock_run.return_value = "started"
             scheduler_clear_dead_letter(eng, "stuck_pipeline")
 
-        (
-            mock_run.assert_called_once_with("stuck_pipeline"),
-            ("Regression: run_pipeline_bg must be called to re-queue the pipeline"),
-        )
+        mock_run.assert_called_once_with("stuck_pipeline")
 
     def test_pipeline_added_to_running_set_after_real_run_pipeline_bg(self) -> None:
         """Integration: after clear, run_pipeline_bg adds name to _running set.

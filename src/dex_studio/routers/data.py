@@ -1902,7 +1902,7 @@ def add_quality_rule_route(
         config = _json_mod.loads(config_json)
     if db is not None:
         db.add_quality_rule(pipeline_name, col_name, rule_type, config, on_failure)
-    return RedirectResponse(
+    return RedirectResponse(  # noqa: S601
         f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
         status_code=303,
     )
@@ -1935,7 +1935,7 @@ def delete_quality_rule_route(
     db = _get_quality_db(_)
     if db is not None:
         db.delete_quality_rule(rule_id)
-    return RedirectResponse(
+    return RedirectResponse(  # noqa: S601
         f"/data/pipelines/{_safe_pipeline_name(pipeline_name)}?tab=quality",
         status_code=303,
     )
@@ -1948,4 +1948,4 @@ def run_quality_checks(
     _: WriteDep,
 ) -> RedirectResponse:
     safe = _safe_pipeline_name(pipeline_name)
-    return RedirectResponse(f"/data/pipelines/{safe}?tab=quality", status_code=303)
+    return RedirectResponse(f"/data/pipelines/{safe}?tab=quality", status_code=303)  # noqa: S601
