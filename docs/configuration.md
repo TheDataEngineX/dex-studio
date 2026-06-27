@@ -18,7 +18,7 @@ DEX Studio is configured entirely via environment variables. There is no `.dex-s
 
 ```yaml
 projects:
-  careerdex: ~/projects/careerdex/dex.yaml
+  myproject: ~/projects/myproject/dex.yaml
   moviedex: /data/pipelines/moviedex/dex.yaml
 ```
 

@@ -31,7 +31,7 @@ jobs:
       short_sha: ${{ steps.vars.outputs.short_sha }}
       branch_slug: ${{ steps.vars.outputs.branch_slug }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set image vars
         id: vars
@@ -104,17 +104,17 @@ jobs:
   deploy-preview:
     name: Deploy Preview
     needs: [build, security-scan]
-    if: github.ref_name != 'dev' && github.ref_name != 'main'
+    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     environment: preview
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - uses: imranismail/setup-kustomize@v3
+      - uses: imranismail/setup-kustomize@v4
 
       - name: Create or update preview overlay
         env:
@@ -180,58 +180,21 @@ jobs:
             git commit -m "chore(dex-studio-preview-$SLUG): deploy sha-$SHA"
           git push
 
-  # ── dev branch → stage ───────────────────────────────────────────────────────
-  deploy-stage:
-    name: Deploy Stage
-    needs: [build, security-scan]
-    if: github.ref_name == 'dev'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    environment: stage
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          repository: TheDataEngineX/infradex
-          ref: main
-          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
-
-      - uses: imranismail/setup-kustomize@v3
-
-      - name: Update stage overlay image tag
-        env:
-          SHA: ${{ needs.build.outputs.short_sha }}
-        run: |
-          cd argocd/overlays/dex-studio-stage
-          kustomize edit set image \
-            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
-
-      - name: Commit & push to infradex main
-        env:
-          SHA: ${{ needs.build.outputs.short_sha }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/overlays/dex-studio-stage/kustomization.yaml
-          git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-stage): deploy sha-$SHA"
-          git push
-
-  # ── main branch → prod ───────────────────────────────────────────────────────
+  # ── main branch → prod (PR, not direct push) ────────────────────────────────
   deploy-prod:
-    name: Deploy Prod
+    name: Prod PR
     needs: [build, security-scan]
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - uses: imranismail/setup-kustomize@v3
+      - uses: imranismail/setup-kustomize@v4
 
       - name: Update prod overlay image tag
         env:
@@ -241,13 +204,19 @@ jobs:
           kustomize edit set image \
             ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
 
-      - name: Commit & push to infradex main
+      - name: Create PR to infradex main
         env:
           SHA: ${{ needs.build.outputs.short_sha }}
+          GH_TOKEN: ${{ secrets.INFRA_DEPLOY_TOKEN }}
         run: |
+          BRANCH="prod-promote-$SHA"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add argocd/overlays/dex-studio-prod/kustomization.yaml
-          git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-prod): deploy sha-$SHA"
-          git push
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "chore(dex-studio-prod): promote sha-$SHA"
+          git push origin "$BRANCH"
+          gh pr create --fill --auto --base main --head "$BRANCH" \
+            --title "chore(dex-studio-prod): promote sha-$SHA" \
+            --body "Automated promotion of dex-studio sha-$SHA to production."

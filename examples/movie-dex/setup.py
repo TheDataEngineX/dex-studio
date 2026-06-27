@@ -174,7 +174,7 @@ def main() -> None:
     print_summary(processed)
 
     print("\n── Next steps ─────────────────────────────────────────────────────")
-    print("  1. Open MovieDEX in DEX Studio (examples/movie-dex/dex.yaml)")
+    print("  1. Open MovieDEX in DataEngineX Studio (examples/movie-dex/dex.yaml)")
     print("  2. Go to Compute → Pipelines → run bronze_* pipelines first")
     print("  3. Then run silver_* pipelines (depend on bronze)")
     print("  4. Then run gold_* pipelines (depend on silver)")

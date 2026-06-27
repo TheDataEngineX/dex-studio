@@ -9,7 +9,7 @@ import secrets
 from pathlib import Path
 from typing import Annotated, Any
 
-from dataenginex.engine import DexBackend
+from dataenginex.engine import DexBackend, DexEngine
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -295,7 +295,7 @@ def base_ctx(request: Request) -> dict[str, Any]:
     }
 
 
-def get_eng() -> DexBackend:
+def get_eng() -> DexEngine:
     """Return the engine or raise. Only for contexts where Depends isn't available (WebSocket)."""
     eng = _dex_engine.get_engine()
     if eng is None:  # pragma: no cover
@@ -316,7 +316,7 @@ def auth_dep(request: Request) -> None:
         raise RequiresLogin()
 
 
-def engine_dep(_: Annotated[None, Depends(auth_dep)]) -> DexBackend:
+def engine_dep(_: Annotated[None, Depends(auth_dep)]) -> DexEngine:
     """Dependency: auth + loaded engine. Raises RequiresEngine if no project loaded."""
     eng = _dex_engine.get_engine()
     if eng is None:
@@ -326,16 +326,16 @@ def engine_dep(_: Annotated[None, Depends(auth_dep)]) -> DexBackend:
 
 def engine_csrf_dep(
     request: Request,
-    eng: Annotated[DexBackend, Depends(engine_dep)],
-) -> DexBackend:
+    eng: Annotated[DexEngine, Depends(engine_dep)],
+) -> DexEngine:
     """Dependency: auth + engine + CSRF. Use for all POST/mutation routes."""
     verify_csrf(request)
     return eng
 
 
 # Convenient type aliases — use these in route signatures
-ReadDep = Annotated[DexBackend, Depends(engine_dep)]
-WriteDep = Annotated[DexBackend, Depends(engine_csrf_dep)]
+ReadDep = Annotated[DexEngine, Depends(engine_dep)]
+WriteDep = Annotated[DexEngine, Depends(engine_csrf_dep)]
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ def json_auth_dep(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-def json_engine_dep(_: Annotated[None, Depends(json_auth_dep)]) -> DexBackend:
+def json_engine_dep(_: Annotated[None, Depends(json_auth_dep)]) -> DexEngine:
     """Auth + loaded engine for JSON/SSE routes. Raises 503 when no project is loaded."""
     eng = _dex_engine.get_engine()
     if eng is None:
@@ -359,7 +359,7 @@ def json_engine_dep(_: Annotated[None, Depends(json_auth_dep)]) -> DexBackend:
     return eng
 
 
-JsonReadDep = Annotated[DexBackend, Depends(json_engine_dep)]
+JsonReadDep = Annotated[DexEngine, Depends(json_engine_dep)]
 
 
 def json_engine_csrf_dep(

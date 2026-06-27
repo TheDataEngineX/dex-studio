@@ -84,7 +84,7 @@ CLASSIFIER_FEATURES = [
 
 def load_features() -> pd.DataFrame:
     if not FEATURES_PKL.exists():
-        raise FileNotFoundError(f"{FEATURES_PKL} not found. Run the pipeline first in DEX Studio.")
+        raise FileNotFoundError(f"{FEATURES_PKL} not found. Run the pipeline first in DataEngineX Studio.")
     df = pd.read_parquet(FEATURES_PKL)
     print(f"  loaded {len(df):,} rows  columns: {list(df.columns)}")
     return df

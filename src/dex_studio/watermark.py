@@ -30,6 +30,7 @@ class WatermarkStore:
 
     # ── Watermarks ────────────────────────────────────────────────────────────
 
+
     def get_watermark(self, source: str) -> datetime | None:
         """Return the last ingested timestamp for *source*, or None if never set."""
         return self._db.get_watermark(source)

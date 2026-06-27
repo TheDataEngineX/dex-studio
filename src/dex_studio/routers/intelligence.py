@@ -1023,28 +1023,6 @@ def traces(request: Request, eng: ReadDep, agent: str = "") -> HTMLResponse:
                     }
                 )
 
-    # Also pull from ai_audit if available (legacy traces)
-    if not trace_rows and eng.ai_audit and hasattr(eng.ai_audit, "get_events"):
-        with contextlib.suppress(Exception):
-            events = eng.ai_audit.get_events(limit=100) or []
-            for e in events:
-                _msg = str(getattr(e, "action", ""))
-                trace_rows.append(
-                    {
-                        "id": str(getattr(e, "event_id", "")),
-                        "agent": _msg,
-                        "message": "",
-                        "task": _msg[:45] + ("…" if len(_msg) > 45 else ""),
-                        "latency_ms": getattr(e, "details", {}).get("duration_ms", 0),
-                        "tool_calls": 0,
-                        "status": str(getattr(e, "status", "ok")),
-                        "timestamp": fmt_ts(getattr(e, "timestamp", "")),
-                        "steps": [],
-                        "input_text": "",
-                        "output_text": "",
-                    }
-                )
-
     total = len(trace_rows)
     errors = sum(1 for t in trace_rows if t.get("status") == "error")
     error_rate = f"{round(errors / total * 100)}%" if total else "0%"
@@ -1438,7 +1416,8 @@ async def ambient_context(request: Request, eng: JsonReadDep, page: str = "") ->
         if model_names:
             ctx_lines.append(f"Registered models: {', '.join(model_names)}")
     with contextlib.suppress(Exception):
-        experiments = eng.store.list_experiments()
+        _list_exps = getattr(eng.store, "list_experiments", None)
+        experiments: list[Any] = _list_exps() if _list_exps else []
         if experiments:
             ctx_lines.append(f"Experiments: {len(experiments)} tracked")
 

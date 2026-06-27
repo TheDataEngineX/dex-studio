@@ -51,7 +51,7 @@ To pre-register projects, edit `~/.dex-studio/projects.yaml`:
 
 ```yaml
 projects:
-  careerdex: ~/projects/careerdex/dex.yaml
+  myproject: ~/projects/myproject/dex.yaml
   moviedex: /data/pipelines/moviedex/dex.yaml
 ```
 

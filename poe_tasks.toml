@@ -28,7 +28,7 @@ help = "Launch DEX Studio dev server (port 7860, hot-reload)"
 [tool.poe.tasks.serve]
 cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --loop uvloop"
 env = { PYTHONPATH = "src" }
-help = "Launch DEX Studio production server (port 7860)"
+help = "Launch DataEngineX Studio production server (port 7860)"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]
@@ -93,6 +93,17 @@ shell = "python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')
 help = "Show current version"
 
 # ── Code Quality (additional) ─────────────────────────────────────────────────
+[tool.poe.tasks.actionlint]
+shell = """
+if command -v actionlint >/dev/null 2>&1; then
+  actionlint .github/workflows/*.yml
+else
+  echo 'actionlint not found — install: brew install actionlint'
+  exit 1
+fi
+"""
+help = "Lint GitHub Actions workflows"
+
 [tool.poe.tasks.format]
 shell = "ruff format src/ tests/ examples/"
 help = "Format code with ruff"
@@ -118,7 +129,7 @@ help = "Build Docker image"
 
 [tool.poe.tasks.docker-serve]
 shell = "docker run --rm -p 7860:7860 -e DEX_STUDIO_API_URL=http://host.docker.internal:17000 dex-studio"
-help = "Run dex-studio in Docker (connects to local DEX API on host)"
+help = "Run dex-studio in Docker (connects to local DataEngineX API on host)"
 
 # ── Documentation ────────────────────────────────────────────────────────────
 [tool.poe.tasks.docs]

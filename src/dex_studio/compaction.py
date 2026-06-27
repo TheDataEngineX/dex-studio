@@ -53,6 +53,7 @@ class CompactionResult:
             return 0.0
         return (1 - self.bytes_after / self.bytes_before) * 100
 
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "pipeline": self.pipeline,
@@ -86,7 +87,10 @@ class CompactionEngine:
         return files
 
     def compact_pipeline(self, pipeline: str) -> CompactionResult | None:
-        """Compact all parquet files for *pipeline* into a single file."""
+        """Merge all parquet files for *pipeline* into a single file.
+
+        Returns None if nothing to compact.
+        """
         result = CompactionResult(pipeline)
         files = self._collect_files(pipeline)
         if len(files) < 2:
@@ -139,6 +143,7 @@ class CompactionEngine:
             return None
 
     def compact_all(self, pipelines: list[str]) -> list[CompactionResult]:
+        """Compact every pipeline in *pipelines*, returning all successful results."""
         results = []
         for name in pipelines:
             r = self.compact_pipeline(name)

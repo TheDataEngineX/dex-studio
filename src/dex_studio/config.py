@@ -51,7 +51,7 @@ def load_projects() -> list[ProjectEntry]:
     Format::
 
         projects:
-          careerdex: ~/projects/careerdex/dex.yaml
+          myproject: ~/projects/myproject/dex.yaml
           moviedex: /data/pipelines/moviedex/dex.yaml
     """
     if not _PROJECTS_FILE.exists():

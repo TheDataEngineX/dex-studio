@@ -1545,7 +1545,7 @@ def transforms(request: Request, eng: ReadDep, pipeline: str = "") -> HTMLRespon
             all_steps.append(
                 {"type": str(getattr(s, "type", "")), "detail": str(detail).strip()[:140]}
             )
-    schedule_str = fmt_cron(cfg.schedule) if cfg and getattr(cfg, "schedule", None) else "—"
+    schedule_str = fmt_cron(cfg.schedule) if cfg and cfg.schedule else "—"
     ctx = base_ctx(request) | {
         "pipelines": rows,
         "selected_pipeline": pipeline,
