@@ -1,4 +1,11 @@
-"""WatermarkStore — per-source ingestion watermarks and content-hash deduplication."""
+"""WatermarkStore — per-source ingestion watermarks and content-hash deduplication.
+
+Watermarks track the latest ingested timestamp per data source so pipelines
+can ingest only new data on subsequent runs. Content hashes prevent duplicate
+records from being ingested when a source delivers overlapping windows.
+
+State is persisted in StudioDb so it survives application restarts.
+"""
 
 from __future__ import annotations
 
@@ -15,18 +22,14 @@ __all__ = ["WatermarkStore"]
 log = structlog.get_logger().bind(src="watermark")
 
 
-def compute_hash(row: dict[str, Any], columns: list[str] | None = None) -> str:
-    """Compute a stable SHA-256 hash for *row*, using *columns* if specified."""
-    data = {k: row.get(k) for k in sorted(columns)} if columns else {k: row[k] for k in sorted(row)}
-    canonical = "&".join(f"{k}={v}" for k, v in data.items())
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
 class WatermarkStore:
     """Thin facade over StudioDb for watermark and hash-dedup operations."""
 
     def __init__(self, db: StudioDb) -> None:
         self._db = db
+
+    # ── Watermarks ────────────────────────────────────────────────────────────
+
 
     def get_watermark(self, source: str) -> datetime | None:
         """Return the last ingested timestamp for *source*, or None if never set."""
@@ -52,10 +55,20 @@ class WatermarkStore:
         """Return all watermarks with hash counts, for the UI table."""
         return self._db.all_watermarks()
 
+    # ── Content-hash deduplication ────────────────────────────────────────────
+
+    @staticmethod
+    def compute_hash(row: dict[str, Any], columns: list[str] | None = None) -> str:
+        """Compute a stable SHA-256 hash for *row*, using *columns* if specified."""
+        if columns:
+            data = {k: row.get(k) for k in sorted(columns)}
+        else:
+            data = {k: row[k] for k in sorted(row)}
+        canonical = "&".join(f"{k}={v}" for k, v in data.items())
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
     def is_duplicate(self, source: str, content_hash: str) -> bool:
-        """Return True if *content_hash* has already been ingested for *source*."""
         return self._db.is_duplicate(source, content_hash)
 
     def record_hash(self, source: str, content_hash: str) -> None:
-        """Record *content_hash* so future duplicates can be detected."""
         self._db.record_hash(source, content_hash)

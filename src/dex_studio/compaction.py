@@ -1,11 +1,22 @@
-"""Compaction engine for DEX Studio lakehouse layers."""
+"""Compaction engine for DEX Studio lakehouse layers.
+
+Compaction merges multiple small parquet files in a layer directory into a
+single optimised file, reducing read overhead and improving query latency.
+
+Works on the local filesystem lakehouse at {project_dir}/.dex/lakehouse/.
+Each pipeline's data lives in a single parquet file already (written by
+dataenginex), so compaction is most useful after backfill or when the engine
+has produced many partition files in sub-directories.
+
+Retention deletes files older than a configured cutoff.
+"""
 
 from __future__ import annotations
 
 import contextlib
 import time
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -16,16 +27,25 @@ __all__ = ["CompactionEngine", "CompactionResult"]
 log = structlog.get_logger().bind(src="compaction")
 
 
-@dataclass
 class CompactionResult:
     """Summary of one compaction run."""
 
-    pipeline: str
-    files_before: int = 0
-    files_after: int = 0
-    bytes_before: int = 0
-    bytes_after: int = 0
-    duration_s: float = 0.0
+    __slots__ = (
+        "pipeline",
+        "files_before",
+        "files_after",
+        "bytes_before",
+        "bytes_after",
+        "duration_s",
+    )
+
+    def __init__(self, pipeline: str) -> None:
+        self.pipeline = pipeline
+        self.files_before = 0
+        self.files_after = 0
+        self.bytes_before = 0
+        self.bytes_after = 0
+        self.duration_s = 0.0
 
     @property
     def savings_pct(self) -> float:
@@ -34,8 +54,20 @@ class CompactionResult:
         return (1 - self.bytes_after / self.bytes_before) * 100
 
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pipeline": self.pipeline,
+            "files_before": self.files_before,
+            "files_after": self.files_after,
+            "bytes_before": self.bytes_before,
+            "bytes_after": self.bytes_after,
+            "duration_s": round(self.duration_s, 2),
+            "savings_pct": round(self.savings_pct, 1),
+        }
+
+
 class CompactionEngine:
-    """Merges small parquet files in a layer directory into a single optimised file."""
+    """Merges small parquet files in a layer directory into one optimised file."""
 
     def __init__(self, project_dir: Path, db: StudioDb) -> None:
         self._root = project_dir / ".dex" / "lakehouse"

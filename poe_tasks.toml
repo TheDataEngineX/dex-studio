@@ -23,7 +23,7 @@ help = "Install dataenginex as an editable package from the local sibling repo"
 cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --reload --loop uvloop"
 env = { PYTHONPATH = "src" }
 envfile = ".env"
-help = "Launch DataEngineX Studio dev server (port 7860, hot-reload)"
+help = "Launch DEX Studio dev server (port 7860, hot-reload)"
 
 [tool.poe.tasks.serve]
 cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --loop uvloop"
@@ -173,7 +173,7 @@ help = "Start dex-studio and run Playwright e2e tests"
 
 [tool.poe.tasks.hunt]
 shell = """
-echo '🎭 DataEngineX Studio — Autonomous Test Hunt'
+echo '🎭 DEX Studio — Autonomous Test Hunt'
 echo ''
 echo '1. Start the server (in another terminal):'
 echo '   uv run dex-studio --port 7860'

@@ -112,3 +112,6 @@ docs/demo.gif
 
 
 auth.hash
+
+# Manual tests (local, not committed)
+tests/manual/

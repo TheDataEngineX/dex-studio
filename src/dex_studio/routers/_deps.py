@@ -9,7 +9,7 @@ import secrets
 from pathlib import Path
 from typing import Annotated, Any
 
-from dataenginex.engine import DexEngine
+from dataenginex.engine import DexBackend, DexEngine
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -364,8 +364,8 @@ JsonReadDep = Annotated[DexEngine, Depends(json_engine_dep)]
 
 def json_engine_csrf_dep(
     request: Request,
-    eng: Annotated[DexEngine, Depends(json_engine_dep)],
-) -> DexEngine:
+    eng: Annotated[DexBackend, Depends(json_engine_dep)],
+) -> DexBackend:
     """Auth + engine + CSRF for JSON mutation routes (returns HTTP 403, not HTML redirect)."""
     expected = request.session.get("_csrf", "")
     if expected:
@@ -375,7 +375,7 @@ def json_engine_csrf_dep(
     return eng
 
 
-JsonWriteDep = Annotated[DexEngine, Depends(json_engine_csrf_dep)]
+JsonWriteDep = Annotated[DexBackend, Depends(json_engine_csrf_dep)]
 
 
 # ---------------------------------------------------------------------------

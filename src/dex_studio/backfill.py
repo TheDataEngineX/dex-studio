@@ -1,4 +1,10 @@
-"""Backfill engine for DEX Studio pipelines."""
+"""Backfill engine for DEX Studio pipelines.
+
+Resets the watermark for a source and re-triggers the pipeline via the
+engine so historical data can be re-ingested. Backfill jobs are tracked
+in the alert_events table with event_type='backfill' so they appear in
+the alerting / activity UI.
+"""
 
 from __future__ import annotations
 
@@ -13,15 +19,6 @@ from dex_studio.watermark import WatermarkStore
 __all__ = ["BackfillEngine"]
 
 log = structlog.get_logger().bind(src="backfill")
-
-_EPOCH = datetime(2000, 1, 1, tzinfo=UTC)
-
-
-def trigger_backfill(
-    eng: Any, db: StudioDb, pipeline: str, *, clear_hashes: bool = True, run_now: bool = True
-) -> dict[str, Any]:
-    """Reset watermark for *pipeline* and optionally re-run."""
-    return BackfillEngine(eng, db).trigger(pipeline, clear_hashes=clear_hashes, run_now=run_now)
 
 
 class BackfillEngine:
@@ -68,13 +65,15 @@ class BackfillEngine:
                 log.info("backfill: watermark reset", pipeline=pipeline, source=source)
             except Exception as exc:
                 result["error"] = str(exc)
+                log.warning("backfill: watermark reset failed", pipeline=pipeline, error=str(exc))
         elif source:
             try:
-                self._db.set_watermark(source, _EPOCH)
+                self._db.set_watermark(source, datetime(2000, 1, 1, tzinfo=UTC))
                 result["watermark_reset"] = True
             except Exception as exc:
                 result["error"] = str(exc)
 
+        # Record in alert_events so it appears in the activity log
         self._db.record_alert(
             "backfill",
             pipeline,
@@ -88,5 +87,6 @@ class BackfillEngine:
                 log.info("backfill: pipeline complete", pipeline=pipeline)
             except Exception as exc:
                 result["error"] = str(exc)
+                log.warning("backfill: pipeline failed", pipeline=pipeline, error=str(exc))
 
         return result

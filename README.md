@@ -6,7 +6,7 @@
 
 **Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
 
-[![DataEngineX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
+[![DEX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
 
 > 40-second highlight · [Full walkthrough →](docs/demo-full.mp4)
 
