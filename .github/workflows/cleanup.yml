@@ -12,8 +12,10 @@ jobs:
     steps:
       - name: Compute branch slug
         id: slug
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          SLUG=$(echo "${{ github.event.pull_request.head.ref }}" \
+          SLUG=$(echo "$HEAD_REF" \
             | tr '/' '-' | tr '_' '-' \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9-]//g' \

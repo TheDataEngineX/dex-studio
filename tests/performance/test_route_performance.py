@@ -67,11 +67,6 @@ def perf_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[Te
     hash_file = tmp_path / "auth.hash"
     hash_file.write_text(_hash_password(_API_KEY))
     monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
-    """Authenticated TestClient for each performance test."""
-    _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
 
     mock_eng = _make_engine_mock()
