@@ -110,5 +110,5 @@ docs/page@*.webm
 docs/demo-full.mp4
 docs/demo.gif
 
-# Manual tests (local, not committed)
-tests/manual/
+
+auth.hash

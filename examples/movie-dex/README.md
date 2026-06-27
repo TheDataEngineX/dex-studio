@@ -14,7 +14,7 @@ ______________________________________________________________________
 | **Bronze** | Null-filter, load raw IMDB into lakehouse | `bronze_titles`, `bronze_ratings`, `bronze_crew`, `bronze_names`, `bronze_principals` |
 | **Silver** | Clean, type-cast, join ratings to titles, normalise genres | `silver_movies`, `silver_tv`, `silver_directors`, `silver_cast`, `silver_genres` |
 | **Gold** | BI-ready aggregates + ML feature table | `gold_top_movies`, `gold_genre_trends`, `gold_director_stats`, `gold_actor_network`, `gold_movie_features` |
-| **ML** | Rating prediction, content-based recommender, decade classifier | Tracked experiments in DEX Studio |
+| **ML** | Rating prediction, content-based recommender, decade classifier | Tracked experiments in DataEngineX Studio |
 | **AI** | Three agents backed by the gold layer | `movie_recommender`, `data_analyst`, `casting_expert` |
 
 ______________________________________________________________________
@@ -51,8 +51,8 @@ python setup.py --quick
 # 3. Validate config
 dex validate dex.yaml
 
-# 4. Open in DEX Studio
-# Point DEX Studio to this dex.yaml via the onboarding screen, then:
+# 4. Open in DataEngineX Studio
+# Point DataEngineX Studio to this dex.yaml via the onboarding screen, then:
 #   /data/pipelines → Run all bronze_* pipelines
 #   /data/pipelines → Run all silver_* pipelines
 #   /data/pipelines → Run all gold_* pipelines
@@ -162,7 +162,7 @@ ______________________________________________________________________
 
 ## Drift monitoring
 
-DEX monitors three gold-layer signals daily:
+DataEngineX monitors three gold-layer signals daily:
 
 - **`target_rating`** — has the average quality of newly-rated films shifted?
 - **`log_votes_norm`** — is audience engagement growing or shrinking?

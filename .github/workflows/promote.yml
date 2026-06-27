@@ -1,85 +1,75 @@
-name: Promote Image
+name: Promote to Stage
 
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Target environment'
+      pr_number:
+        description: 'PR number to promote from'
         required: true
-        type: choice
-        options: [stage, prod]
-      source_branch:
-        description: 'Feature branch to promote from (stage only, e.g. feature/my-feature)'
-        required: false
         type: string
-      strategy:
-        description: 'Deployment strategy'
-        required: true
-        type: choice
-        options: [rolling, canary]
-        default: rolling
-      canary_weight:
-        description: 'Canary traffic % (canary + prod only, 1–50)'
-        required: false
-        type: number
-        default: 20
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   promote:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: stage
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: TheDataEngineX/infradex
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - uses: imranismail/setup-kustomize@v2
+      - uses: imranismail/setup-kustomize@v4
 
-      - name: Resolve image tag
+      - name: Get branch name from PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH=$(gh pr view ${{ inputs.pr_number }} --json headRefName --jq '.headRefName')
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve image tag from preview
         id: tag
         run: |
-          if [ "${{ inputs.environment }}" = "stage" ]; then
-            SLUG=$(echo "${{ inputs.source_branch }}" \
-              | tr '/' '-' | tr '_' '-' \
-              | tr '[:upper:]' '[:lower:]' \
-              | sed 's/[^a-z0-9-]//g' \
-              | sed 's/^-*//' | sed 's/-*$//' \
-              | cut -c1-50)
-            FILE="argocd/previews/dex-studio/$SLUG/kustomization.yaml"
-          else
-            FILE="argocd/overlays/dex-studio-stage/kustomization.yaml"
+          SLUG=$(echo "${{ steps.pr.outputs.branch }}" \
+            | tr '/' '-' | tr '_' '-' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9-]//g' \
+            | sed 's/^-*//' | sed 's/-*$//' \
+            | cut -c1-50)
+          FILE="argocd/previews/dex-studio/$SLUG/kustomization.yaml"
+          if [ ! -f "$FILE" ]; then
+            echo "No preview found for branch ${{ steps.pr.outputs.branch }} (slug: $SLUG)"
+            exit 1
           fi
           TAG=$(grep 'newTag:' "$FILE" | awk '{print $2}')
           echo "Promoting image tag: $TAG (from $FILE)"
-          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Pin image tag in ${{ inputs.environment }} overlay
+      - name: Update stage overlay
         run: |
-          cd argocd/overlays/dex-studio-${{ inputs.environment }}
+          cd argocd/overlays/dex-studio-stage
           kustomize edit set image \
             ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:${{ steps.tag.outputs.image_tag }}
 
-      - name: Render canary ingress
-        if: inputs.strategy == 'canary' && inputs.environment == 'prod'
+      - name: Create PR to infradex main
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          TAG: ${{ steps.tag.outputs.image_tag }}
         run: |
-          sed "s/__WEIGHT__/${{ inputs.canary_weight }}/g" \
-            argocd/overlays/dex-studio-prod/canary-ingress.yaml.tmpl \
-            > argocd/overlays/dex-studio-prod/canary-ingress.yaml
-
-      - name: Remove canary ingress (rolling)
-        if: inputs.strategy == 'rolling' && inputs.environment == 'prod'
-        run: rm -f argocd/overlays/dex-studio-prod/canary-ingress.yaml
-
-      - name: Commit & push to infradex main
-        run: |
+          BRANCH="stage-promote-pr-${{ inputs.pr_number }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/overlays/dex-studio-${{ inputs.environment }}/
-          git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-${{ inputs.environment }}): promote ${{ steps.tag.outputs.image_tag }} [${{ inputs.strategy }}]"
-          git push
+          git checkout -b "$BRANCH"
+          git add argocd/overlays/dex-studio-stage/
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "chore(dex-studio-stage): promote $TAG from PR #${{ inputs.pr_number }}"
+          git push origin "$BRANCH"
+          gh pr create --fill --auto --base main --head "$BRANCH" \
+            --title "chore(dex-studio-stage): promote $TAG from PR #${{ inputs.pr_number }}" \
+            --body "Promoting dex-studio image tag $TAG to stage from PR #${{ inputs.pr_number }}."

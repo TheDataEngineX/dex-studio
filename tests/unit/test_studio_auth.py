@@ -65,7 +65,7 @@ class TestSetupPassword:
         assert hash_file.read_text().strip() == original
 
     def test_password_auto_generated_on_first_boot(self, tmp_path: Path) -> None:
-        """DEX auto-generates a password on first boot and writes the hash file."""
+        """DataEngineX auto-generates a password on first boot and writes the hash file."""
         hash_file = tmp_path / "auth.hash"
         with patch("dex_studio.auth._HASH_FILE", hash_file):
             setup_password()

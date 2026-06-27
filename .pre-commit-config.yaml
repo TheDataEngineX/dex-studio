@@ -1,4 +1,4 @@
-# Pre-commit hooks for DEX Studio
+# Pre-commit hooks for DataEngineX Studio
 # Install: pre-commit install
 # Run all: pre-commit run --all-files
 
@@ -41,7 +41,7 @@ repos:
         additional_dependencies:
           - types-pyyaml
           - pydantic>=2.0
-        args: ["--config-file=pyproject.toml", "--no-incremental", "src/dex_studio"]
+        args: ["--config-file=pyproject.toml", "src/dex_studio"]
         language_version: python3.13
         pass_filenames: false
         files: ^src/dex_studio/

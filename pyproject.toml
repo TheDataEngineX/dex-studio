@@ -1,7 +1,7 @@
 [project]
 name = "dex-studio"
 version = "0.5.0"
-description = "DEX Studio – Data & Intelligence Platform"
+description = "DataEngineX Studio – Data & Intelligence Platform"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 license = { text = "MIT" }
@@ -16,19 +16,18 @@ classifiers = [
 ]
 
 dependencies = [
-    "dataenginex>=0.4.3",
+    "dataenginex>=0.4.4",
     "fastapi[standard]>=0.115.0",
     "jinja2>=3.1.4",
     "itsdangerous>=2.2.0",
     "sse-starlette>=2.2.0",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
-    "python-dotenv>=1.2.2",
     "structlog>=25.5.0",
     "scikit-learn>=1.8.0",
-    "orjson>=3.11.0",
     "uvloop>=0.22.0; sys_platform != 'win32'",
     "psutil>=7.2.2",
+    "orjson>=3.11.0",
 ]
 
 [project.optional-dependencies]
@@ -61,8 +60,7 @@ dev = [
     "mypy>=2.1.0",
     "coverage>=7.14.0",
     "types-pyyaml>=6.0.12.20260518",
-    "edge-tts>=7.0.0",
-    "asciinema>=2.4.0",
+
     "playwright>=1.50.0",
 ]
 

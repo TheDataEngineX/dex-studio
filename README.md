@@ -1,4 +1,4 @@
-# DEX Studio
+# DataEngineX Studio
 
 [![CI](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDataEngineX/dex-studio/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
 
-[![DEX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
+[![DataEngineX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
 
 > 40-second highlight · [Full walkthrough →](docs/demo-full.mp4)
 
