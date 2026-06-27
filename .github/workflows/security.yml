@@ -13,5 +13,5 @@ permissions:
 
 jobs:
   security:
-    uses: TheDataEngineX/.github/workflows/reusable-security.yml@main
+    uses: TheDataEngineX/.github/.github/workflows/reusable-security.yml@main
     secrets: inherit

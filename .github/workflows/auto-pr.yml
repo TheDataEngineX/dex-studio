@@ -13,5 +13,5 @@ permissions:
 jobs:
   auto-pr:
     if: github.ref_name != 'main'
-    uses: TheDataEngineX/.github/workflows/reusable-auto-pr-to-main.yml@main
+    uses: TheDataEngineX/.github/.github/workflows/reusable-auto-pr-to-main.yml@main
     secrets: inherit
