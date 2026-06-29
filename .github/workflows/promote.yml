@@ -30,7 +30,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH=$(gh pr view ${{ inputs.pr_number }} --json headRefName --jq '.headRefName')
+          BRANCH=$(gh pr view ${{ inputs.pr_number }} --repo ${{ github.repository }} --json headRefName --jq '.headRefName')
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Resolve image tag from preview
