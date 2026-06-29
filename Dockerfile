@@ -30,9 +30,6 @@ ENV PATH="/workspace/dex-studio/.venv/bin:$PATH" \
 
 EXPOSE ${PORT}
 
-# Persist session keys, project registry, and pipeline run history across restarts.
-VOLUME ["/home/dex/.dex-studio"]
-
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/health')" || exit 1
 
