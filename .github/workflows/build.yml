@@ -114,7 +114,7 @@ jobs:
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - uses: imranismail/setup-kustomize@v4
+      - uses: imranismail/setup-kustomize@v3.0.0
 
       - name: Create or update preview overlay
         env:
@@ -194,7 +194,7 @@ jobs:
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - uses: imranismail/setup-kustomize@v4
+      - uses: imranismail/setup-kustomize@v3.0.0
 
       - name: Update prod overlay image tag
         env:
