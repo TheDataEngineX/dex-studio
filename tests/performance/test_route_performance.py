@@ -133,7 +133,6 @@ class TestBaselineLatency:
 
         assert resp.status_code == 200
         assert elapsed_ms < _LATENCY_LIMIT_MS, f"Login page took {elapsed_ms:.1f}ms"
-        assert elapsed_ms < _LATENCY_LIMIT_MS, f"Login page took {elapsed_ms:.1f}ms"
 
 
 # ── Sequential throughput ─────────────────────────────────────────────────────
@@ -152,8 +151,6 @@ class TestSequentialThroughput:
 
         assert elapsed < _SEQUENTIAL_50_LIMIT_S, (
             f"{n} sequential requests took {elapsed:.2f}s, budget is {_SEQUENTIAL_50_LIMIT_S}s"
-            f"{n} sequential requests took {elapsed:.2f}s, "
-            f"budget is {_SEQUENTIAL_50_LIMIT_S}s"
         )
 
     def test_20_sequential_data_pipeline_requests(self, perf_client: TestClient) -> None:
@@ -179,7 +176,6 @@ class TestSequentialThroughput:
             assert resp.status_code == 200
         elapsed = time.perf_counter() - start
 
-        assert elapsed < _SEQUENTIAL_50_LIMIT_S, f"{n} login page requests took {elapsed:.2f}s"
         assert elapsed < _SEQUENTIAL_50_LIMIT_S, f"{n} login page requests took {elapsed:.2f}s"
 
 
@@ -218,30 +214,32 @@ class TestConcurrentRequests:
 
     def test_20_concurrent_mixed_route_requests(self, perf_client: TestClient) -> None:
         """Mix of routes under concurrency: no crashes, all 2xx/3xx."""
+        import asyncio
+
+        import httpx
+
         routes = ["/", "/data/pipelines", "/data/pipelines/status", "/data/sql"] * 5  # 20 total
-        results: list[int] = []
-        errors: list[Exception] = []
-        lock = threading.Lock()
+        auth_cookies = dict(perf_client.cookies)
+        app = perf_client.app
 
-        def _fetch(path: str) -> None:
-            try:
-                resp = perf_client.get(path)
-                with lock:
-                    results.append(resp.status_code)
-            except Exception as exc:
-                with lock:
-                    errors.append(exc)
+        async def _run() -> list[tuple[str, int]]:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+                cookies=auth_cookies,
+                follow_redirects=False,
+            ) as client:
+                resps = await asyncio.gather(*[client.get(p) for p in routes])
+            return [(p, r.status_code) for p, r in zip(routes, resps)]
 
-        threads = [threading.Thread(target=_fetch, args=(p,)) for p in routes]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=15.0)
+        pairs = asyncio.run(_run())
 
-        assert not errors, f"Exceptions in mixed concurrent requests: {errors}"
-        assert len(results) == len(routes)
-        for status in results:
-            assert status in (200, 302, 303), f"Unexpected status {status} in concurrent test"
+        assert len(pairs) == len(routes)
+        for path, status in pairs:
+            assert status in (200, 302, 303), (
+                f"Unexpected status {status} for {path} in concurrent test"
+            )
 
     def test_concurrent_login_attempts(self, perf_client: TestClient) -> None:
         """10 concurrent login page GETs must all return 200 without crashing."""
@@ -266,7 +264,6 @@ class TestConcurrentRequests:
 
         assert not errors, f"Concurrent login page errors: {errors}"
         assert all(s == 200 for s in results), f"Some login page requests failed: {results}"
-        assert all(s == 200 for s in results), f"Some login page requests failed: {results}"
 
 
 # ── Memory safety ─────────────────────────────────────────────────────────────
@@ -284,8 +281,6 @@ class TestMemorySafety:
 
         assert not failed, (
             f"Requests failed at indices: {failed[:5]} (showing first 5 of {len(failed)})"
-            f"Requests failed at indices: {failed[:5]} "
-            f"(showing first 5 of {len(failed)})"
         )
 
     def test_100_sequential_json_endpoint_requests(self, perf_client: TestClient) -> None:
@@ -296,5 +291,4 @@ class TestMemorySafety:
             if resp.status_code != 200:
                 failed.append((i, resp.status_code))
 
-        assert not failed, f"JSON endpoint requests failed at indices: {failed[:5]}"
         assert not failed, f"JSON endpoint requests failed at indices: {failed[:5]}"
