@@ -220,4 +220,4 @@ jobs:
           PR_URL=$(gh pr create --fill --base main --head "$BRANCH" \
             --title "chore(dex-studio-prod): promote sha-$SHA" \
             --body "Automated promotion of dex-studio sha-$SHA to production.")
-          gh pr merge --auto --squash "$PR_URL"
+          gh pr merge --squash "$PR_URL"

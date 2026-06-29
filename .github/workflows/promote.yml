@@ -73,4 +73,4 @@ jobs:
           PR_URL=$(gh pr create --fill --base main --head "$BRANCH" \
             --title "chore(dex-studio-stage): promote $TAG from PR #${{ inputs.pr_number }}" \
             --body "Promoting dex-studio image tag $TAG to stage from PR #${{ inputs.pr_number }}.")
-          gh pr merge --auto --squash "$PR_URL"
+          gh pr merge --squash "$PR_URL"
