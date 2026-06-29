@@ -13,7 +13,7 @@ class TestCLIParser:
     def test_defaults(self) -> None:
         parser = _build_parser()
         args = parser.parse_args([])
-        assert args.host == "127.0.0.1"
+        assert args.host == "0.0.0.0"
         assert args.port == 7860
         assert args.reload is False
         assert args.version is False
@@ -53,7 +53,7 @@ class TestMain:
             main([])
         mock_uvicorn.run.assert_called_once()
         call_kwargs = mock_uvicorn.run.call_args
-        assert call_kwargs.kwargs["host"] == "127.0.0.1"
+        assert call_kwargs.kwargs["host"] == "0.0.0.0"
         assert call_kwargs.kwargs["port"] == 7860
         assert call_kwargs.kwargs["reload"] is False
 
