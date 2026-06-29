@@ -70,6 +70,6 @@ jobs:
           git diff --staged --quiet && echo "No changes" && exit 0
           git commit -m "chore(dex-studio-stage): promote $TAG from PR #${{ inputs.pr_number }}"
           git push origin "$BRANCH"
-          gh pr create --fill --auto --base main --head "$BRANCH" \
+          gh pr create --fill --base main --head "$BRANCH" \
             --title "chore(dex-studio-stage): promote $TAG from PR #${{ inputs.pr_number }}" \
             --body "Promoting dex-studio image tag $TAG to stage from PR #${{ inputs.pr_number }}."
