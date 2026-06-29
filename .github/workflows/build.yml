@@ -217,6 +217,7 @@ jobs:
           git diff --staged --quiet && echo "No changes" && exit 0
           git commit -m "chore(dex-studio-prod): promote sha-$SHA"
           git push origin "$BRANCH" --force-with-lease
-          gh pr create --fill --base main --head "$BRANCH" \
+          PR_URL=$(gh pr create --fill --base main --head "$BRANCH" \
             --title "chore(dex-studio-prod): promote sha-$SHA" \
-            --body "Automated promotion of dex-studio sha-$SHA to production."
+            --body "Automated promotion of dex-studio sha-$SHA to production.")
+          gh pr merge --auto --squash "$PR_URL"
