@@ -231,7 +231,7 @@ class TestConcurrentRequests:
                 follow_redirects=False,
             ) as client:
                 resps = await asyncio.gather(*[client.get(p) for p in routes])
-            return [(p, r.status_code) for p, r in zip(routes, resps)]
+            return [(p, r.status_code) for p, r in zip(routes, resps, strict=True)]
 
         pairs = asyncio.run(_run())
 
