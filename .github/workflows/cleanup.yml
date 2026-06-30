@@ -1,11 +1,11 @@
-name: Cleanup Preview
+name: Cleanup Dev
 
 on:
   pull_request:
     types: [closed]
 
 jobs:
-  cleanup-preview:
+  cleanup-dev:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,18 +29,18 @@ jobs:
           ref: main
           token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
 
-      - name: Delete preview overlay
+      - name: Delete dev overlay
         env:
           SLUG: ${{ steps.slug.outputs.slug }}
         run: |
-          OVERLAY="argocd/previews/dex-studio/$SLUG"
+          OVERLAY="argocd/dev/dex-studio/$SLUG"
           if [ -d "$OVERLAY" ]; then
             rm -rf "$OVERLAY"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add "$OVERLAY"
-            git commit -m "chore(dex-studio-preview-$SLUG): remove preview (PR closed)"
+            git commit -m "chore(dex-studio-dev-$SLUG): remove dev env (PR closed)"
             git push
           else
-            echo "No preview overlay found for $SLUG — nothing to clean up"
+            echo "No dev overlay found for $SLUG — nothing to clean up"
           fi
