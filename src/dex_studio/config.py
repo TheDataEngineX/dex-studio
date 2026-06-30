@@ -15,6 +15,7 @@ own dex.yaml and is accessed through DexEngine.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,10 +140,8 @@ def load_prefs() -> StudioPrefs:
 
     raw_budget = db_store.get_setting("pref.monthly_budget_usd")
     if raw_budget is not None:
-        try:
+        with contextlib.suppress(ValueError):
             kwargs["monthly_budget_usd"] = float(raw_budget)
-        except ValueError:
-            pass
 
     raw_config = db_store.get_setting("pref.default_config_path")
     if raw_config is not None:

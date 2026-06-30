@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import os
@@ -169,10 +170,8 @@ def get_client_ip(request: Request) -> str:
     Without it, an attacker can spoof the header to bypass rate limiting.
     """
     trusted_hops = 0
-    try:
+    with contextlib.suppress(ValueError):
         trusted_hops = int(os.environ.get("DEX_TRUSTED_PROXIES", "0"))
-    except ValueError:
-        pass
 
     if trusted_hops > 0:
         forwarded = request.headers.get("X-Forwarded-For", "")

@@ -97,7 +97,7 @@ def _redact(url: str) -> str:
 
 
 @contextlib.contextmanager
-def _get_conn() -> Generator[Connection, None, None]:
+def _get_conn() -> Generator[Connection]:
     """Yield a connection from the engine, raising if init_db() was not called."""
     if _engine is None:
         raise RuntimeError("db_store.init_db() has not been called")

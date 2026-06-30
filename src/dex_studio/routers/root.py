@@ -32,7 +32,14 @@ from dex_studio.auth import (
     set_password,
     validate_and_login,
 )
-from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render, verify_csrf
+from dex_studio.routers._deps import (
+    ReadDep,
+    WriteDep,
+    _get_csrf_token,
+    base_ctx,
+    render,
+    verify_csrf,
+)
 from dex_studio.utils import fmt_run_row
 
 router = APIRouter()

@@ -76,9 +76,8 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     from dex_studio._engine import get_engine
     from dex_studio.auth import setup_password
-    from dex_studio.scheduler import start_scheduler, stop_scheduler
-
     from dex_studio.db_store import init_db
+    from dex_studio.scheduler import start_scheduler, stop_scheduler
 
     init_db()
     setup_password()
@@ -180,22 +179,8 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return HTMLResponse(body, status_code=500)
 
 
-def create_app() -> FastAPI:
-    """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import api, data, intelligence, root, secops, system
-
-    app = FastAPI(
-        title="DEX Studio",
-        description="DataEngineX control plane",
-        version=__version__,
-        docs_url="/api/docs",
-        redoc_url=None,
-        lifespan=_lifespan,
-    )
-
-    _register_exception_handlers(app)
-
-    # ── Session middleware ────────────────────────────────────────────────────
+def _add_middlewares(app: FastAPI) -> None:
+    """Register session, compression, and HTTP middleware on *app*."""
     secret = os.environ.get("DEX_STUDIO_SESSION_SECRET")
     if not secret:
         raise RuntimeError(
@@ -212,8 +197,6 @@ def create_app() -> FastAPI:
         https_only=https_only,
         same_site="lax",
     )
-
-    # ── Compression (bandwidth) + request timing (latency observability) ──────
     app.add_middleware(_SelectiveGZip, minimum_size=1024)
 
     @app.middleware("http")
@@ -225,8 +208,6 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers["X-Request-ID"] = req_id
         return response
-
-    _https_enabled = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
 
     @app.middleware("http")
     async def _security_headers(request: Any, call_next: Any) -> Any:
@@ -251,7 +232,7 @@ def create_app() -> FastAPI:
                 "frame-ancestors 'none';"
             ),
         )
-        if _https_enabled:
+        if https_only:
             # 1-year HSTS, include subdomains — only set when TLS is confirmed active
             response.headers.setdefault(
                 "Strict-Transport-Security",
@@ -272,6 +253,23 @@ def create_app() -> FastAPI:
                 "slow request", path=request.url.path, method=request.method, ms=round(dur_ms)
             )
         return response
+
+
+def create_app() -> FastAPI:
+    """FastAPI application factory — called by uvicorn --factory."""
+    from dex_studio.routers import api, data, intelligence, root, secops, system
+
+    app = FastAPI(
+        title="DEX Studio",
+        description="DataEngineX control plane",
+        version=__version__,
+        docs_url="/api/docs",
+        redoc_url=None,
+        lifespan=_lifespan,
+    )
+
+    _register_exception_handlers(app)
+    _add_middlewares(app)
 
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
