@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Generator
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: F401 (patch used in with-blocks)
 
 import pytest
 from fastapi.testclient import TestClient
-
-from dex_studio.auth import _hash_password
 
 _API_KEY = "test-api-key-1234"  # gitleaks:allow
 _SESSION_SECRET = "t" * 32
@@ -43,14 +40,23 @@ def _make_engine_mock() -> MagicMock:
     return eng
 
 
+def _patch_db_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch all db_store I/O so tests run without a real Postgres connection."""
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=None))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
+
+
 @pytest.fixture
-def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
-    """Client with API key set but no session — every request is unauthenticated."""
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
+def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+    """Client with passphrase set via env var but no session — every request is unauthenticated."""
     monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db_store(monkeypatch)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -60,13 +66,11 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generato
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db_store(monkeypatch)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
