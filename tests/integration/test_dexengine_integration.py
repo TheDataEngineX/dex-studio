@@ -16,6 +16,7 @@ import os
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -80,22 +81,33 @@ _TEST_API_KEY = "integration-test-key-abc123"  # gitleaks:allow
 
 
 @pytest.fixture(scope="module")
-def client(real_engine, tmp_path_factory: pytest.TempPathFactory) -> Generator[TestClient]:
+def client(real_engine) -> Generator[TestClient]:
     """TestClient with real DexEngine injected, scheduler lifespan disabled.
 
     Auth is always enabled now, so we set a known test key and login once
     before yielding so all tests run in an authenticated session.
     """
     import dex_studio._engine as _mod
-    import dex_studio.auth as _auth_mod
+    import dex_studio.db_store as _db
 
     orig = _mod._ENGINE
     _mod._ENGINE = real_engine
 
-    hash_file = tmp_path_factory.mktemp("auth") / "auth.hash"
-    hash_file.write_text(_hash_password(_TEST_API_KEY))
-    _orig_hash_file = _auth_mod._HASH_FILE
-    _auth_mod._HASH_FILE = hash_file
+    orig_init_db = _db.init_db
+    orig_get_setting = _db.get_setting
+    orig_set_setting = _db.set_setting
+    orig_delete_setting = _db.delete_setting
+    orig_get_projects = _db.get_projects
+    orig_set_project = _db.set_project
+    orig_delete_project = _db.delete_project
+
+    _db.init_db = MagicMock()
+    _db.get_setting = MagicMock(return_value=_hash_password(_TEST_API_KEY))
+    _db.set_setting = MagicMock()
+    _db.delete_setting = MagicMock()
+    _db.get_projects = MagicMock(return_value=[])
+    _db.set_project = MagicMock()
+    _db.delete_project = MagicMock()
 
     os.environ["DEX_STUDIO_PASSPHRASE"] = _TEST_API_KEY
     os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
@@ -116,7 +128,13 @@ def client(real_engine, tmp_path_factory: pytest.TempPathFactory) -> Generator[T
         yield tc
 
     _mod._ENGINE = orig
-    _auth_mod._HASH_FILE = _orig_hash_file
+    _db.init_db = orig_init_db
+    _db.get_setting = orig_get_setting
+    _db.set_setting = orig_set_setting
+    _db.delete_setting = orig_delete_setting
+    _db.get_projects = orig_get_projects
+    _db.set_project = orig_set_project
+    _db.delete_project = orig_delete_project
     os.environ.pop("DEX_STUDIO_PASSPHRASE", None)
 
 
