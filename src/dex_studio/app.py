@@ -226,12 +226,18 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = req_id
         return response
 
+    _https_enabled = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
+
     @app.middleware("http")
     async def _security_headers(request: Any, call_next: Any) -> Any:
         response = await call_next(request)
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
         response.headers.setdefault(
             "Content-Security-Policy",
             (
@@ -245,6 +251,12 @@ def create_app() -> FastAPI:
                 "frame-ancestors 'none';"
             ),
         )
+        if _https_enabled:
+            # 1-year HSTS, include subdomains — only set when TLS is confirmed active
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
         return response
 
     @app.middleware("http")

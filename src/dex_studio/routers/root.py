@@ -32,7 +32,7 @@ from dex_studio.auth import (
     set_password,
     validate_and_login,
 )
-from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render
+from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render, verify_csrf
 from dex_studio.utils import fmt_run_row
 
 router = APIRouter()
@@ -270,6 +270,7 @@ def onboarding_page(request: Request) -> HTMLResponse:
         "error": request.session.pop("onboarding_error", ""),
         "warnings": request.session.pop("onboarding_warnings", []),
         "default_projects_dir": str(USER_PROJECTS_DIR),
+        "csrf_token": _get_csrf_token(request),
     }
     return render(request, "root/onboarding.html", ctx)
 
@@ -282,6 +283,7 @@ def onboarding_open(
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
+    verify_csrf(request)
     path = config_path.strip()
     if not path:
         request.session["onboarding_error"] = "Enter or select a path to a dex.yaml file."
@@ -315,6 +317,7 @@ def onboarding_create(
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
+    verify_csrf(request)
     name = project_name.strip() or "my-project"
     slug = name.lower().replace(" ", "-")
     dest = (

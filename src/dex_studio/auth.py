@@ -162,9 +162,27 @@ def logout(request: Request) -> None:
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Return the real client IP for rate-limiting purposes.
+
+    ``X-Forwarded-For`` is only trusted when ``DEX_TRUSTED_PROXIES`` env var
+    is set to a positive integer (the number of trusted reverse-proxy hops).
+    Without it, an attacker can spoof the header to bypass rate limiting.
+    """
+    trusted_hops = 0
+    try:
+        trusted_hops = int(os.environ.get("DEX_TRUSTED_PROXIES", "0"))
+    except ValueError:
+        pass
+
+    if trusted_hops > 0:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",")]
+            # The rightmost N−1 hops are added by trusted proxies;
+            # the leftmost is the originating client.
+            idx = max(0, len(parts) - trusted_hops)
+            return parts[idx]
+
     return (request.client.host if request.client else "") or "unknown"
 
 
