@@ -46,13 +46,8 @@
       </button>
     </form>
 
-    {% if can_reset %}
-    <p style="font-size:12px;text-align:center;margin-top:16px">
-      <a href="/setup?reset=1" style="color:var(--text-3);text-decoration:underline">Forgot your passphrase? Reset it</a>
-    </p>
-    {% endif %}
     <p style="font-size:11px;color:var(--text-4);text-align:center;margin-top:20px">
-      Password hash stored in <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">~/.dex-studio/auth.hash</code>
+      Forgot your passphrase? Set <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">DEX_STUDIO_PASSPHRASE</code> env var and restart.
     </p>
   </div>
 

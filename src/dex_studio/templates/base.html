@@ -81,9 +81,11 @@
       <a href="/system/status" class="rail-icon" data-tip="System health">
         <i data-lucide="heart-pulse" style="width:15px;height:15px"></i>
       </a>
-      <a href="/logout" class="rail-icon" data-tip="Sign out">
-        <i data-lucide="log-out" style="width:15px;height:15px"></i>
-      </a>
+      <form method="post" action="/logout" style="display:contents">
+        <button type="submit" class="rail-icon" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0;width:100%">
+          <i data-lucide="log-out" style="width:15px;height:15px"></i>
+        </button>
+      </form>
     </div>
 
   </nav>
@@ -276,9 +278,11 @@
           <i data-lucide="zap" style="width:15px;height:15px;color:var(--accent-11)"></i>
         </button>
         <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
-        <a href="/logout" data-tip="Sign out" style="text-decoration:none">
-          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
-        </a>
+        <form method="post" action="/logout" style="display:contents">
+          <button type="submit" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0">
+            <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
+          </button>
+        </form>
       </div>
     </div>
 
