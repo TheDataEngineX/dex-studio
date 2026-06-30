@@ -130,8 +130,8 @@ jobs:
           GH_TOKEN: ${{ secrets.INFRA_DEPLOY_TOKEN }}
         run: |
           BRANCH="prod-promote-$SHA"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add argocd/overlays/dex-studio-prod/kustomization.yaml
           git diff --staged --quiet && echo "No changes" && exit 0

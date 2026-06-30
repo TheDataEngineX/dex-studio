@@ -121,15 +121,6 @@ jobs:
                 - op: replace
                   path: /spec/rules/0/host
                   value: $SLUG.dev.dex-studio.thedataenginex.org
-            - target:
-                kind: ExternalSecret
-                name: dex-studio-secrets
-              patch: |
-                $patch: delete
-                apiVersion: external-secrets.io/v1beta1
-                kind: ExternalSecret
-                metadata:
-                  name: dex-studio-secrets
           commonLabels:
             environment: dev
           YAML
@@ -145,8 +136,8 @@ jobs:
           SLUG: ${{ steps.deploy-vars.outputs.branch_slug }}
           SHA: ${{ steps.deploy-vars.outputs.short_sha }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git add argocd/dev/dex-studio/$SLUG/
           git diff --staged --quiet || \
             git commit -m "chore(dex-studio-dev-$SLUG): deploy sha-$SHA"
