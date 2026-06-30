@@ -100,13 +100,13 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  # ── Feature branches → ephemeral preview ─────────────────────────────────────
-  deploy-preview:
-    name: Deploy Preview
+  # ── Feature branches → ephemeral dev env ─────────────────────────────────────
+  deploy-dev:
+    name: Deploy Dev
     needs: [build, security-scan]
     if: github.ref_name != 'main'
     runs-on: ubuntu-latest
-    environment: preview
+    environment: dev
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,18 +116,18 @@ jobs:
 
       - uses: imranismail/setup-kustomize@v3.0.0
 
-      - name: Create or update preview overlay
+      - name: Create or update dev overlay
         env:
           SLUG: ${{ needs.build.outputs.branch_slug }}
           SHA: ${{ needs.build.outputs.short_sha }}
         run: |
-          OVERLAY="argocd/previews/dex-studio/$SLUG"
+          OVERLAY="argocd/dev/dex-studio/$SLUG"
           mkdir -p "$OVERLAY"
           if [ ! -f "$OVERLAY/kustomization.yaml" ]; then
             cat > "$OVERLAY/kustomization.yaml" <<YAML
           apiVersion: kustomize.config.k8s.io/v1beta1
           kind: Kustomization
-          namespace: dex-studio-preview-$SLUG
+          namespace: dex-studio-dev-$SLUG
           resources:
             - ../../../base-dex-studio
           images:
@@ -159,9 +159,9 @@ jobs:
               patch: |
                 - op: replace
                   path: /spec/rules/0/host
-                  value: $SLUG.preview.dex-studio.thedataenginex.org
+                  value: $SLUG.dev.dex-studio.thedataenginex.org
           commonLabels:
-            environment: preview
+            environment: dev
           YAML
           fi
           cd "$OVERLAY"
@@ -175,9 +175,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/previews/dex-studio/$SLUG/
+          git add argocd/dev/dex-studio/$SLUG/
           git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-preview-$SLUG): deploy sha-$SHA"
+            git commit -m "chore(dex-studio-dev-$SLUG): deploy sha-$SHA"
           git push
 
   # ── main branch → prod (PR, not direct push) ────────────────────────────────
