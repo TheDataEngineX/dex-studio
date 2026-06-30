@@ -1061,5 +1061,21 @@ globalThis.relativeTime = function (iso) {
   };
 }());
 </script>
+<script>
+/* UI prefs — persisted in localStorage, applied on every page load */
+(function () {
+  var w = parseInt(localStorage.getItem('dex_window_width') || '0', 10);
+  var h = parseInt(localStorage.getItem('dex_window_height') || '0', 10);
+  /* Window resize listener — debounced at 500 ms */
+  var _resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function () {
+      localStorage.setItem('dex_window_width', String(window.innerWidth));
+      localStorage.setItem('dex_window_height', String(window.innerHeight));
+    }, 500);
+  });
+}());
+</script>
 </body>
 </html>

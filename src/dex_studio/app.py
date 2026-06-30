@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -58,28 +57,6 @@ TEMPLATES_DIR = _HERE / "templates"
 STATIC_DIR = _HERE / "static"
 
 
-def _session_secret() -> str:
-    """Return or generate a persistent session signing secret."""
-    data_dir = os.environ.get("DEX_STUDIO_DATA_DIR")
-    base = Path(data_dir) if data_dir else Path.home() / ".dex-studio"
-    key_file = base / "session.key"
-    if key_file.exists():
-        return key_file.read_text().strip()
-    key = secrets.token_hex(32)
-    try:
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_text(key)
-        key_file.chmod(0o600)
-    except PermissionError:
-        # Fallback for read-only home dirs (e.g. containers)
-        key_file = Path("/tmp/.dex-studio/session.key")
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        if not key_file.exists():
-            key_file.write_text(key)
-            key_file.chmod(0o600)
-        return key_file.read_text().strip()
-    return key
-
 
 def make_templates() -> Jinja2Templates:
     """Create the Jinja2 environment with custom filters."""
@@ -101,6 +78,9 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     from dex_studio.auth import setup_password
     from dex_studio.scheduler import start_scheduler, stop_scheduler
 
+    from dex_studio.db_store import init_db
+
+    init_db()
     setup_password()
     logger.info("DEX Studio starting up", version=__version__, port=7860)
 
@@ -216,7 +196,13 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
 
     # ── Session middleware ────────────────────────────────────────────────────
-    secret = os.environ.get("DEX_STUDIO_SESSION_SECRET") or _session_secret()
+    secret = os.environ.get("DEX_STUDIO_SESSION_SECRET")
+    if not secret:
+        raise RuntimeError(
+            "DEX_STUDIO_SESSION_SECRET environment variable is required. "
+            "Set it to a random hex string, e.g.: "
+            "DEX_STUDIO_SESSION_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')"
+        )
     https_only = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
     app.add_middleware(
         SessionMiddleware,
