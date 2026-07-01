@@ -1369,21 +1369,12 @@ def add_quality_test(
     threshold: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     try:
-        tests_path = eng.project_dir / ".dex" / "quality_tests.json"
-        existing: list[dict[str, Any]] = []
-        with contextlib.suppress(Exception):
-            existing = _json.loads(tests_path.read_text())
-        existing.append(
-            {
-                "table": table,
-                "test_type": test_type,
-                "column": column,
-                "threshold": threshold,
-                "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-            }
-        )
-        tests_path.parent.mkdir(parents=True, exist_ok=True)
-        tests_path.write_text(_json.dumps(existing, indent=2))
+        from dex_studio.studio_db import get_studio_db
+
+        sdb = get_studio_db(eng)
+        if sdb:
+            sdb.add_quality_test(table_name=table, test_type=test_type,
+                                  col_name=column, threshold=threshold)
         flash(request, f"Test '{test_type}' added for table '{table}'.")
     except Exception as exc:
         flash(request, str(exc), "error")

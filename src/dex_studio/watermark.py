@@ -15,7 +15,7 @@ from typing import Any
 
 import structlog
 
-from dex_studio.studio_db import StudioDb
+from dex_studio.studio_db import PgStudioDb, StudioDb
 
 __all__ = ["WatermarkStore"]
 
@@ -25,7 +25,7 @@ log = structlog.get_logger().bind(src="watermark")
 class WatermarkStore:
     """Thin facade over StudioDb for watermark and hash-dedup operations."""
 
-    def __init__(self, db: StudioDb) -> None:
+    def __init__(self, db: StudioDb | PgStudioDb) -> None:
         self._db = db
 
     # ── Watermarks ────────────────────────────────────────────────────────────

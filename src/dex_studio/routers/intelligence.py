@@ -1341,14 +1341,13 @@ async def predict_models_api(request: Request, eng: JsonReadDep) -> Any:
 
     from fastapi.responses import JSONResponse
 
-    models_dir = eng._dex_dir / "models"  # type: ignore[attr-defined]
-    registry_path = models_dir / "registry.json"
-    model_map: dict[str, list[Any]] = {}
-    if registry_path.exists():
-        with contextlib.suppress(Exception):
-            model_map = _json.loads(registry_path.read_text())
+    from dex_studio.studio_db import get_studio_db
+
+    sdb = get_studio_db(eng)
+    entries = sdb.get_model_registry() if sdb else []
     result = []
-    for name, versions in model_map.items():
+    for name in sorted({e["model_name"] for e in entries}):
+        versions = [e for e in entries if e["model_name"] == name]
         if not versions:
             continue
         latest = versions[-1]
