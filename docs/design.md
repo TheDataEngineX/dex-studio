@@ -27,7 +27,7 @@ Project Setup → Ingestion → Medallion Pipelines → ML/AI → Observability
 │  │              Studio Core                                 │     │
 │  │  app.py · nav.py · config.py · auth.py · _engine.py     │     │
 │  │  studio_db.py · scheduler.py · watermark.py · backfill  │     │
-│  │  compaction.py · schema_evolution.py · quality.py · utils│     │
+│  │  compaction.py · quality.py · utils · flow · execution  │     │
 │  └────────────────────┬────────────────────────────────────┘     │
 └───────────────────────┼───────────────────────────────────────────┘
                         │  direct import (same process)
@@ -68,8 +68,7 @@ dex-studio/
 │       ├── auth.py                 # Session-based auth (PBKDF2 password + rate limiter)
 │       ├── _engine.py              # DexEngine singleton (get_engine / set_engine)
 │       ├── utils.py                # Shared template helpers
-│       ├── audit.py                # Audit logging
-│       ├── theme.py                # Design tokens
+│       ├── flow.py                 # Pipeline DAG utilities for the UI
 │       ├── routers/
 │       │   ├── root.py             # Home, project selector, health
 │       │   ├── data.py             # Data domain routes

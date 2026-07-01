@@ -11,9 +11,12 @@ import secrets
 import threading
 import time
 
+import structlog
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from starlette.requests import HTTPConnection
+
+logger = structlog.get_logger()
 
 SESSION_COOKIE = "dex_session"
 
@@ -93,6 +96,7 @@ def set_password(password: str) -> None:
     from dex_studio import db_store
 
     db_store.set_setting("auth.hash", _hash_password(password))
+    logger.info("password_set")
 
 
 def reset_password() -> None:
@@ -108,12 +112,13 @@ def reset_password() -> None:
     from dex_studio import db_store
 
     db_store.delete_setting("auth.hash")
+    logger.info("password_reset")
 
 
 def setup_password() -> None:
     """Ensure a password exists. Call once at app startup.
 
-    No-op when DEX_STUDIO_PASSPHRASE env var is set.
+    No-op when DEX_STUDIO_PASSPHRASE env var is set or hash already stored.
     Generates and hashes a random password on first boot; on subsequent boots
     with no PASSPHRASE env var, the /setup route handles password creation.
     """
@@ -125,6 +130,7 @@ def setup_password() -> None:
         return
     password = _generate_password()
     db_store.set_setting("auth.hash", _hash_password(password))
+    logger.info("password_setup_auto", note="random password generated on first boot")
 
 
 def is_authenticated(request: HTTPConnection) -> bool:
@@ -155,11 +161,15 @@ def validate_and_login(request: Request, submitted: str) -> bool:
 
     if ok:
         request.session["authenticated"] = True
+        logger.info("login_ok", ip=get_client_ip(request))
+    else:
+        logger.info("login_failed", ip=get_client_ip(request))
     return ok
 
 
 def logout(request: Request) -> None:
     request.session.clear()
+    logger.info("logout", ip=get_client_ip(request))
 
 
 def get_client_ip(request: Request) -> str:

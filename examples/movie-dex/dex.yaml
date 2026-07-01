@@ -73,6 +73,12 @@ data:
       - type: filter
         condition: tconst IS NOT NULL AND primaryTitle IS NOT NULL
       - type: fill_null
+        defaults:
+          originalTitle: ""
+          startYear: "0"
+          endYear: "0"
+          runtimeMinutes: "0"
+          genres: "Unknown"
       - type: derive
         expression: isAdult = '1'
         name: is_adult
@@ -110,6 +116,9 @@ data:
       - type: filter
         condition: tconst IS NOT NULL
       - type: fill_null
+        defaults:
+          directors: ""
+          writers: ""
       quality:
         completeness: 0.6
       destination: bronze_crew
@@ -125,6 +134,11 @@ data:
         key:
         - nconst
       - type: fill_null
+        defaults:
+          birthYear: "0"
+          deathYear: "0"
+          primaryProfession: "Unknown"
+          knownForTitles: ""
       quality:
         completeness: 0.6
         uniqueness:
@@ -139,6 +153,9 @@ data:
       - type: filter
         condition: tconst IS NOT NULL AND nconst IS NOT NULL
       - type: fill_null
+        defaults:
+          job: ""
+          characters: ""
       quality:
         completeness: 0.55
       destination: bronze_principals
@@ -151,6 +168,10 @@ data:
       - type: filter
         condition: title IS NOT NULL AND server_name = 'en.wikipedia.org'
       - type: fill_null
+        defaults:
+          comment: ""
+          user: "anonymous"
+          bot: "false"
       - type: derive
         expression: bot = true
         name: is_bot_edit
@@ -167,6 +188,11 @@ data:
       - type: filter
         condition: id IS NOT NULL AND title IS NOT NULL
       - type: fill_null
+        defaults:
+          overview: ""
+          poster_path: ""
+          backdrop_path: ""
+          release_date: ""
       - type: derive
         expression: "CASE\n  WHEN TRY_CAST(popularity AS DOUBLE) >= 1000 THEN 'viral'\n\
           \  WHEN TRY_CAST(popularity AS DOUBLE) >= 100  THEN 'trending'\n  WHEN TRY_CAST(popularity\

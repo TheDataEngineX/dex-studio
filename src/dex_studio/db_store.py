@@ -58,8 +58,7 @@ CREATE TABLE IF NOT EXISTS projects (
 def init_db() -> None:
     """Create tables and initialise the module-level engine.
 
-    Raises RuntimeError if DATABASE_URL is not set.
-    Must be called once at app startup before any other function.
+    No-op when DATABASE_URL is not set (single-pod / local dev).
     """
     from sqlalchemy import create_engine, text
 
@@ -67,11 +66,8 @@ def init_db() -> None:
 
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
-        raise RuntimeError(
-            "DATABASE_URL environment variable is required. "
-            "Set it to a Postgres connection string, e.g. "
-            "postgresql+psycopg://user:pass@host:5432/dbname"
-        )
+        _log.info("DATABASE_URL not set — db_store disabled (single-pod mode)")
+        return
 
     _engine = create_engine(url, pool_pre_ping=True)
     with _engine.begin() as conn:
@@ -97,10 +93,12 @@ def _redact(url: str) -> str:
 
 
 @contextlib.contextmanager
-def _get_conn() -> Generator[Connection]:
-    """Yield a connection from the engine, raising if init_db() was not called."""
+def _get_conn() -> Generator[Connection | None]:
+    """Yield a connection from the engine, or None if db_store is disabled."""
     if _engine is None:
-        raise RuntimeError("db_store.init_db() has not been called")
+        _log.warning("db_store accessed without DATABASE_URL — returning None")
+        yield None
+        return
     with _engine.begin() as conn:
         yield conn
 
@@ -115,6 +113,8 @@ def get_setting(key: str) -> str | None:
     from sqlalchemy import text
 
     with _get_conn() as conn:
+        if conn is None:
+            return None
         row = conn.execute(text("SELECT value FROM settings WHERE key = :k"), {"k": key}).fetchone()
         return str(row[0]) if row else None
 
@@ -123,8 +123,9 @@ def set_setting(key: str, value: str) -> None:
     """Upsert *key* = *value* in the settings table."""
     from sqlalchemy import text
 
-    # Portable upsert — works on both Postgres and SQLite
     with _get_conn() as conn:
+        if conn is None:
+            return
         conn.execute(
             text(
                 "INSERT INTO settings (key, value, updated_at) VALUES (:k, :v, CURRENT_TIMESTAMP) "
@@ -140,6 +141,8 @@ def delete_setting(key: str) -> None:
     from sqlalchemy import text
 
     with _get_conn() as conn:
+        if conn is None:
+            return
         conn.execute(text("DELETE FROM settings WHERE key = :k"), {"k": key})
 
 
@@ -153,6 +156,8 @@ def get_projects() -> list[tuple[str, str]]:
     from sqlalchemy import text
 
     with _get_conn() as conn:
+        if conn is None:
+            return []
         rows = conn.execute(
             text("SELECT name, config_path FROM projects ORDER BY created_at")
         ).fetchall()
@@ -164,6 +169,8 @@ def set_project(name: str, config_path: str) -> None:
     from sqlalchemy import text
 
     with _get_conn() as conn:
+        if conn is None:
+            return
         conn.execute(
             text(
                 "INSERT INTO projects (name, config_path) VALUES (:n, :p) "
@@ -178,4 +185,6 @@ def delete_project(name: str) -> None:
     from sqlalchemy import text
 
     with _get_conn() as conn:
+        if conn is None:
+            return
         conn.execute(text("DELETE FROM projects WHERE name = :n"), {"n": name})

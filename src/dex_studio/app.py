@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,16 +23,34 @@ from dex_studio import __version__
 from dex_studio.logstore import install_stdlib_handler, structlog_capture_processor
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
 
-structlog.configure(
-    processors=[
-        structlog_capture_processor,
-        structlog.stdlib.add_log_level,
-        structlog.dev.ConsoleRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(0),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-)
+# ── Structured logging — JSON when piped, pretty console on TTY ──────────────
+_USE_JSON = hasattr(sys.stdout, "isatty") and not sys.stdout.isatty()
+
+if _USE_JSON:
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            structlog_capture_processor,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(0),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
+else:
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog_capture_processor,
+            structlog.stdlib.add_log_level,
+            structlog.dev.ConsoleRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(0),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
 
 logger = structlog.getLogger().bind(src="app")
 
@@ -81,12 +101,21 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     init_db()
     setup_password()
-    logger.info("DEX Studio starting up", version=__version__, port=7860)
 
     # Mirror all stdlib logging (uvicorn, fastapi, libraries) into the log viewer.
     # Must run here — AFTER uvicorn has configured its own logging handlers so we
     # can also attach directly to uvicorn.access (which has propagate=False).
     install_stdlib_handler()
+
+    logger.info(
+        "DEX Studio starting up",
+        version=__version__,
+        port=7860,
+        mode="json" if _USE_JSON else "console",
+        https=os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes"),
+        trusted_proxies=os.environ.get("DEX_TRUSTED_PROXIES", "0"),
+        config_path=os.environ.get("DEX_CONFIG_PATH", ""),
+    )
 
     # Pre-warm: open SQLite WAL + run CREATE TABLE IF NOT EXISTS before the
     # first HTTP request. Suppressed so a missing/unconfigured project never
@@ -179,15 +208,28 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return HTMLResponse(body, status_code=500)
 
 
+def _session_secret() -> str:
+    """Return the session signing key — from env var or cached auto-generated file.
+
+    When neither env var nor cached file exist, generates a random key and
+    persists it to ``~/.dex-studio/session.key`` so signed cookies survive restarts.
+    """
+    env = os.environ.get("DEX_STUDIO_SESSION_SECRET")
+    if env:
+        return env
+    key_file = Path.home() / ".dex-studio" / "session.key"
+    if key_file.exists():
+        return key_file.read_text().strip()
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_hex(32)
+    key_file.write_text(secret + "\n")
+    key_file.chmod(0o600)
+    return secret
+
+
 def _add_middlewares(app: FastAPI) -> None:
     """Register session, compression, and HTTP middleware on *app*."""
-    secret = os.environ.get("DEX_STUDIO_SESSION_SECRET")
-    if not secret:
-        raise RuntimeError(
-            "DEX_STUDIO_SESSION_SECRET environment variable is required. "
-            "Set it to a random hex string, e.g.: "
-            "DEX_STUDIO_SESSION_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')"
-        )
+    secret = _session_secret()
     https_only = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
     app.add_middleware(
         SessionMiddleware,
@@ -205,7 +247,11 @@ def _add_middlewares(app: FastAPI) -> None:
 
         req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         request.state.request_id = req_id
-        response = await call_next(request)
+        structlog.contextvars.bind_contextvars(request_id=req_id)
+        try:
+            response = await call_next(request)
+        finally:
+            structlog.contextvars.unbind_contextvars("request_id")
         response.headers["X-Request-ID"] = req_id
         return response
 
@@ -250,7 +296,11 @@ def _add_middlewares(app: FastAPI) -> None:
         response.headers["Server-Timing"] = f"app;dur={dur_ms:.1f}"
         if dur_ms > 1000:
             logger.warning(
-                "slow request", path=request.url.path, method=request.method, ms=round(dur_ms)
+                "slow request",
+                path=request.url.path,
+                method=request.method,
+                status=response.status_code,
+                ms=round(dur_ms),
             )
         return response
 

@@ -50,9 +50,10 @@ Use the sidebar project dropdown to switch between registered projects at runtim
 To pre-register projects, edit `~/.dex-studio/projects.yaml`:
 
 ```yaml
-projects:
-  myproject: ~/projects/myproject/dex.yaml
-  moviedex: /data/pipelines/moviedex/dex.yaml
+- name: moviedex
+  config_path: /path/to/movie-dex/dex.yaml
+- name: ecommerce
+  config_path: /path/to/ecommerce/dex.yaml
 ```
 
 ## Generating Demo Assets

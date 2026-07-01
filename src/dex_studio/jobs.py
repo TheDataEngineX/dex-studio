@@ -7,14 +7,25 @@ the UI freezing when several actions overlap.
 Page handlers stay responsive because Starlette runs synchronous ``def`` routes
 in its own threadpool; long jobs run here in a *separate* pool so a burst of
 pipeline runs can never starve page rendering.
+
+On success, both ``_run`` and ``_run_all`` call ``sdb.set_last_run()`` so the
+scheduler's cron check sees the correct last-run timestamp and does not re-fire
+a pipeline that was already run manually.
 """
 
 from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from dataenginex.engine import DexEngine
+
+    from dex_studio.store import StudioStore
+    from dex_studio.studio_db import PgStudioDb, StudioDb
 
 logger = structlog.get_logger()
 
@@ -77,6 +88,65 @@ def run_all_pipelines_bg() -> str:
     return "started"
 
 
+def _run_one_pipeline(
+    name: str,
+    sdb: StudioDb | PgStudioDb | None,
+    store: StudioStore,
+    eng: DexEngine,
+    triggered_by: str,
+) -> tuple[str, str, int | None, bool]:
+    """Run a single pipeline and return (status, error_msg, run_id, lock_held)."""
+    import contextlib
+
+    status = "failure"
+    error_msg = ""
+    run_id: int | None = None
+    lock_held = False
+    try:
+        with contextlib.suppress(Exception):
+            store.set_pipeline_status(name, "running")
+        if sdb is not None:
+            lock_held = sdb.acquire_lock(name)
+            run_id = sdb.start_run(name, triggered_by=triggered_by)
+        eng.run_pipeline(name)
+        status = "success"
+        logger.info("run-all: pipeline complete", pipeline=name)
+    except Exception as exc:  # noqa: BLE001
+        error_msg = str(exc)
+        logger.warning("run-all: pipeline failed", pipeline=name, error=error_msg)
+    return status, error_msg, run_id, lock_held
+
+
+def _finalize_pipeline(
+    name: str,
+    status: str,
+    error_msg: str,
+    run_id: int | None,
+    lock_held: bool,
+    sdb: StudioDb | PgStudioDb | None,
+    store: StudioStore,
+) -> None:
+    """Finalize pipeline run: update status, finish run, set last_run, release lock."""
+    import contextlib
+
+    with _lock:
+        _running.discard(name)
+    with contextlib.suppress(Exception):
+        store.set_pipeline_status(name, status)
+    if sdb is not None and run_id is not None:
+        with contextlib.suppress(Exception):
+            terminal = "success" if status == "success" else "failed"
+            sdb.finish_run(run_id, terminal, error_msg)
+        if status == "success":
+            from datetime import UTC, datetime
+
+            with contextlib.suppress(Exception):
+                sdb.set_last_run(name, datetime.now(UTC))
+    if lock_held and sdb is not None:
+        with contextlib.suppress(Exception):
+            sdb.release_lock(name)
+
+
 def _run_all() -> None:
     """Run all pipelines sequentially in dependency order."""
     import contextlib
@@ -85,11 +155,16 @@ def _run_all() -> None:
 
     from dex_studio._engine import get_engine
     from dex_studio.store import get_store
+    from dex_studio.studio_db import get_studio_db
 
+    eng = get_engine()
+    if eng is None:
+        return
+    sdb = None
+    with contextlib.suppress(Exception):
+        sdb = get_studio_db(eng)
+    store = get_store()
     try:
-        eng = get_engine()
-        if eng is None:
-            return
         dep_graph: dict[str, list[str]] = {
             name: list(p.depends_on) for name, p in eng.config.data.pipelines.items()
         }
@@ -100,20 +175,10 @@ def _run_all() -> None:
                     logger.info("run-all: skipping (already running)", pipeline=name)
                     continue
                 _running.add(name)
-            status = "failure"
-            try:
-                with contextlib.suppress(Exception):
-                    get_store().set_pipeline_status(name, "running")
-                eng.run_pipeline(name)
-                status = "success"
-                logger.info("run-all: pipeline complete", pipeline=name)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("run-all: pipeline failed", pipeline=name, error=str(exc))
-            finally:
-                with _lock:
-                    _running.discard(name)
-                with contextlib.suppress(Exception):
-                    get_store().set_pipeline_status(name, status)
+            status, error_msg, run_id, lock_held = _run_one_pipeline(
+                name, sdb, store, eng, "run-all"
+            )
+            _finalize_pipeline(name, status, error_msg, run_id, lock_held, sdb, store)
     finally:
         with _lock:
             _running.discard(_RUN_ALL_SENTINEL)
@@ -192,6 +257,10 @@ def _run(name: str) -> None:
         if sdb is not None and run_id is not None:
             with contextlib.suppress(Exception):
                 sdb.finish_run(run_id, "success" if status == "success" else "failed", error_msg)
+            if status == "success":
+                from datetime import UTC, datetime
+                with contextlib.suppress(Exception):
+                    sdb.set_last_run(name, datetime.now(UTC))
         if lock_held and sdb is not None:
             with contextlib.suppress(Exception):
                 sdb.release_lock(name)
