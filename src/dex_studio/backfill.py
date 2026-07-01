@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from tqdm import tqdm
 
 from dex_studio.studio_db import PgStudioDb, StudioDb
 from dex_studio.watermark import WatermarkStore
@@ -82,7 +83,9 @@ class BackfillEngine:
 
         if run_now:
             try:
-                self._eng.run_pipeline(pipeline)
+                with tqdm(total=1, desc=f"Backfill {pipeline}", unit="pipeline") as pbar:
+                    self._eng.run_pipeline(pipeline)
+                    pbar.update(1)
                 result["run_triggered"] = True
                 log.info("backfill: pipeline complete", pipeline=pipeline)
             except Exception as exc:
@@ -90,3 +93,15 @@ class BackfillEngine:
                 log.warning("backfill: pipeline failed", pipeline=pipeline, error=str(exc))
 
         return result
+
+    def trigger_all(
+        self, pipelines: list[str], *, clear_hashes: bool = True, run_now: bool = True
+    ) -> list[dict[str, Any]]:
+        """Trigger backfill for multiple pipelines with progress bar."""
+        results = []
+        with tqdm(total=len(pipelines), desc="Backfill pipelines", unit="pipeline") as pbar:
+            for name in pipelines:
+                pbar.set_description(f"Backfill {name}")
+                results.append(self.trigger(name, clear_hashes=clear_hashes, run_now=run_now))
+                pbar.update(1)
+        return results

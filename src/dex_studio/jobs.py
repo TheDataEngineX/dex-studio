@@ -15,11 +15,13 @@ a pipeline that was already run manually.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import structlog
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     from dataenginex.engine import DexEngine
@@ -29,10 +31,11 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# max_workers=1 serializes heavy ETL so concurrent runs cannot blow up host memory.
-_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dex-job")
+# max_workers=2 allows 2 concurrent pipelines per pod (3 pods = 6 cluster-wide).
+# Increase memory limits in kustomization.yaml accordingly (6Gi/3Gi recommended).
+_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dex-job")
 _MAX_INFLIGHT = 8  # back-pressure: reject new runs beyond this many queued/running
-_MIN_FREE_MB = 3_072  # refuse to start if < 3 GB available — prevents WSL OOM kill
+_MIN_FREE_MB = 1_024  # refuse to start if < 1 GB available — K8s container limit
 _RUN_ALL_SENTINEL = "__run_all__"  # sentinel key used in _running and store
 _running: set[str] = set()
 _lock = threading.Lock()
@@ -78,7 +81,6 @@ def run_all_pipelines_bg() -> str:
         if _running:
             return "busy"
         _running.add(_RUN_ALL_SENTINEL)
-    import contextlib
 
     from dex_studio.store import get_store
 
@@ -96,7 +98,6 @@ def _run_one_pipeline(
     triggered_by: str,
 ) -> tuple[str, str, int | None, bool]:
     """Run a single pipeline and return (status, error_msg, run_id, lock_held)."""
-    import contextlib
 
     status = "failure"
     error_msg = ""
@@ -127,7 +128,6 @@ def _finalize_pipeline(
     store: StudioStore,
 ) -> None:
     """Finalize pipeline run: update status, finish run, set last_run, release lock."""
-    import contextlib
 
     with _lock:
         _running.discard(name)
@@ -149,7 +149,6 @@ def _finalize_pipeline(
 
 def _run_all() -> None:
     """Run all pipelines sequentially in dependency order."""
-    import contextlib
 
     from dataenginex.data.pipeline.dag import resolve_execution_order
 
@@ -169,16 +168,20 @@ def _run_all() -> None:
             name: list(p.depends_on) for name, p in eng.config.data.pipelines.items()
         }
         order = resolve_execution_order(dep_graph)
-        for name in order:
-            with _lock:
-                if name in _running:
-                    logger.info("run-all: skipping (already running)", pipeline=name)
-                    continue
-                _running.add(name)
-            status, error_msg, run_id, lock_held = _run_one_pipeline(
-                name, sdb, store, eng, "run-all"
-            )
-            _finalize_pipeline(name, status, error_msg, run_id, lock_held, sdb, store)
+        with tqdm(total=len(order), desc="Running all pipelines", unit="pipeline") as pbar:
+            for name in order:
+                pbar.set_description(f"Running {name}")
+                with _lock:
+                    if name in _running:
+                        logger.info("run-all: skipping (already running)", pipeline=name)
+                        pbar.update(1)
+                        continue
+                    _running.add(name)
+                status, error_msg, run_id, lock_held = _run_one_pipeline(
+                    name, sdb, store, eng, "run-all"
+                )
+                _finalize_pipeline(name, status, error_msg, run_id, lock_held, sdb, store)
+                pbar.update(1)
     finally:
         with _lock:
             _running.discard(_RUN_ALL_SENTINEL)
@@ -212,7 +215,6 @@ def run_pipeline_bg(name: str) -> str:
         if len(_running) >= _MAX_INFLIGHT:
             return "busy"
         _running.add(name)
-    import contextlib
 
     from dex_studio.store import get_store
 
@@ -224,7 +226,6 @@ def run_pipeline_bg(name: str) -> str:
 
 def _run(name: str) -> None:
     """Worker body — runs the pipeline and records its terminal status."""
-    import contextlib
 
     from dex_studio._engine import get_engine
     from dex_studio.store import get_store

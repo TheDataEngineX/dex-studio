@@ -31,6 +31,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
     "psycopg2-binary>=2.9",
+    "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]

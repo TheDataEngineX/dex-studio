@@ -381,6 +381,11 @@ def _build_pipeline_rows(eng: Any) -> list[dict[str, Any]]:
 
         if is_pipeline_running(name):
             status = "running"
+        else:
+            # Multi-pod: check DB locks (shared across all pods)
+            sdb = get_studio_db(eng)
+            if sdb is not None and name in sdb.locked_pipelines():
+                status = "running"
 
         last_run = fmt_ts(last_run_ts)
         if last_run == "—":

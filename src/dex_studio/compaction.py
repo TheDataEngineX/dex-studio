@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from tqdm import tqdm
 
 from dex_studio.studio_db import PgStudioDb, StudioDb
 
@@ -145,8 +146,11 @@ class CompactionEngine:
     def compact_all(self, pipelines: list[str]) -> list[CompactionResult]:
         """Compact every pipeline in *pipelines*, returning all successful results."""
         results = []
-        for name in pipelines:
-            r = self.compact_pipeline(name)
-            if r:
-                results.append(r)
+        with tqdm(total=len(pipelines), desc="Compacting pipelines", unit="pipeline") as pbar:
+            for name in pipelines:
+                pbar.set_description(f"Compact {name}")
+                r = self.compact_pipeline(name)
+                if r:
+                    results.append(r)
+                pbar.update(1)
         return results

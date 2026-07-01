@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import structlog
+from tqdm import tqdm
 
 log = structlog.get_logger().bind(src="embeddings")
 
@@ -84,11 +85,13 @@ def _embed_all_batched(
 ) -> tuple[list[list[float]], str]:
     """Embed all texts in batches. Returns (vectors, error)."""
     all_vectors: list[list[float]] = []
-    for i in range(0, len(texts), batch_size):
-        vecs = _embed_texts(texts[i : i + batch_size], model, host)
-        if vecs is None:
-            return [], "Embedding call failed — is Ollama running with nomic-embed-text?"
-        all_vectors.extend(vecs)
+    with tqdm(total=len(texts), desc="Embedding texts", unit="text", leave=False) as pbar:
+        for i in range(0, len(texts), batch_size):
+            vecs = _embed_texts(texts[i : i + batch_size], model, host)
+            if vecs is None:
+                return [], "Embedding call failed — is Ollama running with nomic-embed-text?"
+            all_vectors.extend(vecs)
+            pbar.update(len(vecs))
     return all_vectors, ""
 
 
