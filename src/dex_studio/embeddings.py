@@ -2,26 +2,19 @@
 
 Builds vector indexes from gold/silver lakehouse columns using Ollama's
 embedding API (nomic-embed-text or any model that supports /api/embed).
-Stores vectors + source rows in DuckDB so search_semantic() can do
-cosine similarity without a separate vector database.
+Stores vectors + source rows in StudioDb so the lifecycle is aligned with
+the rest of the scheduler state — no separate DuckDB files.
 """
 
 from __future__ import annotations
 
 import contextlib
 import time
-from pathlib import Path
 from typing import Any
 
 import structlog
 
 log = structlog.get_logger().bind(src="embeddings")
-
-_EMBED_STORE = "embeddings"  # subdirectory under .dex/
-
-
-def _embed_dir(eng: Any) -> Path:
-    return eng.project_dir / ".dex" / _EMBED_STORE  # type: ignore[no-any-return]
 
 
 def _get_ollama_host(eng: Any) -> str:
@@ -99,47 +92,19 @@ def _embed_all_batched(
     return all_vectors, ""
 
 
-def _persist_vector_store(
-    store_path: Path,
-    rows: list[Any],
-    texts: list[str],
-    all_vectors: list[list[float]],
-) -> int:
-    """Write vectors to DuckDB, return dimension."""
-    import duckdb  # type: ignore[import-untyped]
-
-    dim = len(all_vectors[0]) if all_vectors else 0
-    with duckdb.connect(str(store_path)) as conn:
-        conn.execute("DROP TABLE IF EXISTS vectors")
-        conn.execute("CREATE TABLE vectors (row_id INTEGER, source_text TEXT, embedding FLOAT[])")
-        conn.executemany(
-            "INSERT INTO vectors VALUES (?, ?, ?)",
-            [(rows[i][0], texts[i], all_vectors[i]) for i in range(len(all_vectors))],
-        )
-    return dim
-
-
-def _resolve_collection_cfg(eng: Any, collection_name: str) -> Any:
-    """Return the collection config object from dex.yaml or None."""
-    ai_cfg = getattr(eng.config, "ai", None)
-    collections_cfg = getattr(ai_cfg, "collections", None) or {}
-    if hasattr(collections_cfg, "get"):
-        return collections_cfg.get(collection_name)
-    for k, v in collections_cfg.items() if hasattr(collections_cfg, "items") else []:
-        if str(k) == collection_name:
-            return v
-    return None
-
-
 def _record_collection(
-    eng: Any, name: str, source_table: str, source_col: str, model: str, count: int
+    eng: Any, name: str, source_table: str, source_col: str, model: str,
+    count: int, dim: int, duration_s: float,
 ) -> None:
     with contextlib.suppress(Exception):
         from dex_studio.studio_db import get_studio_db
 
         db = get_studio_db(eng)
         if db:
-            db.upsert_embedding_collection(name, source_table, source_col, model, count)
+            db.upsert_embedding_collection(
+                name, source_table, source_col, model, count,
+                dim=dim, duration_s=duration_s,
+            )
 
 
 def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
@@ -173,11 +138,20 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
             result["error"] = err
             return result
 
-        store_dir = _embed_dir(eng) / collection_name
-        store_dir.mkdir(parents=True, exist_ok=True)
-        dim = _persist_vector_store(store_dir / "vectors.duckdb", rows, texts, all_vectors)
+        dim = len(all_vectors[0]) if all_vectors else 0
+        from dex_studio.studio_db import get_studio_db
 
-        import json as _json
+        db = get_studio_db(eng)
+        if db:
+            db.store_vectors(
+                collection_name,
+                [(r[0], t, v) for r, t, v in zip(rows, texts, all_vectors, strict=True)],
+            )
+            duration_s = round(time.monotonic() - t0, 1)
+            _record_collection(
+                eng, collection_name, source_table, source_col, model,
+                len(all_vectors), dim, duration_s,
+            )
 
         meta = {
             "collection": collection_name,
@@ -189,9 +163,6 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
             "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "duration_s": round(time.monotonic() - t0, 1),
         }
-        (store_dir / "meta.json").write_text(_json.dumps(meta, indent=2))
-        _record_collection(eng, collection_name, source_table, source_col, model, len(all_vectors))
-
         result.update(meta)
         result["status"] = "ok"
         log.info(
@@ -205,9 +176,9 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
 def search_collection(
     eng: Any, collection_name: str, query: str, top_k: int = 10
 ) -> list[dict[str, Any]]:
-    """Cosine similarity search over a built embedding collection."""
+    """Cosine similarity search over a built embedding collection using numpy."""
     try:
-        import duckdb  # type: ignore[import-untyped]
+        import numpy as np
 
         model = _get_embed_model(eng, None)
         host = _get_ollama_host(eng)
@@ -215,34 +186,27 @@ def search_collection(
         q_vecs = _embed_texts([query], model, host)
         if not q_vecs:
             return [{"error": "Could not embed query", "results": []}]
-        q_vec = q_vecs[0]
+        q_vec = np.array(q_vecs[0])
 
-        store_path = _embed_dir(eng) / collection_name / "vectors.duckdb"
-        if not store_path.exists():
+        from dex_studio.studio_db import get_studio_db
+
+        db = get_studio_db(eng)
+        if db is None:
+            return [{"error": "No database available"}]
+        vectors_data = db.get_vectors(collection_name)
+        if not vectors_data:
             return [{"error": f"Collection '{collection_name}' not built — run Build first"}]
 
-        with duckdb.connect(str(store_path), read_only=True) as conn:
-            # DuckDB cosine similarity: dot product / (norm * norm)
-            # We use a stored procedure pattern for readability
-            rows = conn.execute(
-                """
-                WITH q AS (SELECT $1::FLOAT[] AS qv),
-                scored AS (
-                    SELECT
-                        source_text,
-                        list_dot_product(embedding, (SELECT qv FROM q)) /
-                        (list_aggregate(embedding, 'sum') + 1e-9) AS score
-                    FROM vectors
-                )
-                SELECT source_text, score
-                FROM scored
-                ORDER BY score DESC
-                LIMIT $2
-                """,
-                [q_vec, top_k],
-            ).fetchall()
+        embeddings = np.array([v["embedding"] for v in vectors_data])
+        q_norm = np.linalg.norm(q_vec)
+        emb_norms = np.linalg.norm(embeddings, axis=1)
+        scores = (embeddings @ q_vec) / (emb_norms * q_norm + 1e-9)
+        top_idx = np.argsort(scores)[-top_k:][::-1]
 
-        return [{"text": r[0], "score": round(float(r[1]), 4)} for r in rows]
+        return [
+            {"text": vectors_data[int(i)]["source_text"], "score": round(float(scores[int(i)]), 4)}
+            for i in top_idx
+        ]
 
     except Exception as exc:
         log.warning("search_collection failed", collection=collection_name, error=str(exc))
@@ -250,18 +214,13 @@ def search_collection(
 
 
 def list_collections(eng: Any) -> list[dict[str, Any]]:
-    """List all built embedding collections with metadata."""
-    import json as _json
+    """List all built embedding collections from StudioDb."""
+    from dex_studio.studio_db import get_studio_db
 
-    embed_dir = _embed_dir(eng)
-    collections: list[dict[str, Any]] = []
-    if not embed_dir.is_dir():
-        return collections
-    for meta_path in sorted(embed_dir.glob("*/meta.json")):
-        with contextlib.suppress(Exception):
-            meta = _json.loads(meta_path.read_text())
-            collections.append(meta)
-    return collections
+    db = get_studio_db(eng)
+    if db is None:
+        return []
+    return db.get_embedding_collections()
 
 
 def collection_config(eng: Any) -> list[dict[str, Any]]:
@@ -288,13 +247,34 @@ def collection_config(eng: Any) -> list[dict[str, Any]]:
 
 
 def _collection_meta(eng: Any, name: str) -> dict[str, Any] | None:
-    import json as _json
+    from dex_studio.studio_db import get_studio_db
 
-    meta_path = _embed_dir(eng) / name / "meta.json"
-    if not meta_path.exists():
+    db = get_studio_db(eng)
+    if db is None:
         return None
-    with contextlib.suppress(Exception):
-        return _json.loads(meta_path.read_text())  # type: ignore[no-any-return]
+    for col in db.get_embedding_collections():
+        if col["name"] == name:
+            return {
+                "collection": col["name"],
+                "source_table": col["source_table"],
+                "source_column": col["source_column"],
+                "model": col["model"],
+                "vector_count": col["vector_count"],
+                "built_at": col["built_at"] or "—",
+                "dim": col["dim"],
+            }
+    return None
+
+
+def _resolve_collection_cfg(eng: Any, collection_name: str) -> Any:
+    """Return the collection config object from dex.yaml or None."""
+    ai_cfg = getattr(eng.config, "ai", None)
+    collections_cfg = getattr(ai_cfg, "collections", None) or {}
+    if hasattr(collections_cfg, "get"):
+        return collections_cfg.get(collection_name)
+    for k, v in collections_cfg.items() if hasattr(collections_cfg, "items") else []:
+        if str(k) == collection_name:
+            return v
     return None
 
 

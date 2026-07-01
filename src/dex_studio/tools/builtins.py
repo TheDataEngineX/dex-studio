@@ -250,7 +250,6 @@ def _tool_finetune(  # noqa: C901
     model_name: str = "",
 ) -> dict[str, Any]:
     """Train a sklearn model on a gold table and register it."""
-    import contextlib as _ctx
 
     result: dict[str, Any] = {
         "feature_set": feature_set,
@@ -343,22 +342,18 @@ def _tool_finetune(  # noqa: C901
         with open(artifact_path, "wb") as f:
             pickle.dump(model, f)
 
-        registry_path = eng.project_dir / ".dex" / "models" / "registry.json"
-        import json as _json
+        try:
+            from dex_studio.studio_db import get_studio_db
 
-        reg: dict[str, list[Any]] = {}
-        with _ctx.suppress(Exception):
-            reg = _json.loads(registry_path.read_text())
-        reg.setdefault(reg_name, []).append(
-            {
-                "artifact_path": str(artifact_path),
-                "stage": "development",
-                "algorithm": algorithm,
-                "feature_names": feature_cols,
-                "target": target,
-            }
-        )
-        registry_path.write_text(_json.dumps(reg, indent=2))
+            sdb = get_studio_db(eng)
+            if sdb:
+                sdb.add_model_registry_entry(
+                    model_name=reg_name, artifact_path=str(artifact_path),
+                    stage="development", algorithm=algorithm,
+                    feature_names=feature_cols, target=target,
+                )
+        except Exception:
+            pass
 
         result.update(
             {

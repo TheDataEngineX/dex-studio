@@ -13,7 +13,7 @@ from typing import Any
 
 import structlog
 
-from dex_studio.studio_db import StudioDb
+from dex_studio.studio_db import PgStudioDb, StudioDb
 from dex_studio.watermark import WatermarkStore
 
 __all__ = ["BackfillEngine"]
@@ -24,7 +24,7 @@ log = structlog.get_logger().bind(src="backfill")
 class BackfillEngine:
     """Resets watermarks and re-triggers pipelines for historical re-ingestion."""
 
-    def __init__(self, eng: Any, db: StudioDb) -> None:
+    def __init__(self, eng: Any, db: StudioDb | PgStudioDb) -> None:
         self._eng = eng
         self._db = db
         self._store = WatermarkStore(db)

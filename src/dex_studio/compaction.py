@@ -20,7 +20,7 @@ from typing import Any
 
 import structlog
 
-from dex_studio.studio_db import StudioDb
+from dex_studio.studio_db import PgStudioDb, StudioDb
 
 __all__ = ["CompactionEngine", "CompactionResult"]
 
@@ -69,7 +69,7 @@ class CompactionResult:
 class CompactionEngine:
     """Merges small parquet files in a layer directory into one optimised file."""
 
-    def __init__(self, project_dir: Path, db: StudioDb) -> None:
+    def __init__(self, project_dir: Path, db: StudioDb | PgStudioDb) -> None:
         self._root = project_dir / ".dex" / "lakehouse"
         self._db = db
 

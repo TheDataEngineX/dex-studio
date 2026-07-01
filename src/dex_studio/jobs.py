@@ -169,12 +169,15 @@ def _run(name: str) -> None:
     error_msg = ""
     run_id: int | None = None
     sdb = None
+    lock_held = False
     try:
         eng = get_engine()
         if eng is not None:
             with contextlib.suppress(Exception):
                 sdb = get_studio_db(eng)
                 if sdb is not None:
+                    # Acquire cross-pod lock so manual runs also coordinate
+                    lock_held = sdb.acquire_lock(name)
                     run_id = sdb.start_run(name, triggered_by="manual")
             eng.run_pipeline(name)
             status = "success"
@@ -189,3 +192,6 @@ def _run(name: str) -> None:
         if sdb is not None and run_id is not None:
             with contextlib.suppress(Exception):
                 sdb.finish_run(run_id, "success" if status == "success" else "failed", error_msg)
+        if lock_held and sdb is not None:
+            with contextlib.suppress(Exception):
+                sdb.release_lock(name)

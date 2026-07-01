@@ -14,7 +14,7 @@ from typing import Any
 
 import structlog
 
-from dex_studio.studio_db import StudioDb
+from dex_studio.studio_db import PgStudioDb, StudioDb
 
 __all__ = ["SchemaEvolutionManager", "DriftEvent"]
 
@@ -51,7 +51,7 @@ class DriftEvent:
 class SchemaEvolutionManager:
     """Detects schema drift and stores contracts for lakehouse pipelines."""
 
-    def __init__(self, project_dir: Path, db: StudioDb) -> None:
+    def __init__(self, project_dir: Path, db: StudioDb | PgStudioDb) -> None:
         self._root = project_dir / ".dex" / "lakehouse"
         self._db = db
 

@@ -31,7 +31,7 @@ import yaml
 from croniter import croniter  # type: ignore[import-untyped]
 from dataenginex.data.pipeline.dag import build_dag, downstream_of, root_pipelines
 
-from dex_studio.studio_db import StudioDb, get_studio_db
+from dex_studio.studio_db import PgStudioDb, StudioDb, get_studio_db
 from dex_studio.watermark import WatermarkStore
 
 log = structlog.get_logger().bind(src="scheduler")
@@ -115,7 +115,7 @@ def _secs_until_next(cron_expr: str, last_run: datetime | None) -> float:
 # ── Studio DB singleton ───────────────────────────────────────────────────────
 
 
-def _get_or_create_studio_db(eng: Any) -> StudioDb | None:
+def _get_or_create_studio_db(eng: Any) -> StudioDb | PgStudioDb | None:
     """Thin wrapper — delegates to the shared get_studio_db() singleton."""
     return get_studio_db(eng)
 
@@ -143,7 +143,7 @@ def _fire_completion_signals(eng: Any, name: str, cfg: SchedulerConfig) -> None:
 def _post_success_hooks(
     eng: Any,
     name: str,
-    db: StudioDb,
+    db: StudioDb | PgStudioDb,
     cfg: SchedulerConfig,
     dag: dict[str, list[str]],
     run_ts: datetime,
@@ -175,7 +175,7 @@ def _post_success_hooks(
 def _run_one_pipeline(
     eng: Any,
     name: str,
-    db: StudioDb,
+    db: StudioDb | PgStudioDb,
     cfg: SchedulerConfig,
     dag: dict[str, list[str]],
     _visited: frozenset[str] | None = None,
@@ -231,7 +231,7 @@ def _run_one_pipeline(
             log.info("retry scheduled", pipeline=name, backoff_s=cfg.retry_backoff_s)
 
 
-def _should_fire(name: str, pipe_cfg: Any, db: StudioDb, now: datetime) -> bool:
+def _should_fire(name: str, pipe_cfg: Any, db: StudioDb | PgStudioDb, now: datetime) -> bool:
     """True if this root pipeline is due and not already locked."""
     if not getattr(pipe_cfg, "schedule", ""):
         return False
@@ -244,7 +244,7 @@ def _should_fire(name: str, pipe_cfg: Any, db: StudioDb, now: datetime) -> bool:
 def _fire_retries(
     eng: Any,
     cfg: SchedulerConfig,
-    db: StudioDb,
+    db: StudioDb | PgStudioDb,
     dag: dict[str, list[str]],
     pipelines: dict[str, Any],
     now: datetime,
@@ -269,7 +269,7 @@ def _fire_retries(
 
 
 def _compute_next_tick(
-    db: StudioDb,
+    db: StudioDb | PgStudioDb,
     dag: dict[str, list[str]],
     pipelines: dict[str, Any],
 ) -> int:
@@ -288,7 +288,7 @@ def _compute_next_tick(
 def _run_due_pipelines(
     eng: Any,
     cfg: SchedulerConfig,
-    db: StudioDb,
+    db: StudioDb | PgStudioDb,
     epoch: datetime,
     ran_cb: Callable[[str], None] | None = None,
 ) -> int:
@@ -326,7 +326,7 @@ def _pipeline_sched_row(
     eng: Any,
     name: str,
     pipe_cfg: Any,
-    db: StudioDb | None,
+    db: StudioDb | PgStudioDb | None,
     locked: list[str],
     dead: list[dict[str, Any]],
     retry_states: dict[str, dict[str, Any]],
@@ -480,6 +480,14 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
 
 
 def start_scheduler(app: Any) -> None:
+    from dex_studio._engine import get_engine
+
+    eng = get_engine()
+    if eng:
+        db = get_studio_db(eng)
+        if db and not db.try_scheduler_leadership():
+            log.info("not scheduler leader — another pod holds the lock")
+            return
     stop_event = asyncio.Event()
     task: asyncio.Task[None] = asyncio.create_task(scheduler_loop(stop_event), name="dex-scheduler")
     app.state.scheduler_stop_event = stop_event
@@ -495,4 +503,11 @@ async def stop_scheduler(app: Any) -> None:
     if task:
         with contextlib.suppress(TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=5.0)
+    from dex_studio._engine import get_engine
+
+    eng = get_engine()
+    if eng:
+        db = get_studio_db(eng)
+        if db:
+            db.release_scheduler_leadership()
     log.info("background scheduler stopped")
