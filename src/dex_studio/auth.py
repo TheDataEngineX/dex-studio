@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import os
 import secrets
 import threading
 import time
-from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from starlette.requests import HTTPConnection
 
 SESSION_COOKIE = "dex_session"
-_DATA_DIR = Path(os.environ.get("DEX_STUDIO_DATA_DIR", "")) or Path.home() / ".dex-studio"
-_HASH_FILE = _DATA_DIR / "auth.hash"
 
 _PBKDF2_ITERS = 600_000
 MIN_PASSWORD_LEN = 8
@@ -82,20 +80,34 @@ def _generate_password() -> str:
 
 
 def has_password() -> bool:
-    """Return True if a password is configured (hash file exists with content)."""
-    return _HASH_FILE.exists() and bool(_HASH_FILE.read_text().strip())
+    """Return True if a password is configured (env var or DB hash)."""
+    if os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip():
+        return True
+    from dex_studio import db_store
+
+    return db_store.get_setting("auth.hash") is not None
 
 
 def set_password(password: str) -> None:
-    """Hash and persist a user-chosen password to the hash file."""
-    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _HASH_FILE.write_text(_hash_password(password))
-    _HASH_FILE.chmod(0o600)
+    """Hash and persist a user-chosen password to the database."""
+    from dex_studio import db_store
+
+    db_store.set_setting("auth.hash", _hash_password(password))
 
 
 def reset_password() -> None:
-    """Unlink the password hash file, clearing all authentication."""
-    _HASH_FILE.unlink(missing_ok=True)
+    """Clear the stored password hash.
+
+    Raises RuntimeError when DEX_STUDIO_PASSPHRASE env var is set,
+    because the env-var password cannot be mutated at runtime.
+    """
+    if os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip():
+        raise RuntimeError(
+            "Cannot reset password when DEX_STUDIO_PASSPHRASE is set via environment"
+        )
+    from dex_studio import db_store
+
+    db_store.delete_setting("auth.hash")
 
 
 def setup_password() -> None:
@@ -107,12 +119,12 @@ def setup_password() -> None:
     """
     if os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip():
         return
-    if _HASH_FILE.exists() and _HASH_FILE.read_text().strip():
+    from dex_studio import db_store
+
+    if db_store.get_setting("auth.hash") is not None:
         return
     password = _generate_password()
-    _HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _HASH_FILE.write_text(_hash_password(password))
-    _HASH_FILE.chmod(0o600)
+    db_store.set_setting("auth.hash", _hash_password(password))
 
 
 def is_authenticated(request: HTTPConnection) -> bool:
@@ -128,12 +140,19 @@ def auth_required(request: Request) -> RedirectResponse | None:
 
 
 def validate_and_login(request: Request, submitted: str) -> bool:
-    """Verify submitted password against stored PBKDF2 hash; set session on success."""
+    """Verify submitted password against env var or stored PBKDF2 hash; set session on success."""
     submitted = submitted.strip()
     ok = False
-    if _HASH_FILE.exists():
-        stored = _HASH_FILE.read_text().strip()
-        ok = bool(stored) and _verify_password(submitted, stored)
+
+    passphrase = os.environ.get("DEX_STUDIO_PASSPHRASE", "").strip()
+    if passphrase:
+        ok = hmac.compare_digest(submitted.encode(), passphrase.encode())
+    else:
+        from dex_studio import db_store
+
+        stored = db_store.get_setting("auth.hash")
+        ok = stored is not None and _verify_password(submitted, stored)
+
     if ok:
         request.session["authenticated"] = True
     return ok
@@ -144,9 +163,25 @@ def logout(request: Request) -> None:
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Return the real client IP for rate-limiting purposes.
+
+    ``X-Forwarded-For`` is only trusted when ``DEX_TRUSTED_PROXIES`` env var
+    is set to a positive integer (the number of trusted reverse-proxy hops).
+    Without it, an attacker can spoof the header to bypass rate limiting.
+    """
+    trusted_hops = 0
+    with contextlib.suppress(ValueError):
+        trusted_hops = int(os.environ.get("DEX_TRUSTED_PROXIES", "0"))
+
+    if trusted_hops > 0:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",")]
+            # The rightmost N−1 hops are added by trusted proxies;
+            # the leftmost is the originating client.
+            idx = max(0, len(parts) - trusted_hops)
+            return parts[idx]
+
     return (request.client.host if request.client else "") or "unknown"
 
 

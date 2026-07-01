@@ -12,6 +12,7 @@ import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -179,18 +180,29 @@ def app_with_routes() -> tuple:
 
 @pytest.fixture(scope="module")
 def authenticated_client(  # noqa: E501
-    real_engine, tmp_path_factory: pytest.TempPathFactory
+    real_engine,
 ) -> Generator[TestClient]:
     import dex_studio._engine as _mod
-    import dex_studio.auth as _auth_mod
+    import dex_studio.db_store as _db
 
     orig_engine = _mod._ENGINE
     _mod._ENGINE = real_engine
 
-    hash_file = tmp_path_factory.mktemp("auth_client") / "auth.hash"
-    hash_file.write_text(_hash_password(_TEST_API_KEY))
-    orig_hash = _auth_mod._HASH_FILE
-    _auth_mod._HASH_FILE = hash_file
+    orig_init_db = _db.init_db
+    orig_get_setting = _db.get_setting
+    orig_set_setting = _db.set_setting
+    orig_delete_setting = _db.delete_setting
+    orig_get_projects = _db.get_projects
+    orig_set_project = _db.set_project
+    orig_delete_project = _db.delete_project
+
+    _db.init_db = MagicMock()
+    _db.get_setting = MagicMock(return_value=_hash_password(_TEST_API_KEY))
+    _db.set_setting = MagicMock()
+    _db.delete_setting = MagicMock()
+    _db.get_projects = MagicMock(return_value=[])
+    _db.set_project = MagicMock()
+    _db.delete_project = MagicMock()
 
     os.environ.setdefault("DEX_STUDIO_SESSION_SECRET", "t" * 32)
 
@@ -209,7 +221,13 @@ def authenticated_client(  # noqa: E501
         yield tc
 
     _mod._ENGINE = orig_engine
-    _auth_mod._HASH_FILE = orig_hash
+    _db.init_db = orig_init_db
+    _db.get_setting = orig_get_setting
+    _db.set_setting = orig_set_setting
+    _db.delete_setting = orig_delete_setting
+    _db.get_projects = orig_get_projects
+    _db.set_project = orig_set_project
+    _db.delete_project = orig_delete_project
 
 
 @pytest.fixture(scope="module")

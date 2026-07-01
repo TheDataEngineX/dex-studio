@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Generator
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -52,6 +51,16 @@ def _make_engine_mock() -> MagicMock:
     return eng
 
 
+def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
+
+
 def _reset_rate_limiter() -> None:
     """Clear the module-level rate-limiter singleton between tests.
 
@@ -67,13 +76,11 @@ def _reset_rate_limiter() -> None:
 
 
 @pytest.fixture
-def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with API key set but no session — every request is unauthenticated."""
     _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -84,13 +91,11 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generato
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -168,8 +173,9 @@ class TestSessionFixation:
         resp = authed_client.get("/")
         assert resp.status_code == 200
 
-        # Log out.
-        resp = authed_client.get("/logout")
+        # Log out — include CSRF token from the previous GET.
+        csrf = _extract_csrf(resp.text)
+        resp = authed_client.post("/logout", headers={"X-CSRF-Token": csrf})
         assert resp.status_code in (302, 303)
 
         # Hub should now redirect to login again.
@@ -433,12 +439,10 @@ class TestXSSEscaping:
     """Jinja2 autoescapes by default — injected script tags must not appear raw in HTML."""
 
     def test_xss_pipeline_name_escaped_in_response(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text(_hash_password(_API_KEY))
-        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
 
         xss_name = "<script>alert(1)</script>"
         mock_eng = _make_engine_mock()
@@ -465,12 +469,10 @@ class TestXSSEscaping:
             )
 
     def test_xss_source_name_escaped_in_catalog(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text(_hash_password(_API_KEY))
-        monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
 
         xss_name = '<img src=x onerror=alert("xss")>'
         mock_eng = _make_engine_mock()

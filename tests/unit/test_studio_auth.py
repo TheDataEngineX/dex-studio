@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dex_studio.auth import (
@@ -16,6 +16,8 @@ from dex_studio.auth import (
     set_password,
     setup_password,
 )
+
+_SESSION_SECRET = "t" * 32
 
 
 class TestPasswordHashing:
@@ -56,72 +58,80 @@ class TestGeneratePassword:
 
 
 class TestSetupPassword:
-    def test_noop_when_hash_file_exists(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        original = _hash_password("existing-password")
-        hash_file.write_text(original)
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            setup_password()
-        assert hash_file.read_text().strip() == original
+    def test_noop_when_env_var_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "some-passphrase")
+        mock_set = MagicMock()
+        monkeypatch.setattr("dex_studio.db_store.set_setting", mock_set)
+        setup_password()
+        mock_set.assert_not_called()
 
-    def test_password_auto_generated_on_first_boot(self, tmp_path: Path) -> None:
-        """DEX auto-generates a password on first boot and writes the hash file."""
-        hash_file = tmp_path / "auth.hash"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            setup_password()
-        assert hash_file.exists(), "hash file should be created on first boot"
-        assert hash_file.stat().st_size > 0, "hash file should not be empty"
+    def test_noop_when_db_hash_exists(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        existing = _hash_password("existing-password")
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: existing)
+        mock_set = MagicMock()
+        monkeypatch.setattr("dex_studio.db_store.set_setting", mock_set)
+        setup_password()
+        mock_set.assert_not_called()
+
+    def test_auto_generates_password_on_first_boot(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: None)
+        mock_set = MagicMock()
+        monkeypatch.setattr("dex_studio.db_store.set_setting", mock_set)
+        setup_password()
+        mock_set.assert_called_once()
+        key, stored_hash = mock_set.call_args[0]
+        assert key == "auth.hash"
+        assert len(stored_hash) > 32
 
 
 class TestHasPassword:
-    def test_false_when_no_file(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            assert not has_password()
+    def test_true_when_env_var_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "some-passphrase")
+        assert has_password()
 
-    def test_true_when_hash_file_exists(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text(_hash_password("some-password"))
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            assert has_password()
+    def test_true_when_db_hash_exists(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: _hash_password("pw"))
+        assert has_password()
 
-    def test_false_when_hash_file_empty(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        hash_file.write_text("   ")
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            assert not has_password()
+    def test_false_when_no_env_var_and_no_db_hash(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: None)
+        assert not has_password()
 
 
 class TestSetPassword:
-    def test_writes_verifiable_hash(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
+    def test_writes_verifiable_hash(self) -> None:
+        mock_set = MagicMock()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("dex_studio.db_store.set_setting", mock_set)
             set_password("MyP@ssw0rd!")
-            stored = hash_file.read_text().strip()
-        assert _verify_password("MyP@ssw0rd!", stored)
+        mock_set.assert_called_once()
+        key, stored_hash = mock_set.call_args[0]
+        assert key == "auth.hash"
+        assert _verify_password("MyP@ssw0rd!", stored_hash)
 
-    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "nested" / "dir" / "auth.hash"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
-            set_password("any-password")
-        assert hash_file.exists()
-
-    def test_symbols_and_special_chars(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
+    def test_symbols_and_special_chars(self) -> None:
         pw = "P@$$w0rd!#%^&*()"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
+        mock_set = MagicMock()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("dex_studio.db_store.set_setting", mock_set)
             set_password(pw)
-            stored = hash_file.read_text().strip()
-        assert _verify_password(pw, stored)
+        _, stored_hash = mock_set.call_args[0]
+        assert _verify_password(pw, stored_hash)
 
-    def test_overwrites_existing_password(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with patch("dex_studio.auth._HASH_FILE", hash_file):
+    def test_overwrites_existing_password(self) -> None:
+        mock_set = MagicMock()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("dex_studio.db_store.set_setting", mock_set)
             set_password("old-password")
             set_password("new-password")
-            stored = hash_file.read_text().strip()
-        assert _verify_password("new-password", stored)
-        assert not _verify_password("old-password", stored)
+        assert mock_set.call_count == 2
+        _, hash2 = mock_set.call_args_list[1][0]
+        assert _verify_password("new-password", hash2)
+        assert not _verify_password("old-password", hash2)
 
 
 class TestSessionCookieConstant:
@@ -129,116 +139,112 @@ class TestSessionCookieConstant:
         assert SESSION_COOKIE == "dex_session"
 
 
-def _set_test_hash(tmp_path: Path) -> Path:
-    """Write a known password hash to a temp file and patch auth._HASH_FILE."""
-    hf = tmp_path / "auth.hash"
-    hf.write_text(_hash_password("secret"))
-    return hf
+def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
+    """Patch all db_store functions used during app lifecycle and request handling."""
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
 
 
 class TestAuthRequired:
-    def test_login_page_always_accessible(self) -> None:
-        with patch("dex_studio._engine.get_engine", return_value=None):
-            from dex_studio.app import create_app
+    def test_login_page_always_accessible(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-        client = TestClient(app)
-        resp = client.get("/login")
-        assert resp.status_code == 200
+        assert TestClient(create_app()).get("/login").status_code == 200
 
-    def test_setup_page_accessible_when_no_password(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_setup_page_accessible_when_no_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=None)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.get("/setup")
-        assert resp.status_code == 200
+        assert TestClient(create_app(), follow_redirects=False).get("/setup").status_code == 200
 
-    def test_setup_page_redirects_to_login_when_password_exists(self, tmp_path: Path) -> None:
-        hash_file = _set_test_hash(tmp_path)
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_setup_page_redirects_to_login_when_password_exists(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.get("/setup", follow_redirects=False)
+        resp = TestClient(create_app(), follow_redirects=False).get("/setup")
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers.get("location", "")
 
-    def test_setup_post_saves_password_and_redirects(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_setup_post_saves_password_and_redirects(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: stored.get(k))
+        monkeypatch.setattr(
+            "dex_studio.db_store.set_setting", lambda k, v: stored.__setitem__(k, v)
+        )
+        monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.post("/setup", data={"password": "MyStr0ng#Pass"}, follow_redirects=False)
+        resp = TestClient(create_app(), follow_redirects=False).post(
+            "/setup", data={"password": "MyStr0ng#Pass"}
+        )
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers.get("location", "")
-        assert hash_file.exists()
+        assert "auth.hash" in stored
 
-    def test_setup_post_rejects_short_password(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_setup_post_rejects_short_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=None)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.post("/setup", data={"password": "short"})
-        assert resp.status_code == 200
-        assert not hash_file.exists()
-
-    def test_onboarding_is_public(self, tmp_path: Path) -> None:
-        hash_file = _set_test_hash(tmp_path)
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
-
-            app = create_app()
-            client = TestClient(app)
-            resp = client.get("/onboarding", follow_redirects=False)
+        resp = TestClient(create_app()).post("/setup", data={"password": "short"})
         assert resp.status_code == 200
 
-    def test_protected_route_redirects_when_not_authed(self, tmp_path: Path) -> None:
-        hash_file = _set_test_hash(tmp_path)
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_onboarding_is_public(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.get("/", follow_redirects=False)
+        assert (
+            TestClient(create_app(), follow_redirects=False).get("/onboarding").status_code == 200
+        )
+
+    def test_protected_route_redirects_when_not_authed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
+
+        resp = TestClient(create_app(), follow_redirects=False).get("/")
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers.get("location", "")
 
-    def test_protected_route_redirects_to_setup_when_no_password(self, tmp_path: Path) -> None:
-        hash_file = tmp_path / "auth.hash"
-        with (
-            patch("dex_studio.auth._HASH_FILE", hash_file),
-            patch("dex_studio._engine.get_engine", return_value=None),
-        ):
-            from dex_studio.app import create_app
+    def test_protected_route_redirects_to_setup_when_no_password(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=None)
+        monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
+        from dex_studio.app import create_app
 
-            app = create_app()
-            client = TestClient(app)
-            resp = client.get("/", follow_redirects=False)
+        resp = TestClient(create_app(), follow_redirects=False).get("/")
         assert resp.status_code in (302, 303)
         assert "/setup" in resp.headers.get("location", "")

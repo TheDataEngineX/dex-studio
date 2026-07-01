@@ -6,8 +6,8 @@ logout → reset → re-setup → re-login.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Generator
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +17,16 @@ from dex_studio.auth import _hash_password, clear_rate_limit
 
 _API_KEY = "test-api-key-1234"  # gitleaks:allow
 _SESSION_SECRET = "t" * 32
+
+
+def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
 
 
 def _make_engine_mock() -> MagicMock:
@@ -48,11 +58,10 @@ def _make_engine_mock() -> MagicMock:
 
 
 @pytest.fixture
-def no_password_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def no_password_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with no password set — first-boot state."""
-    hash_file = tmp_path / "auth.hash"
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db(monkeypatch, return_hash=None)
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -62,12 +71,10 @@ def no_password_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Gener
 
 
 @pytest.fixture
-def password_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def password_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Client with a pre-set password but not yet logged in."""
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -150,7 +157,11 @@ class TestLoginLogout:
         assert resp.status_code == 200
 
     def test_logout_clears_session(self, authed_client: TestClient) -> None:
-        resp = authed_client.get("/logout")
+        # Seed CSRF token via a GET request
+        get_resp = authed_client.get("/")
+        csrf = re.search(rb'<meta name="csrf-token" content="([^"]+)"', get_resp.content)
+        headers = {"X-CSRF-Token": csrf.group(1).decode()} if csrf else {}
+        resp = authed_client.post("/logout", headers=headers)
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers["location"]
         resp2 = authed_client.get("/")
@@ -169,32 +180,63 @@ class TestLoginLogout:
 
 
 class TestResetFlow:
-    """Password reset via ?reset=1 query parameter."""
+    """Password reset via reset_password + setup flow."""
 
-    def test_reset_shows_setup_page(self, authed_client: TestClient) -> None:
-        resp = authed_client.get("/setup?reset=1")
-        assert resp.status_code == 200
-        assert b"passphrase" in resp.content.lower() or b"password" in resp.content.lower()
-
-    def test_reset_redirects_session_to_setup(self, authed_client: TestClient) -> None:
-        resp = authed_client.get("/setup?reset=1")
-        assert resp.status_code == 200
-        assert b"passphrase" in resp.content.lower() or b"password" in resp.content.lower()
-
-    def test_old_login_fails_after_reset(self, password_client: TestClient) -> None:
-        password_client.get("/setup?reset=1")
-        clear_rate_limit("test")
-        resp = password_client.post("/login", data={"passphrase": _API_KEY})
+    def test_setup_redirects_to_login_when_password_exists(
+        self, authed_client: TestClient
+    ) -> None:
+        resp = authed_client.get("/setup")
         assert resp.status_code in (302, 303)
-        assert resp.headers["location"] in ("/setup", "/login")
+        assert "/login" in resp.headers.get("location", "")
 
-    def test_setup_after_reset_creates_new_password(self, password_client: TestClient) -> None:
-        password_client.get("/setup?reset=1")
-        new_key = "new-password-4567"
-        resp = password_client.post("/setup", data={"password": new_key})
-        assert resp.status_code in (302, 303)
-        assert resp.headers["location"] in ("/login", "/")
-        clear_rate_limit("test")
-        resp2 = password_client.post("/login", data={"passphrase": new_key})
-        assert resp2.status_code in (302, 303)
-        assert resp2.headers["location"] in ("/", "http://testserver/", "http://localhost/")
+    def test_setup_shows_page_after_reset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=None)
+        mock_eng = _make_engine_mock()
+        with patch("dex_studio._engine.get_engine", return_value=mock_eng):
+            from dex_studio.app import create_app
+
+            app = create_app()
+            client = TestClient(app, follow_redirects=False)
+            resp = client.get("/setup")
+            assert resp.status_code == 200
+            assert b"passphrase" in resp.content.lower() or b"password" in resp.content.lower()
+
+    def test_old_login_fails_when_no_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        _patch_db(monkeypatch, return_hash=None)
+        mock_eng = _make_engine_mock()
+        with patch("dex_studio._engine.get_engine", return_value=mock_eng):
+            from dex_studio.app import create_app
+
+            app = create_app()
+            client = TestClient(app, follow_redirects=False)
+            resp = client.post("/login", data={"passphrase": _API_KEY})
+            assert resp.status_code in (302, 303)
+            assert resp.headers.get("location", "") in ("/login", "/setup")
+
+    def test_setup_after_reset_creates_new_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+        monkeypatch.setattr("dex_studio.db_store.get_setting", lambda k: stored.get(k))
+        monkeypatch.setattr(
+            "dex_studio.db_store.set_setting", lambda k, v: stored.__setitem__(k, v)
+        )
+        monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+        monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+        monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
+        monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+        mock_eng = _make_engine_mock()
+        with patch("dex_studio._engine.get_engine", return_value=mock_eng):
+            from dex_studio.app import create_app
+
+            app = create_app()
+            client = TestClient(app, follow_redirects=False)
+            new_key = "new-password-4567"
+            resp = client.post("/setup", data={"password": new_key})
+            assert resp.status_code in (302, 303)
+            assert resp.headers["location"] in ("/login", "/")
+            clear_rate_limit("test")
+            resp2 = client.post("/login", data={"passphrase": new_key})
+            assert resp2.status_code in (302, 303)
+            assert resp2.headers["location"] in ("/", "http://testserver/", "http://localhost/")

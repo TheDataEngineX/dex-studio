@@ -100,87 +100,7 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  # ── Feature branches → ephemeral dev env ─────────────────────────────────────
-  deploy-dev:
-    name: Deploy Dev
-    needs: [build, security-scan]
-    if: github.ref_name != 'main'
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          repository: TheDataEngineX/infradex
-          ref: main
-          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
-
-      - uses: imranismail/setup-kustomize@v3.0.0
-
-      - name: Create or update dev overlay
-        env:
-          SLUG: ${{ needs.build.outputs.branch_slug }}
-          SHA: ${{ needs.build.outputs.short_sha }}
-        run: |
-          OVERLAY="argocd/dev/dex-studio/$SLUG"
-          mkdir -p "$OVERLAY"
-          if [ ! -f "$OVERLAY/kustomization.yaml" ]; then
-            cat > "$OVERLAY/kustomization.yaml" <<YAML
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-          namespace: dex-studio-dev-$SLUG
-          resources:
-            - ../../../base-dex-studio
-          images:
-            - name: ghcr.io/thedataenginex/dex-studio
-              newTag: sha-00000000
-          patches:
-            - target:
-                kind: Deployment
-                name: dex-studio
-              patch: |
-                - op: replace
-                  path: /spec/replicas
-                  value: 1
-                - op: replace
-                  path: /spec/template/spec/containers/0/resources/requests/cpu
-                  value: 100m
-                - op: replace
-                  path: /spec/template/spec/containers/0/resources/requests/memory
-                  value: 256Mi
-                - op: replace
-                  path: /spec/template/spec/containers/0/resources/limits/cpu
-                  value: 250m
-                - op: replace
-                  path: /spec/template/spec/containers/0/resources/limits/memory
-                  value: 1Gi
-            - target:
-                kind: Ingress
-                name: dex-studio
-              patch: |
-                - op: replace
-                  path: /spec/rules/0/host
-                  value: $SLUG.dev.dex-studio.thedataenginex.org
-          commonLabels:
-            environment: dev
-          YAML
-          fi
-          cd "$OVERLAY"
-          kustomize edit set image \
-            ghcr.io/thedataenginex/dex-studio=ghcr.io/thedataenginex/dex-studio:sha-$SHA
-
-      - name: Commit & push to infradex main
-        env:
-          SLUG: ${{ needs.build.outputs.branch_slug }}
-          SHA: ${{ needs.build.outputs.short_sha }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/dev/dex-studio/$SLUG/
-          git diff --staged --quiet || \
-            git commit -m "chore(dex-studio-dev-$SLUG): deploy sha-$SHA"
-          git push
-
-  # ── main branch → prod (PR, not direct push) ────────────────────────────────
+  # ── main branch → prod (PR, not direct push, after merge) ────────────────────────────────
   deploy-prod:
     name: Prod PR
     needs: [build, security-scan]
@@ -210,8 +130,8 @@ jobs:
           GH_TOKEN: ${{ secrets.INFRA_DEPLOY_TOKEN }}
         run: |
           BRANCH="prod-promote-$SHA"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add argocd/overlays/dex-studio-prod/kustomization.yaml
           git diff --staged --quiet && echo "No changes" && exit 0

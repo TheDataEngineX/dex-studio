@@ -81,9 +81,11 @@
       <a href="/system/status" class="rail-icon" data-tip="System health">
         <i data-lucide="heart-pulse" style="width:15px;height:15px"></i>
       </a>
-      <a href="/logout" class="rail-icon" data-tip="Sign out">
-        <i data-lucide="log-out" style="width:15px;height:15px"></i>
-      </a>
+      <form method="post" action="/logout" style="display:contents">
+        <button type="submit" class="rail-icon" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0;width:100%">
+          <i data-lucide="log-out" style="width:15px;height:15px"></i>
+        </button>
+      </form>
     </div>
 
   </nav>
@@ -276,9 +278,11 @@
           <i data-lucide="zap" style="width:15px;height:15px;color:var(--accent-11)"></i>
         </button>
         <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
-        <a href="/logout" data-tip="Sign out" style="text-decoration:none">
-          <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
-        </a>
+        <form method="post" action="/logout" style="display:contents">
+          <button type="submit" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0">
+            <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
+          </button>
+        </form>
       </div>
     </div>
 
@@ -1059,6 +1063,22 @@ globalThis.relativeTime = function (iso) {
       if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }
     }
   };
+}());
+</script>
+<script>
+/* UI prefs — persisted in localStorage, applied on every page load */
+(function () {
+  var w = parseInt(localStorage.getItem('dex_window_width') || '0', 10);
+  var h = parseInt(localStorage.getItem('dex_window_height') || '0', 10);
+  /* Window resize listener — debounced at 500 ms */
+  var _resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function () {
+      localStorage.setItem('dex_window_width', String(window.innerWidth));
+      localStorage.setItem('dex_window_height', String(window.innerHeight));
+    }, 500);
+  });
 }());
 </script>
 </body>

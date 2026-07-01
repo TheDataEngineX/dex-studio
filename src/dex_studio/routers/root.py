@@ -28,11 +28,17 @@ from dex_studio.auth import (
     logout,
     rate_limit_blocked,
     record_failed_login,
-    reset_password,
     set_password,
     validate_and_login,
 )
-from dex_studio.routers._deps import ReadDep, WriteDep, _get_csrf_token, base_ctx, render
+from dex_studio.routers._deps import (
+    ReadDep,
+    WriteDep,
+    _get_csrf_token,
+    base_ctx,
+    render,
+    verify_csrf,
+)
 from dex_studio.utils import fmt_run_row
 
 router = APIRouter()
@@ -270,6 +276,7 @@ def onboarding_page(request: Request) -> HTMLResponse:
         "error": request.session.pop("onboarding_error", ""),
         "warnings": request.session.pop("onboarding_warnings", []),
         "default_projects_dir": str(USER_PROJECTS_DIR),
+        "csrf_token": _get_csrf_token(request),
     }
     return render(request, "root/onboarding.html", ctx)
 
@@ -282,6 +289,7 @@ def onboarding_open(
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
+    verify_csrf(request)
     path = config_path.strip()
     if not path:
         request.session["onboarding_error"] = "Enter or select a path to a dex.yaml file."
@@ -315,7 +323,10 @@ def onboarding_create(
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    name = project_name.strip() or "my-project"
+    verify_csrf(request)
+    import re as _re
+
+    name = _re.sub(r"[\x00-\x1f\x7f]", "", project_name.strip())[:64] or "my-project"
     slug = name.lower().replace(" ", "-")
     dest = (
         Path(project_path.strip()).expanduser().resolve()
@@ -402,13 +413,9 @@ def _save_default(config_path: str) -> None:
 
 
 @router.get("/setup", response_class=HTMLResponse, response_model=None)
-def setup_page(request: Request, reset: bool = False) -> HTMLResponse | RedirectResponse:
-    if not reset and has_password():
+def setup_page(request: Request) -> HTMLResponse | RedirectResponse:
+    if has_password():
         return RedirectResponse(url="/login", status_code=303)
-    if reset:
-        reset_password()
-        request.session["setup_error"] = ""
-        log.info("password reset — hash file removed")
     ctx = {
         "request": request,
         "current_path": "/setup",
@@ -457,7 +464,6 @@ def login_page(request: Request) -> HTMLResponse | RedirectResponse:
         "project_name": "DEX Studio",
         "engine_ready": False,
         "error": request.session.pop("login_error", ""),
-        "can_reset": True,
     }
     return render(request, "root/login.html", ctx)
 
@@ -483,8 +489,9 @@ def login_submit(
     return RedirectResponse("/login", status_code=303)
 
 
-@router.get("/logout")
+@router.post("/logout")
 def logout_route(request: Request) -> RedirectResponse:
+    verify_csrf(request)
     log.info("user logged out", ip=request.client.host if request.client else "unknown")
     logout(request)
     return RedirectResponse("/login", status_code=303)

@@ -8,7 +8,6 @@ Strategy:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -46,13 +45,19 @@ def _make_engine_mock() -> MagicMock:
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """TestClient with auth disabled and engine mocked."""
     monkeypatch.delenv("DEX_STUDIO_API_KEY", raising=False)
+    monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "test-passphrase")
+    monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", "test-secret-key-32-chars-xxxxxxx")
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=None))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
 
-        app = create_app()
-        os.environ["DEX_STUDIO_SESSION_SECRET"] = "test-secret-key-32-chars-xxxxxxx"
-        return TestClient(app, raise_server_exceptions=True)
+        return TestClient(create_app(), raise_server_exceptions=True)
 
 
 class TestOnboarding:
@@ -65,7 +70,7 @@ class TestOnboarding:
         assert resp.status_code == 200
 
     def test_logout_redirects(self, client: TestClient) -> None:
-        resp = client.get("/logout", follow_redirects=False)
+        resp = client.post("/logout", follow_redirects=False)
         assert resp.status_code in (302, 303)
 
 

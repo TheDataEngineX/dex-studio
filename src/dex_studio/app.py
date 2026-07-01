@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -58,28 +57,6 @@ TEMPLATES_DIR = _HERE / "templates"
 STATIC_DIR = _HERE / "static"
 
 
-def _session_secret() -> str:
-    """Return or generate a persistent session signing secret."""
-    data_dir = os.environ.get("DEX_STUDIO_DATA_DIR")
-    base = Path(data_dir) if data_dir else Path.home() / ".dex-studio"
-    key_file = base / "session.key"
-    if key_file.exists():
-        return key_file.read_text().strip()
-    key = secrets.token_hex(32)
-    try:
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_text(key)
-        key_file.chmod(0o600)
-    except PermissionError:
-        # Fallback for read-only home dirs (e.g. containers)
-        key_file = Path("/tmp/.dex-studio/session.key")
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        if not key_file.exists():
-            key_file.write_text(key)
-            key_file.chmod(0o600)
-        return key_file.read_text().strip()
-    return key
-
 
 def make_templates() -> Jinja2Templates:
     """Create the Jinja2 environment with custom filters."""
@@ -99,8 +76,10 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     from dex_studio._engine import get_engine
     from dex_studio.auth import setup_password
+    from dex_studio.db_store import init_db
     from dex_studio.scheduler import start_scheduler, stop_scheduler
 
+    init_db()
     setup_password()
     logger.info("DEX Studio starting up", version=__version__, port=7860)
 
@@ -200,23 +179,15 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return HTMLResponse(body, status_code=500)
 
 
-def create_app() -> FastAPI:
-    """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import api, data, intelligence, root, secops, system
-
-    app = FastAPI(
-        title="DEX Studio",
-        description="DataEngineX control plane",
-        version=__version__,
-        docs_url="/api/docs",
-        redoc_url=None,
-        lifespan=_lifespan,
-    )
-
-    _register_exception_handlers(app)
-
-    # ── Session middleware ────────────────────────────────────────────────────
-    secret = os.environ.get("DEX_STUDIO_SESSION_SECRET") or _session_secret()
+def _add_middlewares(app: FastAPI) -> None:
+    """Register session, compression, and HTTP middleware on *app*."""
+    secret = os.environ.get("DEX_STUDIO_SESSION_SECRET")
+    if not secret:
+        raise RuntimeError(
+            "DEX_STUDIO_SESSION_SECRET environment variable is required. "
+            "Set it to a random hex string, e.g.: "
+            "DEX_STUDIO_SESSION_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')"
+        )
     https_only = os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes")
     app.add_middleware(
         SessionMiddleware,
@@ -226,8 +197,6 @@ def create_app() -> FastAPI:
         https_only=https_only,
         same_site="lax",
     )
-
-    # ── Compression (bandwidth) + request timing (latency observability) ──────
     app.add_middleware(_SelectiveGZip, minimum_size=1024)
 
     @app.middleware("http")
@@ -247,6 +216,10 @@ def create_app() -> FastAPI:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        response.headers.setdefault(
             "Content-Security-Policy",
             (
                 "default-src 'self'; "
@@ -259,6 +232,12 @@ def create_app() -> FastAPI:
                 "frame-ancestors 'none';"
             ),
         )
+        if https_only:
+            # 1-year HSTS, include subdomains — only set when TLS is confirmed active
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
         return response
 
     @app.middleware("http")
@@ -274,6 +253,23 @@ def create_app() -> FastAPI:
                 "slow request", path=request.url.path, method=request.method, ms=round(dur_ms)
             )
         return response
+
+
+def create_app() -> FastAPI:
+    """FastAPI application factory — called by uvicorn --factory."""
+    from dex_studio.routers import api, data, intelligence, root, secops, system
+
+    app = FastAPI(
+        title="DEX Studio",
+        description="DataEngineX control plane",
+        version=__version__,
+        docs_url="/api/docs",
+        redoc_url=None,
+        lifespan=_lifespan,
+    )
+
+    _register_exception_handlers(app)
+    _add_middlewares(app)
 
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Generator
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +14,17 @@ from dex_studio.auth import _hash_password
 
 _API_KEY = "test-perf-key-abc"  # gitleaks:allow
 _SESSION_SECRET = "p" * 32
+
+
+def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
+    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
+    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
+    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
+    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
+
 
 _LATENCY_LIMIT_MS = 2000
 _SEQUENTIAL_50_LIMIT_S = 10.0
@@ -61,13 +71,11 @@ def _reset_rate_limiter() -> None:
 
 
 @pytest.fixture
-def perf_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[TestClient]:
+def perf_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """Authenticated TestClient for each performance test."""
     _reset_rate_limiter()
-    hash_file = tmp_path / "auth.hash"
-    hash_file.write_text(_hash_password(_API_KEY))
-    monkeypatch.setattr("dex_studio.auth._HASH_FILE", hash_file)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
+    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
 
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):

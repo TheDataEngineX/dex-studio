@@ -33,7 +33,7 @@ jobs:
           BRANCH=$(gh pr view ${{ inputs.pr_number }} --repo ${{ github.repository }} --json headRefName --jq '.headRefName')
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve image tag from preview
+      - name: Resolve image tag from dev overlay
         id: tag
         run: |
           SLUG=$(echo "${{ steps.pr.outputs.branch }}" \
@@ -42,9 +42,9 @@ jobs:
             | sed 's/[^a-z0-9-]//g' \
             | sed 's/^-*//' | sed 's/-*$//' \
             | cut -c1-50)
-          FILE="argocd/previews/dex-studio/$SLUG/kustomization.yaml"
+          FILE="argocd/dev/dex-studio/$SLUG/kustomization.yaml"
           if [ ! -f "$FILE" ]; then
-            echo "No preview found for branch ${{ steps.pr.outputs.branch }} (slug: $SLUG)"
+            echo "No dev overlay found for branch ${{ steps.pr.outputs.branch }} (slug: $SLUG)"
             exit 1
           fi
           TAG=$(grep 'newTag:' "$FILE" | awk '{print $2}')
@@ -63,8 +63,8 @@ jobs:
           TAG: ${{ steps.tag.outputs.image_tag }}
         run: |
           BRANCH="stage-promote-pr-${{ inputs.pr_number }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add argocd/overlays/dex-studio-stage/
           git diff --staged --quiet && echo "No changes" && exit 0
