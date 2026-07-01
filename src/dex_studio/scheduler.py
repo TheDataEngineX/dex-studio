@@ -454,7 +454,11 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
     log.info("scheduler started", max_tick_s=_MAX_TICK_S)
 
     while not stop_event.is_set():
+        import time as _time
+
         tick_s = _MAX_TICK_S
+        tick_start = _time.monotonic()
+        pipelines_count = 0
         try:
             eng = get_engine()
             if eng is not None:
@@ -462,6 +466,8 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
                 if db is not None:
                     sched_cfg = read_scheduler_config(eng)
                     if sched_cfg.enabled and not db.is_paused():
+                        pipelines_count = len(
+                            eng.config.data.pipelines or {}) if eng.config.data else 0
                         tick_s = await asyncio.to_thread(
                             _run_due_pipelines, eng, sched_cfg, db, datetime.now(UTC)
                         )
@@ -469,6 +475,9 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
                         log.debug("scheduler disabled in dex.yaml — tick skipped")
         except Exception as exc:
             log.error("scheduler tick error", error=str(exc), exc_info=True)
+
+        tick_ms = round((_time.monotonic() - tick_start) * 1000, 1)
+        log.debug("scheduler ticked", pipelines=pipelines_count, ms=tick_ms, next_tick_s=tick_s)
 
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=float(tick_s))

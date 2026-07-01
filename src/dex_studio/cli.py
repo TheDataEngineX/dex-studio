@@ -12,7 +12,21 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class _EnvSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
+
+    database_url: str = ""
+    dex_studio_session_secret: str = ""
+    dex_studio_passphrase: str = ""
+    dex_config_path: str = ""
+    dex_https: bool = False
+    dex_trusted_proxies: int = 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -39,6 +53,12 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0)
 
     import uvicorn
+
+    cfg = _EnvSettings()
+    for k, v in cfg.model_dump().items():
+        os.environ.setdefault(k.upper(), str(v))
+    for k, v in (cfg.__pydantic_extra__ or {}).items():
+        os.environ.setdefault(k.upper(), str(v))
 
     uvicorn.run(
         "dex_studio.app:create_app",

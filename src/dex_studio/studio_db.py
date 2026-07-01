@@ -543,6 +543,20 @@ class StudioDb:
         )
         conn.commit()
 
+    def advance_watermark(self, source: str, candidate: datetime) -> None:
+        """Atomically advance watermark for *source* — no-op if *candidate* <= current."""
+        conn = self._conn()
+        cur = conn.execute(
+            "SELECT watermark FROM watermarks WHERE source=?", [source]
+        ).fetchone()
+        if cur is not None:
+            ts = datetime.fromisoformat(cur[0])
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            if candidate <= ts:
+                return
+        self.set_watermark(source, candidate)
+
     def reset_watermark(self, source: str) -> None:
         conn = self._conn()
         conn.execute("DELETE FROM watermarks WHERE source=?", [source])
@@ -1330,6 +1344,8 @@ class PgStudioDb:
         from sqlalchemy import create_engine
 
         self._engine = create_engine(dsn, pool_size=4, max_overflow=8)
+        self._held_locks: dict[str, Any] = {}
+        self._leader_conn: Any = None
         self._init_schema()
 
     def _conn(self) -> Any:
@@ -1375,12 +1391,17 @@ class PgStudioDb:
             conn.commit()
 
     # ── Run locking (advisory locks for cross-pod safety) ────────────────────
+    # ponytail: each lock holds its own PG connection because advisory locks
+    # are session-scoped — releasing on a different pool connection is a no-op.
+    # Dict lifecycle: acquire_lock() stores conn, release_lock() pops & closes.
 
     def acquire_lock(self, pipeline: str) -> bool:
         from sqlalchemy import text
 
         key = _lock_key(pipeline)
-        with self._conn() as conn:
+        conn = self._engine.connect()
+        conn.execute(text("SET TIME ZONE 'UTC'"))
+        try:
             locked = conn.execute(
                 text("SELECT pg_try_advisory_lock(:key)"), {"key": key}
             ).scalar()
@@ -1391,16 +1412,27 @@ class PgStudioDb:
                     {"p": pipeline, "t": datetime.now(UTC).isoformat()},
                 )
                 conn.commit()
-            return bool(locked)
+                self._held_locks[pipeline] = conn
+                return True
+            conn.close()
+            return False
+        except Exception:
+            conn.close()
+            raise
 
     def release_lock(self, pipeline: str) -> None:
         from sqlalchemy import text
 
-        key = _lock_key(pipeline)
-        with self._conn() as conn:
+        conn = self._held_locks.pop(pipeline, None)
+        if conn is None:
+            return
+        try:
+            key = _lock_key(pipeline)
             conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
             conn.execute(text("DELETE FROM pipeline_locks WHERE pipeline=:p"), {"p": pipeline})
             conn.commit()
+        finally:
+            conn.close()
 
     def clear_stale_locks(self, timeout_s: int = 7200) -> int:
         from sqlalchemy import text
@@ -1652,6 +1684,20 @@ class PgStudioDb:
                      " ON CONFLICT(source) DO UPDATE SET"
                      " watermark=excluded.watermark, updated_at=excluded.updated_at"),
                 {"s": source, "w": ts.isoformat(), "u": datetime.now(UTC).isoformat()},
+            )
+            conn.commit()
+
+    def advance_watermark(self, source: str, candidate: datetime) -> None:
+        """Atomically advance watermark — no-op if *candidate* <= current."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text("INSERT INTO watermarks(source,watermark,updated_at) VALUES(:s,:w,:u)"
+                     " ON CONFLICT(source) DO UPDATE SET"
+                     " watermark=:w, updated_at=:u"
+                     " WHERE watermarks.watermark < :w"),
+                {"s": source, "w": candidate.isoformat(), "u": datetime.now(UTC).isoformat()},
             )
             conn.commit()
 
@@ -2210,25 +2256,40 @@ class PgStudioDb:
         ]
 
     # ── Scheduler leader election (Phase 2) ──────────────────────────────────
+    # ponytail: same session-scoped lock issue as pipeline locks — keep conn.
 
     def try_scheduler_leadership(self) -> bool:
         from sqlalchemy import text
 
         key = _lock_key("dex-studio-scheduler-leader")
-        with self._conn() as conn:
+        conn = self._engine.connect()
+        conn.execute(text("SET TIME ZONE 'UTC'"))
+        try:
             locked = conn.execute(
                 text("SELECT pg_try_advisory_lock(:key)"), {"key": key}
             ).scalar()
             conn.commit()
-        return bool(locked)
+            if locked:
+                self._leader_conn = conn
+                return True
+            conn.close()
+            return False
+        except Exception:
+            conn.close()
+            raise
 
     def release_scheduler_leadership(self) -> None:
         from sqlalchemy import text
 
-        key = _lock_key("dex-studio-scheduler-leader")
-        with self._conn() as conn:
+        conn, self._leader_conn = self._leader_conn, None
+        if conn is None:
+            return
+        try:
+            key = _lock_key("dex-studio-scheduler-leader")
             conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
             conn.commit()
+        finally:
+            conn.close()
 
 
 # ── Process-level singleton accessor ─────────────────────────────────────────

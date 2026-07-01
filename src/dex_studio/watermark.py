@@ -41,10 +41,7 @@ class WatermarkStore:
         log.debug("watermark updated", source=source, ts=ts.isoformat())
 
     def advance_watermark(self, source: str, candidate: datetime) -> None:
-        """Set watermark only if *candidate* is newer than the current value."""
-        current = self.get_watermark(source)
-        if current is None or candidate > current:
-            self.set_watermark(source, candidate)
+        self._db.advance_watermark(source, candidate)
 
     def reset(self, source: str) -> None:
         """Clear watermark and all ingested hashes for *source* (triggers full re-ingest)."""

@@ -5,6 +5,17 @@ All notable changes to `dex-studio` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-30
+
+### Added
+
+- **PostgreSQL dual-backend** (`PgStudioDb`) — when `DATABASE_URL` is set, scheduler state, pipeline locks, run history, watermarks, and schema contracts are stored in Postgres instead of SQLite. Uses `pg_advisory_lock` for cross-pod pipeline mutual exclusion and scheduler leader election.
+- **Multi-pod scheduler leader election** — only one pod runs the scheduler tick when multiple instances share a Postgres database.
+
+### Fixed
+
+- **`jobs.py` — missing `set_last_run()` on manual runs** — background runs triggered via the UI (`run_pipeline_bg`, `run_all_pipelines_bg`) now call `sdb.set_last_run()` on success, so the cron scheduler correctly records last-run timestamps and doesn't re-fire completed pipelines on the next tick.
+
 ## [0.5.0] - 2026-06-23
 
 ### Added

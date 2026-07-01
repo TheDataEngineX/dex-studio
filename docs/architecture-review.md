@@ -77,7 +77,30 @@ Served from `src/dex_studio/static/` at `/static/`.
 
 `src/dex_studio/config.py` manages two files:
 
-- `~/.dex-studio/projects.yaml` — name → dex.yaml path mapping
+- `~/.dex-studio/projects.yaml` — list of `{name, config_path}` entries
 - `~/.dex-studio/prefs.yaml` — UI preferences (theme, window size)
 
 Project switching at runtime calls `init_engine(new_path)` which safely tears down and rebuilds the singleton.
+
+## Persistence Layer (StudioDb)
+
+`src/dex_studio/studio_db.py` provides dual-backend persistent storage for scheduler state, pipeline locks, run history, watermarks, schema contracts, AI traces, and embeddings.
+
+| Backend | When | Class |
+| --- | --- | --- |
+| SQLite (WAL, thread-local connections) | `DATABASE_URL` not set — single-pod default | `StudioDb` |
+| PostgreSQL (SQLAlchemy pool + `pg_advisory_lock`) | `DATABASE_URL` set — multi-pod / production | `PgStudioDb` |
+
+`get_studio_db(eng)` returns the process-level singleton, creating it on first call. Both backends expose the same interface.
+
+Pipeline mutual exclusion: `pipeline_locks` table — SQLite uses `INSERT OR FAIL`; Postgres uses `pg_try_advisory_lock` (session-scoped, held on a dedicated connection until `release_lock`). Scheduler leader election uses the same mechanism (SQLite always returns `True`).
+
+## Scheduler
+
+`src/dex_studio/scheduler.py` runs as an asyncio task alongside FastAPI.
+
+- Root pipelines (no `depends_on`) fire when their cron expression is due (`croniter`).
+- On success, `set_last_run()` is written to `StudioDb` and dependents are triggered recursively.
+- Manual runs via `jobs.py` also call `set_last_run()` on success so cron computes the correct next-fire time.
+- Failed pipelines retry up to `retry.max_attempts` (default 2) with exponential backoff, then move to dead letter.
+- Adaptive tick: sleeps until the next cron fires (capped at 30 s) rather than a fixed interval.
