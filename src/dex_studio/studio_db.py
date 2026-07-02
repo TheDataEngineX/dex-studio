@@ -29,6 +29,7 @@ def _lock_key(name: str) -> int:
 
     return int(hashlib.sha256(name.encode()).hexdigest()[:16], 16) & 0x7FFFFFFFFFFFFFFF
 
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scheduler_state (
     pipeline    TEXT PRIMARY KEY,
@@ -546,9 +547,7 @@ class StudioDb:
     def advance_watermark(self, source: str, candidate: datetime) -> None:
         """Atomically advance watermark for *source* — no-op if *candidate* <= current."""
         conn = self._conn()
-        cur = conn.execute(
-            "SELECT watermark FROM watermarks WHERE source=?", [source]
-        ).fetchone()
+        cur = conn.execute("SELECT watermark FROM watermarks WHERE source=?", [source]).fetchone()
         if cur is not None:
             ts = datetime.fromisoformat(cur[0])
             if ts.tzinfo is None:
@@ -1015,8 +1014,18 @@ class StudioDb:
             "  model=excluded.model, vector_count=excluded.vector_count,"
             "  dim=excluded.dim, duration_s=excluded.duration_s,"
             "  status=excluded.status, built_at=excluded.built_at, updated_at=excluded.updated_at",
-            [name, source_table, source_column, model, vector_count,
-             dim, duration_s, status, now, now],
+            [
+                name,
+                source_table,
+                source_column,
+                model,
+                vector_count,
+                dim,
+                duration_s,
+                status,
+                now,
+                now,
+            ],
         )
         conn.commit()
 
@@ -1047,9 +1056,7 @@ class StudioDb:
         )
         conn.commit()
 
-    def get_vectors(
-        self, collection_name: str
-    ) -> list[dict[str, Any]]:
+    def get_vectors(self, collection_name: str) -> list[dict[str, Any]]:
         import json as _json
 
         rows = (
@@ -1061,16 +1068,16 @@ class StudioDb:
             )
             .fetchall()
         )
-        return [
-            {"row_id": r[0], "source_text": r[1], "embedding": _json.loads(r[2])}
-            for r in rows
-        ]
-
+        return [{"row_id": r[0], "source_text": r[1], "embedding": _json.loads(r[2])} for r in rows]
 
     # ── Quality tests (Phase 5) ─────────────────────────────────────────────
 
     def add_quality_test(
-        self, table_name: str, test_type: str, col_name: str = "", threshold: str = "",
+        self,
+        table_name: str,
+        test_type: str,
+        col_name: str = "",
+        threshold: str = "",
     ) -> int:
         now = datetime.now(UTC).isoformat()
         conn = self._conn()
@@ -1084,7 +1091,8 @@ class StudioDb:
 
     def get_quality_tests(self) -> list[dict[str, Any]]:
         return [
-            dict(r) for r in self._conn()
+            dict(r)
+            for r in self._conn()
             .execute("SELECT * FROM quality_tests ORDER BY created_at DESC")
             .fetchall()
         ]
@@ -1092,8 +1100,12 @@ class StudioDb:
     # ── Model registry (Phase 5) ────────────────────────────────────────────
 
     def add_model_registry_entry(
-        self, model_name: str, artifact_path: str, stage: str = "development",
-        algorithm: str = "", feature_names: list[str] | None = None,
+        self,
+        model_name: str,
+        artifact_path: str,
+        stage: str = "development",
+        algorithm: str = "",
+        feature_names: list[str] | None = None,
         target: str = "",
     ) -> int:
         import json as _json
@@ -1104,8 +1116,15 @@ class StudioDb:
             "INSERT INTO model_registry_entries"
             " (model_name, artifact_path, stage, algorithm, feature_names, target, created_at)"
             " VALUES(?,?,?,?,?,?,?)",
-            [model_name, artifact_path, stage, algorithm,
-             _json.dumps(feature_names or []), target, now],
+            [
+                model_name,
+                artifact_path,
+                stage,
+                algorithm,
+                _json.dumps(feature_names or []),
+                target,
+                now,
+            ],
         )
         conn.commit()
         return cur.lastrowid or 0
@@ -1115,9 +1134,7 @@ class StudioDb:
 
         rows = (
             self._conn()
-            .execute(
-                "SELECT * FROM model_registry_entries ORDER BY model_name, created_at DESC"
-            )
+            .execute("SELECT * FROM model_registry_entries ORDER BY model_name, created_at DESC")
             .fetchall()
         )
         return [
@@ -1132,6 +1149,7 @@ class StudioDb:
 
     def release_scheduler_leadership(self) -> None:
         pass
+
 
 # ── PostgreSQL schema ──────────────────────────────────────────────────────────
 
@@ -1384,8 +1402,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO scheduler_state(pipeline,last_run_at) VALUES(:p,:t)"
-                     " ON CONFLICT(pipeline) DO UPDATE SET last_run_at=excluded.last_run_at"),
+                text(
+                    "INSERT INTO scheduler_state(pipeline,last_run_at) VALUES(:p,:t)"
+                    " ON CONFLICT(pipeline) DO UPDATE SET last_run_at=excluded.last_run_at"
+                ),
                 {"p": pipeline, "t": ts.isoformat()},
             )
             conn.commit()
@@ -1402,13 +1422,13 @@ class PgStudioDb:
         conn = self._engine.connect()
         conn.execute(text("SET TIME ZONE 'UTC'"))
         try:
-            locked = conn.execute(
-                text("SELECT pg_try_advisory_lock(:key)"), {"key": key}
-            ).scalar()
+            locked = conn.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar()
             if locked:
                 conn.execute(
-                    text("INSERT INTO pipeline_locks(pipeline,locked_at) VALUES(:p,:t)"
-                         " ON CONFLICT(pipeline) DO UPDATE SET locked_at=excluded.locked_at"),
+                    text(
+                        "INSERT INTO pipeline_locks(pipeline,locked_at) VALUES(:p,:t)"
+                        " ON CONFLICT(pipeline) DO UPDATE SET locked_at=excluded.locked_at"
+                    ),
                     {"p": pipeline, "t": datetime.now(UTC).isoformat()},
                 )
                 conn.commit()
@@ -1461,8 +1481,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             row = conn.execute(
-                text("SELECT attempts, next_retry_at, state"
-                     " FROM pipeline_run_state WHERE pipeline=:p"),
+                text(
+                    "SELECT attempts, next_retry_at, state"
+                    " FROM pipeline_run_state WHERE pipeline=:p"
+                ),
                 {"p": pipeline},
             ).fetchone()
         if row is None:
@@ -1474,11 +1496,13 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO pipeline_run_state(pipeline, attempts, next_retry_at, state)"
-                     " VALUES(:p, 1, :n, 'retrying')"
-                     " ON CONFLICT(pipeline) DO UPDATE SET"
-                     "   attempts = pipeline_run_state.attempts + 1,"
-                     "   next_retry_at = :n, state = 'retrying'"),
+                text(
+                    "INSERT INTO pipeline_run_state(pipeline, attempts, next_retry_at, state)"
+                    " VALUES(:p, 1, :n, 'retrying')"
+                    " ON CONFLICT(pipeline) DO UPDATE SET"
+                    "   attempts = pipeline_run_state.attempts + 1,"
+                    "   next_retry_at = :n, state = 'retrying'"
+                ),
                 {"p": pipeline, "n": next_retry_at.isoformat()},
             )
             conn.commit()
@@ -1492,10 +1516,12 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO pipeline_run_state(pipeline, attempts, next_retry_at, state)"
-                     " VALUES(:p, 0, NULL, 'dead')"
-                     " ON CONFLICT(pipeline) DO UPDATE SET"
-                     "   next_retry_at = NULL, state = 'dead'"),
+                text(
+                    "INSERT INTO pipeline_run_state(pipeline, attempts, next_retry_at, state)"
+                    " VALUES(:p, 0, NULL, 'dead')"
+                    " ON CONFLICT(pipeline) DO UPDATE SET"
+                    "   next_retry_at = NULL, state = 'dead'"
+                ),
                 {"p": pipeline},
             )
             conn.commit()
@@ -1512,28 +1538,38 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT pipeline, attempts, next_retry_at, state"
-                     " FROM pipeline_run_state WHERE state != 'idle'")
+                text(
+                    "SELECT pipeline, attempts, next_retry_at, state"
+                    " FROM pipeline_run_state WHERE state != 'idle'"
+                )
             ).fetchall()
         return [
-            {"pipeline": r[0], "attempts": r[1], "next_retry_at": r[2], "state": r[3]}
-            for r in rows
+            {"pipeline": r[0], "attempts": r[1], "next_retry_at": r[2], "state": r[3]} for r in rows
         ]
 
     # ── Pipeline run history ─────────────────────────────────────────────────
 
     def start_run(
-        self, pipeline: str, triggered_by: str = "scheduler", request_id: str = "",
+        self,
+        pipeline: str,
+        triggered_by: str = "scheduler",
+        request_id: str = "",
     ) -> int:
         from sqlalchemy import text
 
-        sql = ("INSERT INTO pipeline_runs(pipeline, started_at, status, triggered_by, request_id)"
-               " VALUES(:p, :t, 'running', :tr, :r) RETURNING id")
+        sql = (
+            "INSERT INTO pipeline_runs(pipeline, started_at, status, triggered_by, request_id)"
+            " VALUES(:p, :t, 'running', :tr, :r) RETURNING id"
+        )
         with self._conn() as conn:
             row = conn.execute(
                 text(sql),
-                {"p": pipeline, "t": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f"),
-                 "tr": triggered_by, "r": request_id or ""},
+                {
+                    "p": pipeline,
+                    "t": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                    "tr": triggered_by,
+                    "r": request_id or "",
+                },
             ).fetchone()
             conn.commit()
         return row[0] if row else 0
@@ -1548,17 +1584,22 @@ class PgStudioDb:
             ).fetchone()
             started = (
                 datetime.fromisoformat(row[0]).replace(tzinfo=UTC)  # type: ignore[union-attr]
-                if row else None
+                if row
+                else None
             )
-            duration_s = (
-                round((finished - started).total_seconds(), 2)
-                if started else None
-            )
+            duration_s = round((finished - started).total_seconds(), 2) if started else None
             conn.execute(
-                text("UPDATE pipeline_runs SET finished_at=:f, status=:s, error=:e, duration_s=:d"
-                     " WHERE id=:id"),
-                {"f": finished.strftime("%Y-%m-%dT%H:%M:%S.%f"),
-                 "s": status, "e": error or "", "d": duration_s, "id": run_id},
+                text(
+                    "UPDATE pipeline_runs SET finished_at=:f, status=:s, error=:e, duration_s=:d"
+                    " WHERE id=:id"
+                ),
+                {
+                    "f": finished.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                    "s": status,
+                    "e": error or "",
+                    "d": duration_s,
+                    "id": run_id,
+                },
             )
             conn.commit()
 
@@ -1568,23 +1609,31 @@ class PgStudioDb:
         with self._conn() as conn:
             if pipeline:
                 rows = conn.execute(
-                    text("SELECT id,pipeline,started_at,finished_at,status,error,"
-                         "triggered_by,duration_s,request_id"
-                         " FROM pipeline_runs WHERE pipeline=:p"
-                         " ORDER BY started_at DESC LIMIT :lim"),
+                    text(
+                        "SELECT id,pipeline,started_at,finished_at,status,error,"
+                        "triggered_by,duration_s,request_id"
+                        " FROM pipeline_runs WHERE pipeline=:p"
+                        " ORDER BY started_at DESC LIMIT :lim"
+                    ),
                     {"p": pipeline, "lim": limit},
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    text("SELECT id,pipeline,started_at,finished_at,status,error,"
-                         "triggered_by,duration_s,request_id"
-                         " FROM pipeline_runs ORDER BY started_at DESC LIMIT :lim"),
+                    text(
+                        "SELECT id,pipeline,started_at,finished_at,status,error,"
+                        "triggered_by,duration_s,request_id"
+                        " FROM pipeline_runs ORDER BY started_at DESC LIMIT :lim"
+                    ),
                     {"lim": limit},
                 ).fetchall()
         return [
             {
-                "id": r[0], "pipeline": r[1], "started_at": r[2],
-                "finished_at": r[3], "status": r[4], "error": r[5] or "",
+                "id": r[0],
+                "pipeline": r[1],
+                "started_at": r[2],
+                "finished_at": r[3],
+                "status": r[4],
+                "error": r[5] or "",
                 "triggered_by": r[6],
                 "duration_s": round(r[7], 2) if r[7] is not None else None,
                 "request_id": r[8] or "",
@@ -1597,8 +1646,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             result = conn.execute(
-                text("DELETE FROM pipeline_runs WHERE id NOT IN"
-                     " (SELECT id FROM pipeline_runs ORDER BY started_at DESC LIMIT :k)"),
+                text(
+                    "DELETE FROM pipeline_runs WHERE id NOT IN"
+                    " (SELECT id FROM pipeline_runs ORDER BY started_at DESC LIMIT :k)"
+                ),
                 {"k": keep},
             )
             conn.commit()
@@ -1612,10 +1663,11 @@ class PgStudioDb:
         with self._conn() as conn:
             conn.execute(text("DELETE FROM dead_letter_runs WHERE pipeline=:p"), {"p": pipeline})
             conn.execute(
-                text("INSERT INTO dead_letter_runs(pipeline,error,attempts,recorded_at)"
-                     " VALUES(:p,:e,:a,:r)"),
-                {"p": pipeline, "e": error, "a": attempts,
-                 "r": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO dead_letter_runs(pipeline,error,attempts,recorded_at)"
+                    " VALUES(:p,:e,:a,:r)"
+                ),
+                {"p": pipeline, "e": error, "a": attempts, "r": datetime.now(UTC).isoformat()},
             )
             conn.commit()
 
@@ -1624,12 +1676,13 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT pipeline,error,attempts,recorded_at"
-                     " FROM dead_letter_runs ORDER BY recorded_at DESC")
+                text(
+                    "SELECT pipeline,error,attempts,recorded_at"
+                    " FROM dead_letter_runs ORDER BY recorded_at DESC"
+                )
             ).fetchall()
         return [
-            {"pipeline": r[0], "error": r[1], "attempts": r[2], "recorded_at": r[3]}
-            for r in rows
+            {"pipeline": r[0], "error": r[1], "attempts": r[2], "recorded_at": r[3]} for r in rows
         ]
 
     def clear_dead_letter(self, pipeline: str) -> None:
@@ -1655,8 +1708,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO scheduler_settings(key,value) VALUES('paused',:v)"
-                     " ON CONFLICT(key) DO UPDATE SET value=excluded.value"),
+                text(
+                    "INSERT INTO scheduler_settings(key,value) VALUES('paused',:v)"
+                    " ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+                ),
                 {"v": "1" if paused else "0"},
             )
             conn.commit()
@@ -1680,9 +1735,11 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO watermarks(source,watermark,updated_at) VALUES(:s,:w,:u)"
-                     " ON CONFLICT(source) DO UPDATE SET"
-                     " watermark=excluded.watermark, updated_at=excluded.updated_at"),
+                text(
+                    "INSERT INTO watermarks(source,watermark,updated_at) VALUES(:s,:w,:u)"
+                    " ON CONFLICT(source) DO UPDATE SET"
+                    " watermark=excluded.watermark, updated_at=excluded.updated_at"
+                ),
                 {"s": source, "w": ts.isoformat(), "u": datetime.now(UTC).isoformat()},
             )
             conn.commit()
@@ -1693,10 +1750,12 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO watermarks(source,watermark,updated_at) VALUES(:s,:w,:u)"
-                     " ON CONFLICT(source) DO UPDATE SET"
-                     " watermark=:w, updated_at=:u"
-                     " WHERE watermarks.watermark < :w"),
+                text(
+                    "INSERT INTO watermarks(source,watermark,updated_at) VALUES(:s,:w,:u)"
+                    " ON CONFLICT(source) DO UPDATE SET"
+                    " watermark=:w, updated_at=:u"
+                    " WHERE watermarks.watermark < :w"
+                ),
                 {"s": source, "w": candidate.isoformat(), "u": datetime.now(UTC).isoformat()},
             )
             conn.commit()
@@ -1714,12 +1773,14 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT w.source, w.watermark, w.updated_at,"
-                     " COUNT(h.content_hash) AS hash_count"
-                     " FROM watermarks w"
-                     " LEFT JOIN ingested_hashes h ON h.source = w.source"
-                     " GROUP BY w.source, w.watermark, w.updated_at"
-                     " ORDER BY w.source")
+                text(
+                    "SELECT w.source, w.watermark, w.updated_at,"
+                    " COUNT(h.content_hash) AS hash_count"
+                    " FROM watermarks w"
+                    " LEFT JOIN ingested_hashes h ON h.source = w.source"
+                    " GROUP BY w.source, w.watermark, w.updated_at"
+                    " ORDER BY w.source"
+                )
             ).fetchall()
         return [
             {"source": r[0], "watermark": r[1], "updated_at": r[2], "hash_count": r[3]}
@@ -1731,8 +1792,7 @@ class PgStudioDb:
 
         with self._conn() as conn:
             row = conn.execute(
-                text("SELECT 1 FROM ingested_hashes"
-                     " WHERE source=:s AND content_hash=:h"),
+                text("SELECT 1 FROM ingested_hashes WHERE source=:s AND content_hash=:h"),
                 {"s": source, "h": content_hash},
             ).fetchone()
         return row is not None
@@ -1742,8 +1802,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO ingested_hashes(source,content_hash,ingested_at)"
-                     " VALUES(:s,:h,:t) ON CONFLICT DO NOTHING"),
+                text(
+                    "INSERT INTO ingested_hashes(source,content_hash,ingested_at)"
+                    " VALUES(:s,:h,:t) ON CONFLICT DO NOTHING"
+                ),
                 {"s": source, "h": content_hash, "t": datetime.now(UTC).isoformat()},
             )
             conn.commit()
@@ -1780,12 +1842,13 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO schema_contracts(pipeline,columns_json,recorded_at)"
-                     " VALUES(:p,:c,:r)"
-                     " ON CONFLICT(pipeline) DO UPDATE SET"
-                     " columns_json=excluded.columns_json, recorded_at=excluded.recorded_at"),
-                {"p": pipeline, "c": _json.dumps(columns),
-                 "r": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO schema_contracts(pipeline,columns_json,recorded_at)"
+                    " VALUES(:p,:c,:r)"
+                    " ON CONFLICT(pipeline) DO UPDATE SET"
+                    " columns_json=excluded.columns_json, recorded_at=excluded.recorded_at"
+                ),
+                {"p": pipeline, "c": _json.dumps(columns), "r": datetime.now(UTC).isoformat()},
             )
             conn.commit()
 
@@ -1796,10 +1859,11 @@ class PgStudioDb:
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO schema_drift_events(pipeline,drift_json,detected_at)"
-                     " VALUES(:p,:d,:t)"),
-                {"p": pipeline, "d": _json.dumps(drift),
-                 "t": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO schema_drift_events(pipeline,drift_json,detected_at)"
+                    " VALUES(:p,:d,:t)"
+                ),
+                {"p": pipeline, "d": _json.dumps(drift), "t": datetime.now(UTC).isoformat()},
             )
             conn.commit()
 
@@ -1811,19 +1875,28 @@ class PgStudioDb:
         with self._conn() as conn:
             if pipeline:
                 rows = conn.execute(
-                    text("SELECT id,pipeline,drift_json,detected_at,accepted"
-                         " FROM schema_drift_events WHERE pipeline=:p"
-                         " ORDER BY detected_at DESC"),
+                    text(
+                        "SELECT id,pipeline,drift_json,detected_at,accepted"
+                        " FROM schema_drift_events WHERE pipeline=:p"
+                        " ORDER BY detected_at DESC"
+                    ),
                     {"p": pipeline},
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    text("SELECT id,pipeline,drift_json,detected_at,accepted"
-                         " FROM schema_drift_events ORDER BY detected_at DESC LIMIT 200")
+                    text(
+                        "SELECT id,pipeline,drift_json,detected_at,accepted"
+                        " FROM schema_drift_events ORDER BY detected_at DESC LIMIT 200"
+                    )
                 ).fetchall()
         return [
-            {"id": r[0], "pipeline": r[1], "drift": _json.loads(r[2]),
-             "detected_at": r[3], "accepted": bool(r[4])}
+            {
+                "id": r[0],
+                "pipeline": r[1],
+                "drift": _json.loads(r[2]),
+                "detected_at": r[3],
+                "accepted": bool(r[4]),
+            }
             for r in rows
         ]
 
@@ -1839,19 +1912,32 @@ class PgStudioDb:
     # ── Compaction runs ──────────────────────────────────────────────────────
 
     def record_compaction(
-        self, pipeline: str, files_before: int, files_after: int,
-        bytes_before: int, bytes_after: int, duration_s: float,
+        self,
+        pipeline: str,
+        files_before: int,
+        files_after: int,
+        bytes_before: int,
+        bytes_after: int,
+        duration_s: float,
     ) -> None:
         from sqlalchemy import text
 
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO compaction_runs"
-                     "(pipeline,files_before,files_after,bytes_before,bytes_after,duration_s,ran_at)"
-                     " VALUES(:p,:fb,:fa,:bb,:ba,:d,:r)"),
-                {"p": pipeline, "fb": files_before, "fa": files_after,
-                 "bb": bytes_before, "ba": bytes_after, "d": duration_s,
-                 "r": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO compaction_runs"
+                    "(pipeline,files_before,files_after,bytes_before,bytes_after,duration_s,ran_at)"
+                    " VALUES(:p,:fb,:fa,:bb,:ba,:d,:r)"
+                ),
+                {
+                    "p": pipeline,
+                    "fb": files_before,
+                    "fa": files_after,
+                    "bb": bytes_before,
+                    "ba": bytes_after,
+                    "d": duration_s,
+                    "r": datetime.now(UTC).isoformat(),
+                },
             )
             conn.commit()
 
@@ -1860,14 +1946,22 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT pipeline,files_before,files_after,bytes_before,bytes_after,"
-                     "duration_s,ran_at FROM compaction_runs ORDER BY ran_at DESC LIMIT :lim"),
+                text(
+                    "SELECT pipeline,files_before,files_after,bytes_before,bytes_after,"
+                    "duration_s,ran_at FROM compaction_runs ORDER BY ran_at DESC LIMIT :lim"
+                ),
                 {"lim": limit},
             ).fetchall()
         return [
-            {"pipeline": r[0], "files_before": r[1], "files_after": r[2],
-             "bytes_before": r[3], "bytes_after": r[4],
-             "duration_s": round(r[5], 2), "ran_at": r[6]}
+            {
+                "pipeline": r[0],
+                "files_before": r[1],
+                "files_after": r[2],
+                "bytes_before": r[3],
+                "bytes_after": r[4],
+                "duration_s": round(r[5], 2),
+                "ran_at": r[6],
+            }
             for r in rows
         ]
 
@@ -1878,10 +1972,11 @@ class PgStudioDb:
 
         with self._conn() as conn:
             row = conn.execute(
-                text("INSERT INTO alert_events(event_type,pipeline,message,created_at)"
-                     " VALUES(:e,:p,:m,:t) RETURNING id"),
-                {"e": event_type, "p": pipeline, "m": message,
-                 "t": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO alert_events(event_type,pipeline,message,created_at)"
+                    " VALUES(:e,:p,:m,:t) RETURNING id"
+                ),
+                {"e": event_type, "p": pipeline, "m": message, "t": datetime.now(UTC).isoformat()},
             ).fetchone()
             conn.commit()
         return row[0] if row else 0
@@ -1890,9 +1985,7 @@ class PgStudioDb:
         from sqlalchemy import text
 
         with self._conn() as conn:
-            conn.execute(
-                text("UPDATE alert_events SET delivered=1 WHERE id=:id"), {"id": alert_id}
-            )
+            conn.execute(text("UPDATE alert_events SET delivered=1 WHERE id=:id"), {"id": alert_id})
             conn.commit()
 
     def get_alerts(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -1900,32 +1993,55 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT id,event_type,pipeline,message,delivered,created_at"
-                     " FROM alert_events ORDER BY created_at DESC LIMIT :lim"),
+                text(
+                    "SELECT id,event_type,pipeline,message,delivered,created_at"
+                    " FROM alert_events ORDER BY created_at DESC LIMIT :lim"
+                ),
                 {"lim": limit},
             ).fetchall()
         return [
-            {"id": r[0], "event_type": r[1], "pipeline": r[2], "message": r[3],
-             "delivered": bool(r[4]), "created_at": r[5]}
+            {
+                "id": r[0],
+                "event_type": r[1],
+                "pipeline": r[2],
+                "message": r[3],
+                "delivered": bool(r[4]),
+                "created_at": r[5],
+            }
             for r in rows
         ]
 
     # ── AI traces ────────────────────────────────────────────────────────────
 
     def record_trace(
-        self, agent: str, message: str, response: str, latency_ms: float,
-        tool_calls: int = 0, status: str = "ok", cached: bool = False,
+        self,
+        agent: str,
+        message: str,
+        response: str,
+        latency_ms: float,
+        tool_calls: int = 0,
+        status: str = "ok",
+        cached: bool = False,
     ) -> int:
         from sqlalchemy import text
 
         with self._conn() as conn:
             row = conn.execute(
-                text("INSERT INTO ai_traces"
-                     "(agent,message,response,latency_ms,tool_calls,status,cached,created_at)"
-                     " VALUES(:a,:m,:r,:l,:tc,:s,:c,:t) RETURNING id"),
-                {"a": agent, "m": message[:500], "r": response[:2000],
-                 "l": round(latency_ms, 1), "tc": tool_calls, "s": status,
-                 "c": 1 if cached else 0, "t": datetime.now(UTC).isoformat()},
+                text(
+                    "INSERT INTO ai_traces"
+                    "(agent,message,response,latency_ms,tool_calls,status,cached,created_at)"
+                    " VALUES(:a,:m,:r,:l,:tc,:s,:c,:t) RETURNING id"
+                ),
+                {
+                    "a": agent,
+                    "m": message[:500],
+                    "r": response[:2000],
+                    "l": round(latency_ms, 1),
+                    "tc": tool_calls,
+                    "s": status,
+                    "c": 1 if cached else 0,
+                    "t": datetime.now(UTC).isoformat(),
+                },
             ).fetchone()
             conn.commit()
         return row[0] if row else 0
@@ -1933,13 +2049,13 @@ class PgStudioDb:
     def get_traces(self, agent: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         from sqlalchemy import text
 
-        cols = ("SELECT id,agent,message,response,latency_ms,"
-                "tool_calls,status,cached,created_at")
+        cols = "SELECT id,agent,message,response,latency_ms,tool_calls,status,cached,created_at"
         with self._conn() as conn:
             if agent:
                 rows = conn.execute(
-                    text(f"{cols} FROM ai_traces WHERE agent=:a"
-                         " ORDER BY created_at DESC LIMIT :lim"),
+                    text(
+                        f"{cols} FROM ai_traces WHERE agent=:a ORDER BY created_at DESC LIMIT :lim"
+                    ),
                     {"a": agent, "lim": limit},
                 ).fetchall()
             else:
@@ -1948,9 +2064,17 @@ class PgStudioDb:
                     {"lim": limit},
                 ).fetchall()
         return [
-            {"id": r[0], "agent": r[1], "message": r[2], "response": r[3],
-             "latency_ms": r[4], "tool_calls": r[5], "status": r[6],
-             "cached": bool(r[7]), "created_at": r[8]}
+            {
+                "id": r[0],
+                "agent": r[1],
+                "message": r[2],
+                "response": r[3],
+                "latency_ms": r[4],
+                "tool_calls": r[5],
+                "status": r[6],
+                "cached": bool(r[7]),
+                "created_at": r[8],
+            }
             for r in rows
         ]
 
@@ -1959,8 +2083,10 @@ class PgStudioDb:
 
         with self._conn() as conn:
             result = conn.execute(
-                text("DELETE FROM ai_traces WHERE id NOT IN"
-                     " (SELECT id FROM ai_traces ORDER BY created_at DESC LIMIT :k)"),
+                text(
+                    "DELETE FROM ai_traces WHERE id NOT IN"
+                    " (SELECT id FROM ai_traces ORDER BY created_at DESC LIMIT :k)"
+                ),
                 {"k": keep},
             )
             conn.commit()
@@ -1975,19 +2101,31 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT id, col_name, rule_type, config, on_failure, enabled"
-                     " FROM quality_rules WHERE pipeline=:p ORDER BY col_name, id"),
+                text(
+                    "SELECT id, col_name, rule_type, config, on_failure, enabled"
+                    " FROM quality_rules WHERE pipeline=:p ORDER BY col_name, id"
+                ),
                 {"p": pipeline},
             ).fetchall()
         return [
-            {"id": r[0], "col_name": r[1], "rule_type": r[2],
-             "config": _json.loads(r[3]), "on_failure": r[4], "enabled": bool(r[5])}
+            {
+                "id": r[0],
+                "col_name": r[1],
+                "rule_type": r[2],
+                "config": _json.loads(r[3]),
+                "on_failure": r[4],
+                "enabled": bool(r[5]),
+            }
             for r in rows
         ]
 
     def add_quality_rule(
-        self, pipeline: str, col_name: str, rule_type: str,
-        config: dict[str, Any], on_failure: str = "warn",
+        self,
+        pipeline: str,
+        col_name: str,
+        rule_type: str,
+        config: dict[str, Any],
+        on_failure: str = "warn",
     ) -> int:
         import json as _json
 
@@ -1996,17 +2134,29 @@ class PgStudioDb:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             row = conn.execute(
-                text("INSERT INTO quality_rules"
-                     "(pipeline, col_name, rule_type, config, on_failure, enabled, created_at)"
-                     " VALUES(:p,:c,:r,:cfg,:of,1,:t) RETURNING id"),
-                {"p": pipeline, "c": col_name, "r": rule_type,
-                 "cfg": _json.dumps(config), "of": on_failure, "t": now},
+                text(
+                    "INSERT INTO quality_rules"
+                    "(pipeline, col_name, rule_type, config, on_failure, enabled, created_at)"
+                    " VALUES(:p,:c,:r,:cfg,:of,1,:t) RETURNING id"
+                ),
+                {
+                    "p": pipeline,
+                    "c": col_name,
+                    "r": rule_type,
+                    "cfg": _json.dumps(config),
+                    "of": on_failure,
+                    "t": now,
+                },
             ).fetchone()
             conn.commit()
         return row[0] if row else 0
 
     def update_quality_rule(
-        self, rule_id: int, config: dict[str, Any], on_failure: str, enabled: bool,
+        self,
+        rule_id: int,
+        config: dict[str, Any],
+        on_failure: str,
+        enabled: bool,
     ) -> None:
         import json as _json
 
@@ -2036,30 +2186,47 @@ class PgStudioDb:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             conn.execute(
-                text("INSERT INTO agent_runs"
-                     "(run_id, agent_name, user_message, final_answer, tool_calls,"
-                     " total_latency_ms, status, mode, created_at)"
-                     " VALUES(:rid,:an,:um,:fa,:tc,:tlm,:s,:m,:t)"
-                     " ON CONFLICT(run_id) DO UPDATE SET"
-                     "  final_answer=excluded.final_answer, tool_calls=excluded.tool_calls,"
-                     "  total_latency_ms=excluded.total_latency_ms, status=excluded.status"),
-                {"rid": run.run_id, "an": run.agent_name,
-                 "um": run.user_message[:500], "fa": run.final_answer[:2000],
-                 "tc": run.tool_calls, "tlm": round(run.total_latency_ms, 1),
-                 "s": run.status, "m": getattr(run, "mode", "ask"), "t": now},
+                text(
+                    "INSERT INTO agent_runs"
+                    "(run_id, agent_name, user_message, final_answer, tool_calls,"
+                    " total_latency_ms, status, mode, created_at)"
+                    " VALUES(:rid,:an,:um,:fa,:tc,:tlm,:s,:m,:t)"
+                    " ON CONFLICT(run_id) DO UPDATE SET"
+                    "  final_answer=excluded.final_answer, tool_calls=excluded.tool_calls,"
+                    "  total_latency_ms=excluded.total_latency_ms, status=excluded.status"
+                ),
+                {
+                    "rid": run.run_id,
+                    "an": run.agent_name,
+                    "um": run.user_message[:500],
+                    "fa": run.final_answer[:2000],
+                    "tc": run.tool_calls,
+                    "tlm": round(run.total_latency_ms, 1),
+                    "s": run.status,
+                    "m": getattr(run, "mode", "ask"),
+                    "t": now,
+                },
             )
             for step in getattr(run, "steps", []):
                 conn.execute(
-                    text("INSERT INTO agent_steps"
-                         "(run_id, step_id, step_type, tool_name, inputs_json, output_preview,"
-                         " status, duration_ms, tokens)"
-                         " VALUES(:rid,:si,:st,:tn,:ij,:op,:s,:dm,:tk)"
-                         " ON CONFLICT DO NOTHING"),
-                    {"rid": run.run_id, "si": step.step_id, "st": step.type,
-                     "tn": step.tool_name, "ij": _json.dumps(step.inputs),
-                     "op": step.output_preview[:500], "s": step.status,
-                     "dm": round(step.duration_ms, 1) if step.duration_ms is not None else None,
-                     "tk": step.tokens},
+                    text(
+                        "INSERT INTO agent_steps"
+                        "(run_id, step_id, step_type, tool_name, inputs_json, output_preview,"
+                        " status, duration_ms, tokens)"
+                        " VALUES(:rid,:si,:st,:tn,:ij,:op,:s,:dm,:tk)"
+                        " ON CONFLICT DO NOTHING"
+                    ),
+                    {
+                        "rid": run.run_id,
+                        "si": step.step_id,
+                        "st": step.type,
+                        "tn": step.tool_name,
+                        "ij": _json.dumps(step.inputs),
+                        "op": step.output_preview[:500],
+                        "s": step.status,
+                        "dm": round(step.duration_ms, 1) if step.duration_ms is not None else None,
+                        "tk": step.tokens,
+                    },
                 )
             conn.commit()
 
@@ -2069,8 +2236,10 @@ class PgStudioDb:
         with self._conn() as conn:
             if agent:
                 rows = conn.execute(
-                    text("SELECT * FROM agent_runs WHERE agent_name=:a"
-                         " ORDER BY created_at DESC LIMIT :lim"),
+                    text(
+                        "SELECT * FROM agent_runs WHERE agent_name=:a"
+                        " ORDER BY created_at DESC LIMIT :lim"
+                    ),
                     {"a": agent, "lim": limit},
                 ).fetchall()
             else:
@@ -2095,15 +2264,12 @@ class PgStudioDb:
 
         with self._conn() as conn:
             total = conn.execute(text("SELECT COUNT(*) FROM agent_runs")).scalar() or 0
-            errors = conn.execute(
-                text("SELECT COUNT(*) FROM agent_runs WHERE status='error'")
-            ).scalar() or 0
-            avg_lat = conn.execute(
-                text("SELECT AVG(total_latency_ms) FROM agent_runs")
-            ).scalar()
-            tool_calls = conn.execute(
-                text("SELECT SUM(tool_calls) FROM agent_runs")
-            ).scalar() or 0
+            errors = (
+                conn.execute(text("SELECT COUNT(*) FROM agent_runs WHERE status='error'")).scalar()
+                or 0
+            )
+            avg_lat = conn.execute(text("SELECT AVG(total_latency_ms) FROM agent_runs")).scalar()
+            tool_calls = conn.execute(text("SELECT SUM(tool_calls) FROM agent_runs")).scalar() or 0
         return {
             "total_runs": int(total),
             "error_count": int(errors),
@@ -2114,31 +2280,48 @@ class PgStudioDb:
     # ── Embedding collections ────────────────────────────────────────────────
 
     def upsert_embedding_collection(
-        self, name: str, source_table: str, source_column: str, model: str,
-        vector_count: int, dim: int = 0, duration_s: float | None = None,
+        self,
+        name: str,
+        source_table: str,
+        source_column: str,
+        model: str,
+        vector_count: int,
+        dim: int = 0,
+        duration_s: float | None = None,
         status: str = "ok",
     ) -> None:
         from sqlalchemy import text
 
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
-            sql = ("INSERT INTO embedding_collections"
-                   "(name, source_table, source_column, model,"
-                   " vector_count, dim, duration_s, status, built_at, updated_at)"
-                   " VALUES(:n,:st,:sc,:m,:vc,:dim,:dur,:s,:ba,:ua)"
-                   " ON CONFLICT(name) DO UPDATE SET"
-                   "  source_table=excluded.source_table,"
-                   "  source_column=excluded.source_column,"
-                   "  model=excluded.model,"
-                   "  vector_count=excluded.vector_count,"
-                   "  dim=excluded.dim, duration_s=excluded.duration_s,"
-                   "  status=excluded.status, built_at=excluded.built_at,"
-                   "  updated_at=excluded.updated_at")
+            sql = (
+                "INSERT INTO embedding_collections"
+                "(name, source_table, source_column, model,"
+                " vector_count, dim, duration_s, status, built_at, updated_at)"
+                " VALUES(:n,:st,:sc,:m,:vc,:dim,:dur,:s,:ba,:ua)"
+                " ON CONFLICT(name) DO UPDATE SET"
+                "  source_table=excluded.source_table,"
+                "  source_column=excluded.source_column,"
+                "  model=excluded.model,"
+                "  vector_count=excluded.vector_count,"
+                "  dim=excluded.dim, duration_s=excluded.duration_s,"
+                "  status=excluded.status, built_at=excluded.built_at,"
+                "  updated_at=excluded.updated_at"
+            )
             conn.execute(
                 text(sql),
-                {"n": name, "st": source_table, "sc": source_column, "m": model,
-                 "vc": vector_count, "dim": dim, "dur": duration_s, "s": status,
-                 "ba": now, "ua": now},
+                {
+                    "n": name,
+                    "st": source_table,
+                    "sc": source_column,
+                    "m": model,
+                    "vc": vector_count,
+                    "dim": dim,
+                    "dur": duration_s,
+                    "s": status,
+                    "ba": now,
+                    "ua": now,
+                },
             )
             conn.commit()
 
@@ -2154,7 +2337,9 @@ class PgStudioDb:
     # ── Embedding vectors ────────────────────────────────────────────────────
 
     def store_vectors(
-        self, collection_name: str, rows: list[tuple[int, str, list[float]]],
+        self,
+        collection_name: str,
+        rows: list[tuple[int, str, list[float]]],
     ) -> None:
         import json as _json
 
@@ -2167,11 +2352,17 @@ class PgStudioDb:
             )
             for row_id, source_text, embedding in rows:
                 conn.execute(
-                    text("INSERT INTO embedding_vectors"
-                         "(collection_name, row_id, source_text, embedding_json)"
-                         " VALUES(:c,:r,:s,:e)"),
-                    {"c": collection_name, "r": row_id, "s": source_text,
-                     "e": _json.dumps(embedding)},
+                    text(
+                        "INSERT INTO embedding_vectors"
+                        "(collection_name, row_id, source_text, embedding_json)"
+                        " VALUES(:c,:r,:s,:e)"
+                    ),
+                    {
+                        "c": collection_name,
+                        "r": row_id,
+                        "s": source_text,
+                        "e": _json.dumps(embedding),
+                    },
                 )
             conn.commit()
 
@@ -2182,27 +2373,32 @@ class PgStudioDb:
 
         with self._conn() as conn:
             rows = conn.execute(
-                text("SELECT row_id, source_text, embedding_json"
-                     " FROM embedding_vectors WHERE collection_name=:c ORDER BY row_id"),
+                text(
+                    "SELECT row_id, source_text, embedding_json"
+                    " FROM embedding_vectors WHERE collection_name=:c ORDER BY row_id"
+                ),
                 {"c": collection_name},
             ).fetchall()
-        return [
-            {"row_id": r[0], "source_text": r[1], "embedding": _json.loads(r[2])}
-            for r in rows
-        ]
+        return [{"row_id": r[0], "source_text": r[1], "embedding": _json.loads(r[2])} for r in rows]
 
     # ── Quality tests (Phase 5) ─────────────────────────────────────────────
 
     def add_quality_test(
-        self, table_name: str, test_type: str, col_name: str = "", threshold: str = "",
+        self,
+        table_name: str,
+        test_type: str,
+        col_name: str = "",
+        threshold: str = "",
     ) -> int:
         from sqlalchemy import text
 
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             row = conn.execute(
-                text("INSERT INTO quality_tests(table_name,test_type,col_name,threshold,created_at)"
-                     " VALUES(:tn,:tt,:cn,:th,:t) RETURNING id"),
+                text(
+                    "INSERT INTO quality_tests(table_name,test_type,col_name,threshold,created_at)"
+                    " VALUES(:tn,:tt,:cn,:th,:t) RETURNING id"
+                ),
                 {"tn": table_name, "tt": test_type, "cn": col_name, "th": threshold, "t": now},
             ).fetchone()
             conn.commit()
@@ -2220,8 +2416,13 @@ class PgStudioDb:
     # ── Model registry (Phase 5) ────────────────────────────────────────────
 
     def add_model_registry_entry(
-        self, model_name: str, artifact_path: str, stage: str = "development",
-        algorithm: str = "", feature_names: list[str] | None = None, target: str = "",
+        self,
+        model_name: str,
+        artifact_path: str,
+        stage: str = "development",
+        algorithm: str = "",
+        feature_names: list[str] | None = None,
+        target: str = "",
     ) -> int:
         import json as _json
 
@@ -2229,14 +2430,23 @@ class PgStudioDb:
 
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
-            sql = ("INSERT INTO model_registry_entries"
-                   "(model_name, artifact_path, stage, algorithm,"
-                   " feature_names, target, created_at)"
-                   " VALUES(:mn,:ap,:st,:al,:fn,:tg,:t) RETURNING id")
+            sql = (
+                "INSERT INTO model_registry_entries"
+                "(model_name, artifact_path, stage, algorithm,"
+                " feature_names, target, created_at)"
+                " VALUES(:mn,:ap,:st,:al,:fn,:tg,:t) RETURNING id"
+            )
             row = conn.execute(
                 text(sql),
-                {"mn": model_name, "ap": artifact_path, "st": stage, "al": algorithm,
-                 "fn": _json.dumps(feature_names or []), "tg": target, "t": now},
+                {
+                    "mn": model_name,
+                    "ap": artifact_path,
+                    "st": stage,
+                    "al": algorithm,
+                    "fn": _json.dumps(feature_names or []),
+                    "tg": target,
+                    "t": now,
+                },
             ).fetchone()
             conn.commit()
         return row[0] if row else 0
@@ -2265,9 +2475,7 @@ class PgStudioDb:
         conn = self._engine.connect()
         conn.execute(text("SET TIME ZONE 'UTC'"))
         try:
-            locked = conn.execute(
-                text("SELECT pg_try_advisory_lock(:key)"), {"key": key}
-            ).scalar()
+            locked = conn.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}).scalar()
             conn.commit()
             if locked:
                 self._leader_conn = conn

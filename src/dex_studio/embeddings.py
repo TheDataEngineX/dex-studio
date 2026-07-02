@@ -96,8 +96,14 @@ def _embed_all_batched(
 
 
 def _record_collection(
-    eng: Any, name: str, source_table: str, source_col: str, model: str,
-    count: int, dim: int, duration_s: float,
+    eng: Any,
+    name: str,
+    source_table: str,
+    source_col: str,
+    model: str,
+    count: int,
+    dim: int,
+    duration_s: float,
 ) -> None:
     with contextlib.suppress(Exception):
         from dex_studio.studio_db import get_studio_db
@@ -105,8 +111,13 @@ def _record_collection(
         db = get_studio_db(eng)
         if db:
             db.upsert_embedding_collection(
-                name, source_table, source_col, model, count,
-                dim=dim, duration_s=duration_s,
+                name,
+                source_table,
+                source_col,
+                model,
+                count,
+                dim=dim,
+                duration_s=duration_s,
             )
 
 
@@ -152,8 +163,14 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
             )
             duration_s = round(time.monotonic() - t0, 1)
             _record_collection(
-                eng, collection_name, source_table, source_col, model,
-                len(all_vectors), dim, duration_s,
+                eng,
+                collection_name,
+                source_table,
+                source_col,
+                model,
+                len(all_vectors),
+                dim,
+                duration_s,
             )
 
         meta = {

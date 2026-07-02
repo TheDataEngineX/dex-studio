@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,39 +19,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from dex_studio import __version__
-from dex_studio.logstore import install_stdlib_handler, structlog_capture_processor
+from dex_studio.logging_setup import _use_json, bridge_uvicorn, get_logger, setup_logging
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
 
-# ── Structured logging — JSON when piped, pretty console on TTY ──────────────
-_USE_JSON = hasattr(sys.stdout, "isatty") and not sys.stdout.isatty()
+# ── Logging — configured centrally in dex_studio.logging_setup ───────────────
+setup_logging()
 
-if _USE_JSON:
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.stdlib.add_log_level,
-            structlog_capture_processor,
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(0),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
-else:
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog_capture_processor,
-            structlog.stdlib.add_log_level,
-            structlog.dev.ConsoleRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(0),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
-
-logger = structlog.getLogger().bind(src="app")
+logger = get_logger("app")
 
 
 class _SelectiveGZip:
@@ -75,7 +48,6 @@ class _SelectiveGZip:
 _HERE = Path(__file__).parent
 TEMPLATES_DIR = _HERE / "templates"
 STATIC_DIR = _HERE / "static"
-
 
 
 def make_templates() -> Jinja2Templates:
@@ -103,15 +75,15 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     setup_password()
 
     # Mirror all stdlib logging (uvicorn, fastapi, libraries) into the log viewer.
-    # Must run here — AFTER uvicorn has configured its own logging handlers so we
-    # can also attach directly to uvicorn.access (which has propagate=False).
-    install_stdlib_handler()
+    # Must run here — AFTER uvicorn has attached its own logging handlers,
+    # so they can be stripped and routed through the root handlers.
+    bridge_uvicorn()
 
     logger.info(
         "DEX Studio starting up",
         version=__version__,
         port=7860,
-        mode="json" if _USE_JSON else "console",
+        mode="json" if _use_json() else "console",
         https=os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes"),
         trusted_proxies=os.environ.get("DEX_TRUSTED_PROXIES", "0"),
         config_path=os.environ.get("DEX_CONFIG_PATH", ""),
