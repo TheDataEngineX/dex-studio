@@ -59,40 +59,56 @@ class BackfillEngine:
             result["error"] = f"Pipeline '{pipeline}' not found in dex.yaml"
             return result
 
-        if source and clear_hashes:
-            try:
-                self._store.reset(source)
-                result["watermark_reset"] = True
-                log.info("backfill: watermark reset", pipeline=pipeline, source=source)
-            except Exception as exc:
-                result["error"] = str(exc)
-                log.warning("backfill: watermark reset failed", pipeline=pipeline, error=str(exc))
-        elif source:
-            try:
-                self._db.set_watermark(source, datetime(2000, 1, 1, tzinfo=UTC))
-                result["watermark_reset"] = True
-            except Exception as exc:
-                result["error"] = str(exc)
+        if not self._db.acquire_lock(pipeline):
+            result["error"] = f"Pipeline '{pipeline}' is already running; backfill skipped"
+            log.warning("backfill: pipeline locked, skipping", pipeline=pipeline)
+            return result
 
-        # Record in alert_events so it appears in the activity log
-        self._db.record_alert(
-            "backfill",
-            pipeline,
-            f"Backfill triggered for '{pipeline}' (source: {source or 'n/a'})",
-        )
+        try:
+            self._reset_watermark(pipeline, source, clear_hashes=clear_hashes, result=result)
 
-        if run_now:
-            try:
-                with tqdm(total=1, desc=f"Backfill {pipeline}", unit="pipeline") as pbar:
-                    self._eng.run_pipeline(pipeline)
-                    pbar.update(1)
-                result["run_triggered"] = True
-                log.info("backfill: pipeline complete", pipeline=pipeline)
-            except Exception as exc:
-                result["error"] = str(exc)
-                log.warning("backfill: pipeline failed", pipeline=pipeline, error=str(exc))
+            # Record in alert_events so it appears in the activity log
+            self._db.record_alert(
+                "backfill",
+                pipeline,
+                f"Backfill triggered for '{pipeline}' (source: {source or 'n/a'})",
+            )
+
+            if run_now:
+                self._run_pipeline_now(pipeline, result)
+        finally:
+            self._db.release_lock(pipeline)
 
         return result
+
+    def _reset_watermark(
+        self, pipeline: str, source: str, *, clear_hashes: bool, result: dict[str, Any]
+    ) -> None:
+        """Reset the source watermark (and hashes if requested), recording outcome in `result`."""
+        if not source:
+            return
+        try:
+            if clear_hashes:
+                self._store.reset(source)
+                log.info("backfill: watermark reset", pipeline=pipeline, source=source)
+            else:
+                self._db.set_watermark(source, datetime(2000, 1, 1, tzinfo=UTC))
+            result["watermark_reset"] = True
+        except Exception as exc:
+            result["error"] = str(exc)
+            log.warning("backfill: watermark reset failed", pipeline=pipeline, error=str(exc))
+
+    def _run_pipeline_now(self, pipeline: str, result: dict[str, Any]) -> None:
+        """Run the pipeline immediately, recording outcome in `result`."""
+        try:
+            with tqdm(total=1, desc=f"Backfill {pipeline}", unit="pipeline") as pbar:
+                self._eng.run_pipeline(pipeline)
+                pbar.update(1)
+            result["run_triggered"] = True
+            log.info("backfill: pipeline complete", pipeline=pipeline)
+        except Exception as exc:
+            result["error"] = str(exc)
+            log.warning("backfill: pipeline failed", pipeline=pipeline, error=str(exc))
 
     def trigger_all(
         self, pipelines: list[str], *, clear_hashes: bool = True, run_now: bool = True

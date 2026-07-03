@@ -111,6 +111,33 @@ class CompactionEngine:
                 conn.execute(
                     f"COPY (SELECT * FROM read_parquet([{paths_sql}])) TO '{tmp}' (FORMAT PARQUET)"
                 )
+                input_row = conn.execute(
+                    f"SELECT COUNT(*) FROM read_parquet([{paths_sql}])"
+                ).fetchone()
+                output_row = conn.execute(
+                    f"SELECT COUNT(*) FROM read_parquet('{tmp}')"
+                ).fetchone()
+                input_rows = input_row[0] if input_row else -1
+                output_rows = output_row[0] if output_row else -2
+
+            if input_rows != output_rows:
+                # Corrupt/partial merge — do NOT swap in the tmp file or touch sources.
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
+                log.error(
+                    "compaction row count mismatch — aborting, sources preserved",
+                    pipeline=pipeline,
+                    input_rows=input_rows,
+                    output_rows=output_rows,
+                )
+                with contextlib.suppress(Exception):
+                    self._db.record_alert(
+                        "compaction_row_mismatch",
+                        pipeline,
+                        f"input={input_rows} output={output_rows}",
+                    )
+                return None
+
             # Rename first — if this fails, sources are still intact
             tmp.rename(dest)
             # Now safe to remove the original source files (skip dest = files[0])

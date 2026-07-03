@@ -8,7 +8,7 @@ schema) or left open for review.
 
 from __future__ import annotations
 
-import contextlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,12 @@ from dex_studio.studio_db import PgStudioDb, StudioDb
 __all__ = ["SchemaEvolutionManager", "DriftEvent"]
 
 log = structlog.get_logger().bind(src="schema_evolution")
+
+_UNSAFE_NAME_CHARS = re.compile(r"[^A-Za-z0-9_\-]")
+
+
+class SchemaReadError(Exception):
+    """Raised when a pipeline's parquet schema can't be read (corrupt/missing/permissions)."""
 
 
 class DriftEvent:
@@ -56,21 +62,29 @@ class SchemaEvolutionManager:
         self._db = db
 
     def _parquet_path(self, pipeline: str) -> Path | None:
+        safe_pipeline = _UNSAFE_NAME_CHARS.sub("", pipeline)[:128]
         for layer in ("bronze", "silver", "gold"):
-            p = self._root / layer / f"{pipeline}.parquet"
+            p = self._root / layer / f"{safe_pipeline}.parquet"
             if p.exists():
                 return p
         return None
 
     def _read_schema(self, path: Path) -> dict[str, str]:
-        """Return {column: type} from the parquet file's schema."""
+        """Return {column: type} from the parquet file's schema.
+
+        Raises SchemaReadError on any read failure instead of swallowing it,
+        so callers can tell "corrupt/unreadable file" apart from "no drift".
+        """
         import duckdb
 
         schema: dict[str, str] = {}
-        with contextlib.suppress(Exception), duckdb.connect() as conn:
-            rows = conn.execute(f"DESCRIBE SELECT * FROM read_parquet('{path}')").fetchall()
+        try:
+            with duckdb.connect() as conn:
+                rows = conn.execute(f"DESCRIBE SELECT * FROM read_parquet('{path}')").fetchall()
             for row in rows:
                 schema[row[0]] = str(row[1])
+        except Exception as exc:
+            raise SchemaReadError(f"failed to read schema from {path}: {exc}") from exc
         return schema
 
     def _diff(self, contract: dict[str, str], observed: dict[str, str]) -> list[DriftEvent]:
@@ -135,6 +149,9 @@ class SchemaEvolutionManager:
         for name in pipelines:
             try:
                 results[name] = self.check_drift(name)
+            except SchemaReadError as exc:
+                log.error("schema read failed during drift check", pipeline=name, error=str(exc))
+                self._db.record_alert("schema_read_failed", name, str(exc))
             except Exception as exc:
                 log.warning("drift check error", pipeline=name, error=str(exc))
         return results

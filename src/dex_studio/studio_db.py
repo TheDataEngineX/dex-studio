@@ -109,15 +109,17 @@ CREATE TABLE IF NOT EXISTS pipeline_run_state (
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    pipeline     TEXT NOT NULL,
-    started_at   TEXT NOT NULL,
-    finished_at  TEXT,
-    status       TEXT NOT NULL DEFAULT 'running',
-    error        TEXT,
-    triggered_by TEXT NOT NULL DEFAULT 'scheduler',
-    duration_s   REAL,
-    request_id   TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline       TEXT NOT NULL,
+    started_at     TEXT NOT NULL,
+    finished_at    TEXT,
+    status         TEXT NOT NULL DEFAULT 'running',
+    error          TEXT,
+    triggered_by   TEXT NOT NULL DEFAULT 'scheduler',
+    duration_s     REAL,
+    request_id     TEXT,
+    rows_input     INTEGER NOT NULL DEFAULT 0,
+    rows_output    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline
@@ -260,6 +262,24 @@ class StudioDb:
                 conn.execute(s)
         conn.commit()
 
+        for ddl in (
+            "ALTER TABLE quality_rules ADD COLUMN last_result INTEGER",
+            "ALTER TABLE quality_rules ADD COLUMN last_checked_at TEXT",
+            "ALTER TABLE pipeline_runs ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'scheduler'",
+            "ALTER TABLE pipeline_runs ADD COLUMN request_id TEXT",
+            "ALTER TABLE pipeline_runs ADD COLUMN rows_input INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE pipeline_runs ADD COLUMN rows_output INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                conn.execute(ddl)
+            except sqlite3.OperationalError as exc:
+                # "duplicate column name" is the expected/benign outcome when the
+                # column was already added by a previous run — anything else
+                # (disk full, locked file, syntax error) must not be swallowed.
+                if "duplicate column" not in str(exc).lower():
+                    log.error("schema migration DDL failed", ddl=ddl, error=str(exc))
+        conn.commit()
+
     # ── Scheduler state (last run per pipeline) ───────────────────────────────
 
     def get_last_run(self, pipeline: str) -> datetime | None:
@@ -310,6 +330,23 @@ class StudioDb:
         cur = conn.execute("DELETE FROM pipeline_locks WHERE locked_at < ?", [cutoff_iso])
         conn.commit()
         return cur.rowcount
+
+    def stale_locked_pipelines(self, timeout_s: int = 7200) -> list[str]:
+        """Return pipeline names whose lock is older than *timeout_s*.
+
+        Meant to be called just before ``clear_stale_locks`` so the caller
+        knows which pipelines are about to have their lock force-cleared —
+        used to reconcile any orphaned 'running' pipeline_runs rows.
+        """
+        cutoff_iso = datetime.fromtimestamp(
+            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
+        ).isoformat()
+        rows = (
+            self._conn()
+            .execute("SELECT pipeline FROM pipeline_locks WHERE locked_at < ?", [cutoff_iso])
+            .fetchall()
+        )
+        return [r[0] for r in rows]
 
     def locked_pipelines(self) -> list[str]:
         rows = self._conn().execute("SELECT pipeline FROM pipeline_locks").fetchall()
@@ -408,17 +445,73 @@ class StudioDb:
         run_id: int,
         status: str,
         error: str = "",
+        rows_input: int = 0,
+        rows_output: int = 0,
     ) -> None:
-        # Strip tz suffix — SQLite julianday() rejects "+00:00" and returns NULL.
         finished = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
         conn = self._conn()
-        conn.execute(
-            "UPDATE pipeline_runs SET finished_at=?, status=?, error=?,"
-            " duration_s = (julianday(?) - julianday(started_at)) * 86400"
-            " WHERE id=?",
-            [finished, status, error or "", finished, run_id],
+        try:
+            conn.execute(
+                "UPDATE pipeline_runs SET finished_at=?, status=?, error=?,"
+                " rows_input=?, rows_output=?,"
+                " duration_s = (julianday(?) - julianday(started_at)) * 86400"
+                " WHERE id=?",
+                [finished, status, error or "", rows_input, rows_output, finished, run_id],
+            )
+            conn.commit()
+        except Exception as exc:
+            # The full UPDATE touches several columns — if any of them is
+            # missing/wrong the run's terminal status would otherwise be lost
+            # entirely and the row would show 'running' forever. Fall back to
+            # the minimal set of columns least likely to be missing so the
+            # terminal status is saved even when the rest of the metadata isn't.
+            log.error(
+                "finish_run: full UPDATE failed — falling back to minimal terminal write",
+                run_id=run_id,
+                status=status,
+                error=str(exc),
+            )
+            pipeline_name = ""
+            try:
+                row = conn.execute(
+                    "SELECT pipeline FROM pipeline_runs WHERE id=?", [run_id]
+                ).fetchone()
+                pipeline_name = row[0] if row else ""
+            except Exception:
+                log.error("finish_run: could not look up pipeline for degraded alert")
+            try:
+                conn.execute(
+                    "UPDATE pipeline_runs SET status=?, error=?, finished_at=? WHERE id=?",
+                    [status, error or "", finished, run_id],
+                )
+                conn.commit()
+            except Exception:
+                log.error("finish_run: fallback UPDATE also failed", run_id=run_id, exc_info=True)
+                return
+            try:
+                self.record_alert("finish_run_degraded", pipeline_name, str(exc))
+            except Exception:
+                log.error("finish_run: record_alert for degraded write failed", run_id=run_id)
+
+    def reconcile_stale_running_runs(self, pipeline: str, cutoff_iso: str) -> int:
+        """Mark *pipeline*'s stuck 'running' runs (started before *cutoff_iso*) as failed.
+
+        Called after the scheduler force-clears a stale lock for *pipeline* —
+        the run that held that lock crashed or the process restarted without
+        ever calling ``finish_run``, so its row would otherwise show
+        'running' forever even though nothing is actually executing.
+        """
+        finished = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        conn = self._conn()
+        cur = conn.execute(
+            "UPDATE pipeline_runs SET status='failed',"
+            " error='stale lock cleared — run did not report a terminal status',"
+            " finished_at=?"
+            " WHERE pipeline=? AND status='running' AND started_at < ?",
+            [finished, pipeline, cutoff_iso],
         )
         conn.commit()
+        return cur.rowcount
 
     def get_runs(
         self,
@@ -429,7 +522,7 @@ class StudioDb:
         if pipeline:
             rows = conn.execute(
                 "SELECT id,pipeline,started_at,finished_at,status,error,"
-                "triggered_by,duration_s,request_id"
+                "triggered_by,duration_s,request_id,rows_input,rows_output"
                 " FROM pipeline_runs WHERE pipeline=?"
                 " ORDER BY started_at DESC LIMIT ?",
                 [pipeline, limit],
@@ -437,7 +530,7 @@ class StudioDb:
         else:
             rows = conn.execute(
                 "SELECT id,pipeline,started_at,finished_at,status,error,"
-                "triggered_by,duration_s,request_id"
+                "triggered_by,duration_s,request_id,rows_input,rows_output"
                 " FROM pipeline_runs ORDER BY started_at DESC LIMIT ?",
                 [limit],
             ).fetchall()
@@ -452,6 +545,8 @@ class StudioDb:
                 "triggered_by": r[6],
                 "duration_s": round(r[7], 2) if r[7] is not None else None,
                 "request_id": r[8] or "",
+                "rows_input": r[9] or 0,
+                "rows_output": r[10] or 0,
             }
             for r in rows
         ]
@@ -736,7 +831,12 @@ class StudioDb:
             [event_type, pipeline, message, datetime.now(UTC).isoformat()],
         )
         conn.commit()
-        return cur.lastrowid or 0
+        alert_id = cur.lastrowid or 0
+        from dex_studio.notify import send_alert_webhook
+
+        if alert_id and send_alert_webhook(event_type, pipeline, message):
+            self.mark_alert_delivered(alert_id)
+        return alert_id
 
     def mark_alert_delivered(self, alert_id: int) -> None:
         conn = self._conn()
@@ -843,7 +943,8 @@ class StudioDb:
         rows = (
             self._conn()
             .execute(
-                "SELECT id, col_name, rule_type, config, on_failure, enabled FROM quality_rules"
+                "SELECT id, col_name, rule_type, config, on_failure, enabled,"
+                " last_result, last_checked_at FROM quality_rules"
                 " WHERE pipeline=? ORDER BY col_name, id",
                 (pipeline,),
             )
@@ -857,9 +958,19 @@ class StudioDb:
                 "config": _json.loads(r[3]),
                 "on_failure": r[4],
                 "enabled": bool(r[5]),
+                "last_result": bool(r[6]) if r[6] is not None else None,
+                "last_checked_at": r[7],
             }
             for r in rows
         ]
+
+    def record_quality_rule_result(self, rule_id: int, passed: bool) -> None:
+        conn = self._conn()
+        conn.execute(
+            "UPDATE quality_rules SET last_result=?, last_checked_at=? WHERE id=?",
+            (int(passed), datetime.now(UTC).isoformat(), rule_id),
+        )
+        conn.commit()
 
     def add_quality_rule(
         self,
@@ -1232,15 +1343,17 @@ CREATE TABLE IF NOT EXISTS pipeline_run_state (
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
-    id           BIGSERIAL PRIMARY KEY,
-    pipeline     TEXT NOT NULL,
-    started_at   TEXT NOT NULL,
-    finished_at  TEXT,
-    status       TEXT NOT NULL DEFAULT 'running',
-    error        TEXT,
-    triggered_by TEXT NOT NULL DEFAULT 'scheduler',
-    duration_s   DOUBLE PRECISION,
-    request_id   TEXT
+    id             BIGSERIAL PRIMARY KEY,
+    pipeline       TEXT NOT NULL,
+    started_at     TEXT NOT NULL,
+    finished_at    TEXT,
+    status         TEXT NOT NULL DEFAULT 'running',
+    error          TEXT,
+    triggered_by   TEXT NOT NULL DEFAULT 'scheduler',
+    duration_s     DOUBLE PRECISION,
+    request_id     TEXT,
+    rows_input     INTEGER NOT NULL DEFAULT 0,
+    rows_output    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline
     ON pipeline_runs(pipeline, started_at DESC);
@@ -1382,6 +1495,26 @@ class PgStudioDb:
                 if s:
                     conn.execute(text(s))
             conn.commit()
+            for ddl in (
+                "ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS last_result INTEGER",
+                "ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS last_checked_at TEXT",
+                "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS"
+                " triggered_by TEXT NOT NULL DEFAULT 'scheduler'",
+                "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS request_id TEXT",
+                "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS"
+                " rows_input INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS"
+                " rows_output INTEGER NOT NULL DEFAULT 0",
+            ):
+                # IF NOT EXISTS means this should never legitimately raise —
+                # any exception here is a real, noteworthy failure, so log it
+                # loudly instead of swallowing it silently.
+                try:
+                    conn.execute(text(ddl))
+                except Exception as exc:
+                    log.error("schema migration DDL failed", ddl=ddl, error=str(exc))
+                    conn.rollback()
+            conn.commit()
 
     # ── Scheduler state ─────────────────────────────────────────────────────
 
@@ -1466,6 +1599,24 @@ class PgStudioDb:
             )
             conn.commit()
             return result.rowcount  # type: ignore[no-any-return]
+
+    def stale_locked_pipelines(self, timeout_s: int = 7200) -> list[str]:
+        """Return pipeline names whose lock is older than *timeout_s*.
+
+        Meant to be called just before ``clear_stale_locks`` so the caller
+        knows which pipelines are about to have their lock force-cleared —
+        used to reconcile any orphaned 'running' pipeline_runs rows.
+        """
+        from sqlalchemy import text
+
+        cutoff_iso = datetime.fromtimestamp(
+            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
+        ).isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                text("SELECT pipeline FROM pipeline_locks WHERE locked_at < :c"), {"c": cutoff_iso}
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def locked_pipelines(self) -> list[str]:
         from sqlalchemy import text
@@ -1574,34 +1725,117 @@ class PgStudioDb:
             conn.commit()
         return row[0] if row else 0
 
-    def finish_run(self, run_id: int, status: str, error: str = "") -> None:
+    def finish_run(
+        self,
+        run_id: int,
+        status: str,
+        error: str = "",
+        rows_input: int = 0,
+        rows_output: int = 0,
+    ) -> None:
         from sqlalchemy import text
 
         finished = datetime.now(UTC)
+        degraded = False
+        degraded_error = ""
+        pipeline_name = ""
         with self._conn() as conn:
-            row = conn.execute(
-                text("SELECT started_at FROM pipeline_runs WHERE id=:id"), {"id": run_id}
-            ).fetchone()
-            started = (
-                datetime.fromisoformat(row[0]).replace(tzinfo=UTC)  # type: ignore[union-attr]
-                if row
-                else None
-            )
-            duration_s = round((finished - started).total_seconds(), 2) if started else None
-            conn.execute(
+            try:
+                row = conn.execute(
+                    text("SELECT started_at FROM pipeline_runs WHERE id=:id"), {"id": run_id}
+                ).fetchone()
+                started = (
+                    datetime.fromisoformat(row[0]).replace(tzinfo=UTC) if row else None
+                )
+                duration_s = round((finished - started).total_seconds(), 2) if started else None
+                conn.execute(
+                    text(
+                        "UPDATE pipeline_runs SET finished_at=:f, status=:s, error=:e,"
+                        " rows_input=:ri, rows_output=:ro, duration_s=:d"
+                        " WHERE id=:id"
+                    ),
+                    {
+                        "f": finished.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                        "s": status,
+                        "e": error or "",
+                        "ri": rows_input,
+                        "ro": rows_output,
+                        "d": duration_s,
+                        "id": run_id,
+                    },
+                )
+                conn.commit()
+            except Exception as exc:
+                # The full UPDATE touches several columns — if any of them is
+                # missing/wrong the run's terminal status would otherwise be
+                # lost entirely and the row would show 'running' forever.
+                # Fall back to the minimal set of columns least likely to be
+                # missing so the terminal status is saved regardless.
+                log.error(
+                    "finish_run: full UPDATE failed — falling back to minimal terminal write",
+                    run_id=run_id,
+                    status=status,
+                    error=str(exc),
+                )
+                conn.rollback()
+                degraded = True
+                degraded_error = str(exc)
+                try:
+                    row = conn.execute(
+                        text("SELECT pipeline FROM pipeline_runs WHERE id=:id"), {"id": run_id}
+                    ).fetchone()
+                    pipeline_name = row[0] if row else ""
+                except Exception:
+                    log.error("finish_run: could not look up pipeline for degraded alert")
+                    conn.rollback()
+                try:
+                    conn.execute(
+                        text(
+                            "UPDATE pipeline_runs SET status=:s, error=:e, finished_at=:f"
+                            " WHERE id=:id"
+                        ),
+                        {
+                            "s": status,
+                            "e": error or "",
+                            "f": finished.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                            "id": run_id,
+                        },
+                    )
+                    conn.commit()
+                except Exception:
+                    log.error(
+                        "finish_run: fallback UPDATE also failed", run_id=run_id, exc_info=True
+                    )
+                    return
+        if degraded:
+            try:
+                self.record_alert("finish_run_degraded", pipeline_name, degraded_error)
+            except Exception:
+                log.error("finish_run: record_alert for degraded write failed", run_id=run_id)
+
+    def reconcile_stale_running_runs(self, pipeline: str, cutoff_iso: str) -> int:
+        """Mark *pipeline*'s stuck 'running' runs (started before *cutoff_iso*) as failed.
+
+        Called after the scheduler force-clears a stale lock for *pipeline* —
+        the run that held that lock crashed or the process restarted without
+        ever calling ``finish_run``, so its row would otherwise show
+        'running' forever even though nothing is actually executing.
+        """
+        from sqlalchemy import text
+
+        finished = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        with self._conn() as conn:
+            result = conn.execute(
                 text(
-                    "UPDATE pipeline_runs SET finished_at=:f, status=:s, error=:e, duration_s=:d"
-                    " WHERE id=:id"
+                    "UPDATE pipeline_runs SET status='failed',"
+                    " error='stale lock cleared — run did not report a terminal status',"
+                    " finished_at=:f"
+                    " WHERE pipeline=:p AND status='running' AND started_at < :c"
                 ),
-                {
-                    "f": finished.strftime("%Y-%m-%dT%H:%M:%S.%f"),
-                    "s": status,
-                    "e": error or "",
-                    "d": duration_s,
-                    "id": run_id,
-                },
+                {"f": finished, "p": pipeline, "c": cutoff_iso},
             )
             conn.commit()
+            return result.rowcount  # type: ignore[no-any-return]
 
     def get_runs(self, pipeline: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         from sqlalchemy import text
@@ -1611,7 +1845,7 @@ class PgStudioDb:
                 rows = conn.execute(
                     text(
                         "SELECT id,pipeline,started_at,finished_at,status,error,"
-                        "triggered_by,duration_s,request_id"
+                        "triggered_by,duration_s,request_id,rows_input,rows_output"
                         " FROM pipeline_runs WHERE pipeline=:p"
                         " ORDER BY started_at DESC LIMIT :lim"
                     ),
@@ -1621,7 +1855,7 @@ class PgStudioDb:
                 rows = conn.execute(
                     text(
                         "SELECT id,pipeline,started_at,finished_at,status,error,"
-                        "triggered_by,duration_s,request_id"
+                        "triggered_by,duration_s,request_id,rows_input,rows_output"
                         " FROM pipeline_runs ORDER BY started_at DESC LIMIT :lim"
                     ),
                     {"lim": limit},
@@ -1637,6 +1871,8 @@ class PgStudioDb:
                 "triggered_by": r[6],
                 "duration_s": round(r[7], 2) if r[7] is not None else None,
                 "request_id": r[8] or "",
+                "rows_input": r[9] or 0,
+                "rows_output": r[10] or 0,
             }
             for r in rows
         ]
@@ -1979,7 +2215,12 @@ class PgStudioDb:
                 {"e": event_type, "p": pipeline, "m": message, "t": datetime.now(UTC).isoformat()},
             ).fetchone()
             conn.commit()
-        return row[0] if row else 0
+        alert_id = row[0] if row else 0
+        from dex_studio.notify import send_alert_webhook
+
+        if alert_id and send_alert_webhook(event_type, pipeline, message):
+            self.mark_alert_delivered(alert_id)
+        return alert_id
 
     def mark_alert_delivered(self, alert_id: int) -> None:
         from sqlalchemy import text
@@ -2102,7 +2343,8 @@ class PgStudioDb:
         with self._conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT id, col_name, rule_type, config, on_failure, enabled"
+                    "SELECT id, col_name, rule_type, config, on_failure, enabled,"
+                    " last_result, last_checked_at"
                     " FROM quality_rules WHERE pipeline=:p ORDER BY col_name, id"
                 ),
                 {"p": pipeline},
@@ -2115,9 +2357,21 @@ class PgStudioDb:
                 "config": _json.loads(r[3]),
                 "on_failure": r[4],
                 "enabled": bool(r[5]),
+                "last_result": bool(r[6]) if r[6] is not None else None,
+                "last_checked_at": r[7],
             }
             for r in rows
         ]
+
+    def record_quality_rule_result(self, rule_id: int, passed: bool) -> None:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text("UPDATE quality_rules SET last_result=:r, last_checked_at=:t WHERE id=:id"),
+                {"r": int(passed), "t": datetime.now(UTC).isoformat(), "id": rule_id},
+            )
+            conn.commit()
 
     def add_quality_rule(
         self,
@@ -2509,7 +2763,17 @@ _GLOBAL_DB_PATH: Path | None = None
 def _resolve_sqlite_path(eng: Any) -> Path | None:
     """Extract the studio.db path from the engine's project directory."""
     try:
-        db_dir = Path(str(getattr(eng, "_dex_dir", None) or getattr(eng, "config_path", "")))
+        dex_dir = getattr(eng, "_dex_dir", None)
+        if dex_dir:
+            # eng._dex_dir is already the project's `.dex` directory (see
+            # DexEngine.__init__: `self._dex_dir = self.project_dir / ".dex"`).
+            # Appending ".dex" again here used to produce a doubled
+            # `.dex/.dex/studio.db` path — a real project's actual
+            # `<project>/.dex/studio.db` was never touched, so every
+            # start_run/finish_run/acquire_lock call silently wrote to (and
+            # read from) an orphaned sibling database instead.
+            return Path(str(dex_dir)) / "studio.db"
+        db_dir = Path(str(getattr(eng, "config_path", "")))
         if db_dir.suffix in (".yaml", ".yml", ".toml"):
             db_dir = db_dir.parent
         return db_dir / ".dex" / "studio.db"

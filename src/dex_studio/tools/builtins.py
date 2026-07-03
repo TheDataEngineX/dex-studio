@@ -94,7 +94,7 @@ def register_builtins(registry: ToolRegistry) -> None:
 
 def _tool_query(sql: str) -> Any:
     try:
-        from dataenginex.ai.tools import tool_registry as _dex  # type: ignore[import-untyped]
+        from dataenginex.ai.tools import tool_registry as _dex
 
         return _dex.call("query", sql=sql)
     except Exception:
@@ -207,7 +207,7 @@ def _tool_detect_anomalies(table: str, column: str, threshold: float = 3.0) -> A
 
     result: dict[str, Any] = {"table": table, "column": column, "anomalies": []}
     with _ctx.suppress(Exception):
-        import duckdb  # type: ignore[import-untyped]
+        import duckdb
 
         from dex_studio._engine import get_engine
 
@@ -257,17 +257,17 @@ def _tool_finetune(  # noqa: C901
         "algorithm": algorithm,
     }
     try:
-        import numpy as np  # type: ignore[import-untyped]
-        import pandas as pd  # type: ignore[import-untyped]
-        from sklearn.ensemble import (  # type: ignore[import-untyped]
+        import numpy as np
+        import pandas as pd
+        from sklearn.ensemble import (
             GradientBoostingClassifier,
             GradientBoostingRegressor,
             RandomForestClassifier,
             RandomForestRegressor,
         )
-        from sklearn.linear_model import LogisticRegression, Ridge  # type: ignore[import-untyped]
-        from sklearn.metrics import accuracy_score, r2_score  # type: ignore[import-untyped]
-        from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
+        from sklearn.linear_model import LogisticRegression, Ridge
+        from sklearn.metrics import accuracy_score, r2_score
+        from sklearn.model_selection import train_test_split
 
         from dex_studio._engine import get_engine
 
@@ -329,7 +329,7 @@ def _tool_finetune(  # noqa: C901
         )
         metric_name = "accuracy" if is_classifier else "r2_score"
 
-        model.feature_names_in_ = np.array(feature_cols)  # type: ignore[attr-defined]
+        model.feature_names_in_ = np.array(feature_cols)
 
         # Register
         reg_name = model_name or f"{feature_set}_{target}_model"

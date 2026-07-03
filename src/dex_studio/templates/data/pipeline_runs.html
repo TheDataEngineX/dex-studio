@@ -51,8 +51,9 @@
         <th style="width:130px">Started</th>
         {% if not pipeline_name %}<th>Pipeline</th>{% endif %}
         <th style="width:100px">Status</th>
-        <th style="width:90px" class="num">Duration</th>
-        <th style="width:90px">Trigger</th>
+        <th style="width:80px" class="num">Rows</th>
+        <th style="width:80px" class="num">Duration</th>
+        <th style="width:80px">Trigger</th>
         <th>Error</th>
       </tr>
     </thead>
@@ -71,6 +72,7 @@
             {% elif r.status == 'running' %}<span class="pill running">running</span>
             {% else %}<span class="pill error">failed</span>{% endif %}
           </td>
+          <td class="num mono dim">{{ r.rows_input or '—' }}/{{ r.rows_output or '—' }}</td>
           <td class="num mono dim">{{ r.duration or '—' }}</td>
           <td class="muted" style="font-size:12px">{{ r.get('trigger', '—') if r is mapping else '—' }}</td>
           <td class="muted mono" style="font-size:11px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -122,6 +124,10 @@
       <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Trigger</span>
       <span class="mono" id="det-trigger" style="font-size:12px">—</span>
     </div>
+    <div class="col" style="gap:1px">
+      <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Rows (in/out)</span>
+      <span class="mono" id="det-rows" style="font-size:12px">—</span>
+    </div>
   </div>
   <div id="det-error-wrap" style="display:none;margin:12px 16px 0;padding:10px 12px;background:color-mix(in oklch,var(--red-9) 8%,transparent);border-left:3px solid var(--red-9);border-radius:4px">
     <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Error</div>
@@ -171,9 +177,10 @@
     const hasPipe  = row.dataset.pipe !== undefined && {{ 'false' if pipeline_name else 'true' }};
     if (hasPipe) idx++;  // skip pipeline name column
     idx++;  // skip status cell
-    const duration = cells[idx] ? cells[idx++].textContent.trim() : '—';
-    const trigger  = cells[idx] ? cells[idx++].textContent.trim() : '—';
-    const errText  = cells[idx] ? cells[idx].textContent.trim() : '';
+    const rowsText  = cells[idx] ? cells[idx++].textContent.trim() : '—';
+    const duration  = cells[idx] ? cells[idx++].textContent.trim() : '—';
+    const trigger   = cells[idx] ? cells[idx++].textContent.trim() : '—';
+    const errText   = cells[idx] ? cells[idx].textContent.trim() : '';
 
     const pipe    = row.dataset.pipe || '';
     const status  = row.dataset.status || '';
@@ -182,6 +189,7 @@
     document.getElementById('det-started').textContent = started;
     document.getElementById('det-duration').textContent = duration;
     document.getElementById('det-trigger').textContent = trigger;
+    document.getElementById('det-rows').textContent = rowsText;
 
     const pill = document.getElementById('det-pill');
     pill.textContent = status === 'success' ? 'success' : 'failed';

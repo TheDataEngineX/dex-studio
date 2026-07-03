@@ -304,7 +304,7 @@ def create_app() -> FastAPI:
 
     # ── Templates (shared singleton) ─────────────────────────────────────────
     templates = make_templates()
-    app.state.templates = templates  # type: ignore[attr-defined]
+    app.state.templates = templates
 
     # ── Routers ──────────────────────────────────────────────────────────────
     app.include_router(root.router)

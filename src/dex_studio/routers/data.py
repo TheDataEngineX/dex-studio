@@ -26,7 +26,6 @@ from dex_studio.routers._deps import (
     base_ctx,
     flash,
     render,
-    stub_page,
 )
 from dex_studio.studio_db import get_studio_db
 from dex_studio.utils import fmt_cron, fmt_ts, fmt_ts_iso
@@ -79,7 +78,7 @@ def _build_dashboard_recent_runs(eng: Any) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     sdb = get_studio_db(eng)
     if sdb is not None:
-        with contextlib.suppress(Exception):
+        try:
             for r in sdb.get_runs(None, limit=5):
                 st = r.get("status", "")
                 pipe_name = r.get("pipeline") or "—"
@@ -91,12 +90,14 @@ def _build_dashboard_recent_runs(eng: Any) -> list[dict[str, Any]]:
                         "status": "success" if st == "success" else "error",
                         "status_class": "ok" if st == "success" else "error",
                         "duration": _fmt_dur_s(r.get("duration_s")),
-                        "rows": "—",
+                        "rows": str(r.get("rows_output", 0) or "—"),
                         "started": fmt_ts(ts),
                     }
                 )
+        except Exception:
+            log.exception("failed to fetch dashboard recent runs from studio_db")
     if not runs:
-        with contextlib.suppress(Exception):
+        try:
             for r in eng.store.get_pipeline_runs()[:5]:
                 success = getattr(r, "success", False)
                 pipe_name = getattr(r, "pipeline_name", "") or getattr(r, "pipeline", "") or "—"
@@ -111,6 +112,8 @@ def _build_dashboard_recent_runs(eng: Any) -> list[dict[str, Any]]:
                         "started": fmt_ts(getattr(r, "timestamp", None)),
                     }
                 )
+        except Exception:
+            log.exception("failed to fetch dashboard recent runs from store")
     return runs
 
 
@@ -326,7 +329,7 @@ def _next_run_iso(schedule: str, last_run_ts: Any) -> str:
     from datetime import UTC as _UTC
     from datetime import datetime as _dt
 
-    from croniter import croniter as _cron  # type: ignore[import-untyped]
+    from croniter import croniter as _cron
 
     try:
         if isinstance(last_run_ts, str):
@@ -440,7 +443,8 @@ def _serialize_db_run(r: dict[str, Any]) -> dict[str, Any]:
         "success": status == "success",
         "duration_ms": round(dur_s * 1000, 0) if dur_s is not None else None,
         "duration": _fmt_dur_s(dur_s),
-        "rows_output": None,
+        "rows_input": r.get("rows_input", 0),
+        "rows_output": r.get("rows_output", 0),
         "error": r.get("error") or "",
         "trigger": r.get("triggered_by") or "scheduler",
         "status": status,
@@ -626,38 +630,79 @@ def update_schedule(
     return RedirectResponse(f"/data/pipelines/{name}", status_code=303)
 
 
+def _build_pipeline_detail_runs(eng: Any, sdb: Any, name: str) -> tuple[list[dict[str, Any]], Any]:
+    """Return (recent_runs, last_run_raw_timestamp) for the pipeline detail page."""
+    db_runs = sdb.get_runs(name, limit=20) if sdb is not None else []
+    if db_runs:
+        raw_ts_list = [r.get("finished_at") or r.get("started_at") for r in db_runs]
+        last_run_raw = raw_ts_list[0] if raw_ts_list else None
+        recent_runs = [
+            {
+                "started": fmt_ts(raw_ts),
+                "status": "success" if r.get("status") == "success" else "error",
+                "status_class": "ok" if r.get("status") == "success" else "error",
+                "duration": _fmt_dur_s(r.get("duration_s")),
+                "rows": str(r.get("rows_output", 0) or "—"),
+                "trigger": r.get("triggered_by") or "scheduled",
+                "error": r.get("error") or "",
+            }
+            for r, raw_ts in zip(db_runs, raw_ts_list, strict=True)
+        ]
+        return recent_runs, last_run_raw
+
+    runs = eng.store.get_pipeline_runs(name)[:20]
+    last_run_raw = runs[0].timestamp if runs else None
+    recent_runs = [
+        {
+            "started": fmt_ts(r.timestamp),
+            "status": "success" if r.success else "error",
+            "status_class": "ok" if r.success else "error",
+            "duration": _fmt_dur_ms(r.duration_ms),
+            "rows": str(r.rows_output or "—"),
+            "trigger": "manual",
+            "error": r.error or "",
+        }
+        for r in runs
+    ]
+    return recent_runs, last_run_raw
+
+
+def _pipeline_quality_score(eng: Any, name: str) -> float | None:
+    try:
+        quality_results = eng.quality_check_all_tables()
+        for tbl, res in quality_results.items():
+            if res and tbl.endswith(f".{name}"):
+                return float(round(res.get("score", 0) * 100))
+    except Exception:
+        log.exception("quality check failed for pipeline detail", pipeline=name)
+    return None
+
+
+def _pipeline_is_stale(last_run_raw: Any) -> bool:
+    from datetime import UTC, datetime
+
+    if last_run_raw is None:
+        return True
+    try:
+        if isinstance(last_run_raw, datetime):
+            last_dt = last_run_raw
+        else:
+            last_dt = datetime.fromisoformat(str(last_run_raw))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - last_dt).total_seconds() > 86400
+    except Exception:
+        log.exception("failed to parse last run timestamp", ts=last_run_raw)
+        return True
+
+
 @router.get("/pipelines/{name}", response_class=HTMLResponse)
 def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
     cfg = (eng.config.data.pipelines or {}).get(name)
     if cfg is None:
         return RedirectResponse("/data/pipelines", status_code=303)  # type: ignore[return-value]
     sdb = get_studio_db(eng)
-    db_runs = sdb.get_runs(name, limit=20) if sdb is not None else []
-    if db_runs:
-        history = [
-            {
-                "timestamp": fmt_ts(r.get("finished_at") or r.get("started_at")),
-                "success": r.get("status") == "success",
-                "rows_input": "—",
-                "rows_output": "—",
-                "duration_ms": _fmt_dur_s(r.get("duration_s")),
-                "error": r.get("error") or "",
-            }
-            for r in db_runs
-        ]
-    else:
-        runs = eng.store.get_pipeline_runs(name)
-        history = [
-            {
-                "timestamp": fmt_ts(r.timestamp),
-                "success": r.success,
-                "rows_input": r.rows_input,
-                "rows_output": r.rows_output,
-                "duration_ms": f"{r.duration_ms:.0f}" if r.duration_ms else "—",
-                "error": r.error or "",
-            }
-            for r in runs[:20]
-        ]
+    recent_runs, last_run_raw = _build_pipeline_detail_runs(eng, sdb, name)
     steps = []
     if hasattr(cfg, "steps") and cfg.steps:
         for s in cfg.steps:
@@ -690,24 +735,29 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
         effective_from="",
         effective_to="",
     )
-    # Compute stats summary from history
-    total_runs = len(history)
-    success_count = sum(1 for h in history if h["success"])
+    # Compute stats summary from recent_runs
+    total_runs = len(recent_runs)
+    success_count = sum(1 for h in recent_runs if h["status_class"] == "ok")
     stats = SimpleNamespace(
         rows_total=str(total_runs) if total_runs else "—",
         success_rate=f"{success_count / total_runs * 100:.0f}%" if total_runs else "—",
-        next_run=_next_run_iso(cfg.schedule or "", history[0]["timestamp"] if history else None),
+        next_run=_next_run_iso(cfg.schedule or "", last_run_raw),
     )
+    # Quality score for pipeline output table, and freshness (stale if last run > 24h or none)
+    quality_score = _pipeline_quality_score(eng, name)
+    is_stale = _pipeline_is_stale(last_run_raw)
     ctx = base_ctx(request) | {
         "pipeline_name": name,
         "schedule": fmt_cron(cfg.schedule or ""),
         "source": cfg.source or "—",
         "destination": getattr(cfg, "destination", None) or "—",
-        "history": history,
+        "recent_runs": recent_runs,
         "steps": steps,
         "source_info": source_info,
         "dest_info": dest_info,
         "stats": stats,
+        "quality_score": quality_score,
+        "is_stale": is_stale,
     }
     return render(request, "data/pipeline_detail.html", ctx)
 
@@ -718,7 +768,7 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
 def _get_watermark_store(eng: Any) -> Any | None:
     """Return a WatermarkStore for the current project, or None if unavailable."""
     try:
-        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.scheduler import _get_or_create_studio_db
         from dex_studio.watermark import WatermarkStore
     except ImportError:
         return None
@@ -1291,27 +1341,49 @@ def _parse_quality_run(
 
 
 def _pipeline_quality_summary(eng: Any) -> list[dict[str, Any]]:
-    """Build per-pipeline quality check counts from config."""
+    """Build per-pipeline quality check counts from real results (config checks + custom rules)."""
     summary: list[dict[str, Any]] = []
     pipelines_cfg = getattr(eng.config.data, "pipelines", None) or {}
+    db = get_studio_db(eng)
+    quality_results: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        quality_results = eng.quality_check_all_tables()
     for pipe_name, pipe_cfg in pipelines_cfg.items():
         q = getattr(pipe_cfg, "quality", None)
-        if q is None:
-            continue
-        check_count = sum(
-            1
-            for attr in ("completeness", "row_count_min", "uniqueness", "custom_sql")
-            if getattr(q, attr, None) is not None
+        cfg_check_count = (
+            sum(
+                1
+                for attr in ("completeness", "row_count_min", "uniqueness", "custom_sql")
+                if getattr(q, attr, None) is not None
+            )
+            if q is not None
+            else 0
         )
-        if check_count == 0:
+        cfg_pass = cfg_fail = 0
+        if cfg_check_count:
+            suffix = f".{pipe_name}"
+            matches = (r for tbl, r in quality_results.items() if r and tbl.endswith(suffix))
+            res = next(matches, None)
+            if res:
+                score = res.get("score", 0)
+                cfg_fail = round(cfg_check_count * (1 - score))
+                cfg_pass = cfg_check_count - cfg_fail
+            else:
+                cfg_pass = cfg_check_count
+        rules = db.get_quality_rules(pipe_name) if db is not None else []
+        rule_pass = sum(1 for r in rules if r.get("last_result") is True)
+        rule_fail = sum(1 for r in rules if r.get("last_result") is False)
+        checked_ats = [r["last_checked_at"] for r in rules if r.get("last_checked_at")]
+        total_checks = cfg_check_count + len(rules)
+        if total_checks == 0:
             continue
         summary.append(
             {
                 "name": pipe_name,
-                "check_count": check_count,
-                "pass_count": check_count,
-                "fail_count": 0,
-                "last_checked": "—",
+                "check_count": total_checks,
+                "pass_count": cfg_pass + rule_pass,
+                "fail_count": cfg_fail + rule_fail,
+                "last_checked": fmt_ts(max(checked_ats)) if checked_ats else "—",
             }
         )
     return summary
@@ -1656,22 +1728,6 @@ def streaming(request: Request, eng: ReadDep) -> HTMLResponse:
     return render(request, "data/streaming.html", ctx)
 
 
-# ── Asset Graph / Contracts / Templates (stubs) ───────────────────────────────
-
-_DATA_STUB_TITLES = {
-    "/data/asset-graph": "Asset Graph",
-    "/data/contracts": "Data Contracts",
-    "/data/templates": "Pipeline Templates",
-}
-
-
-@router.get("/asset-graph", response_class=HTMLResponse)
-@router.get("/contracts", response_class=HTMLResponse)
-@router.get("/templates", response_class=HTMLResponse)
-def data_stub(request: Request, _: ReadDep) -> HTMLResponse:
-    return stub_page(request, _DATA_STUB_TITLES)
-
-
 # ── Watermarks ────────────────────────────────────────────────────────────────
 
 
@@ -1702,7 +1758,7 @@ def watermark_reset(request: Request, eng: WriteDep, source: str) -> RedirectRes
 
 def _get_schema_manager(eng: Any) -> Any | None:
     try:
-        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.scheduler import _get_or_create_studio_db
         from dex_studio.schema_evolution import SchemaEvolutionManager
     except ImportError:
         return None
@@ -1717,7 +1773,7 @@ def _get_schema_manager(eng: Any) -> Any | None:
 @router.get("/schema", response_class=HTMLResponse)
 def schema_contracts(request: Request, eng: ReadDep) -> HTMLResponse:
     try:
-        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.scheduler import _get_or_create_studio_db
     except ImportError:
         _get_or_create_studio_db = None  # type: ignore[assignment]
 
@@ -1755,9 +1811,15 @@ def schema_contracts(request: Request, eng: ReadDep) -> HTMLResponse:
 
 @router.post("/schema/{pipeline}/snapshot")
 def schema_snapshot(request: Request, eng: WriteDep, pipeline: str) -> RedirectResponse:
+    from dex_studio.schema_evolution import SchemaReadError
+
     mgr = _get_schema_manager(eng)
     if mgr:
-        result = mgr.snapshot_contract(pipeline)
+        try:
+            result = mgr.snapshot_contract(pipeline)
+        except SchemaReadError as exc:
+            flash(request, f"Schema read failed for '{pipeline}': {exc}", "error")
+            return RedirectResponse("/data/schema", status_code=303)  # type: ignore[return-value]
         if result:
             flash(request, f"Schema contract recorded for '{pipeline}' ({len(result)} columns).")
         else:
@@ -1782,7 +1844,7 @@ def schema_drift_accept(
 def _get_backfill_engine(eng: Any) -> Any | None:
     try:
         from dex_studio.backfill import BackfillEngine
-        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.scheduler import _get_or_create_studio_db
     except ImportError:
         return None
     db = None
@@ -1817,12 +1879,9 @@ def backfill_page(request: Request, eng: ReadDep) -> HTMLResponse:
 def backfill_trigger(request: Request, eng: WriteDep, pipeline: str) -> RedirectResponse:
     bf = _get_backfill_engine(eng)
     if bf:
-        result = bf.trigger(pipeline, run_now=False)
+        result = bf.trigger(pipeline, run_now=True)
         if result.get("watermark_reset"):
-            flash(
-                request,
-                f"Backfill queued for '{pipeline}' — watermark reset. Trigger a run to re-ingest.",
-            )
+            flash(request, f"Backfill triggered for '{pipeline}' — watermark reset, re-ingesting.")
         else:
             flash(request, result.get("error") or "Backfill setup failed.", "error")
     return RedirectResponse("/data/backfill", status_code=303)
@@ -1833,7 +1892,7 @@ def backfill_trigger(request: Request, eng: WriteDep, pipeline: str) -> Redirect
 
 def _get_quality_db(eng: Any) -> Any | None:
     try:
-        from dex_studio.scheduler import _get_or_create_studio_db  # type: ignore[attr-defined]
+        from dex_studio.scheduler import _get_or_create_studio_db
     except ImportError:
         return None
     with contextlib.suppress(Exception):
@@ -1857,7 +1916,8 @@ def pipeline_quality_tab(
     columns: list[dict[str, Any]] = []
     for col in by_col:
         col_rules = by_col[col]
-        passing = sum(1 for rule in col_rules if rule.get("last_result", True))
+        passing = sum(1 for rule in col_rules if rule.get("last_result") is True)
+        failing = sum(1 for rule in col_rules if rule.get("last_result") is False)
         columns.append(
             {
                 "name": col,
@@ -1866,7 +1926,8 @@ def pipeline_quality_tab(
                 "constraints": [],
                 "rules": col_rules,
                 "passing": passing,
-                "failing": len(col_rules) - passing,
+                "failing": failing,
+                "pending": len(col_rules) - passing - failing,
             }
         )
 
@@ -1875,8 +1936,9 @@ def pipeline_quality_tab(
         "columns": columns,
         "by_col": by_col,
         "total_rules": len(rules),
-        "passing_rules": sum(1 for r in rules if r.get("last_result", True)),
-        "failing_rules": sum(1 for r in rules if not r.get("last_result", True)),
+        "passing_rules": sum(1 for r in rules if r.get("last_result") is True),
+        "failing_rules": sum(1 for r in rules if r.get("last_result") is False),
+        "pending_rules": sum(1 for r in rules if r.get("last_result") is None),
     }
     return render(request, "data/pipeline_quality.html", ctx)
 
@@ -1941,8 +2003,29 @@ def delete_quality_rule_route(
 @router.post("/pipelines/{pipeline_name}/quality/run")
 @router.post("/pipelines/{pipeline_name}/quality/run-checks")
 def run_quality_checks(
+    request: Request,
     pipeline_name: str,
-    _: WriteDep,
+    eng: WriteDep,
 ) -> RedirectResponse:
+    from dex_studio.quality_eval import run_quality_rules
+
     safe = _safe_pipeline_name(pipeline_name)
+    db = _get_quality_db(eng)
+    if db is not None:
+        rules = db.get_quality_rules(pipeline_name)
+        results = run_quality_rules(eng.project_dir, pipeline_name, rules)
+        fail_count = 0
+        for res in results:
+            db.record_quality_rule_result(res["id"], res["passed"])
+            if not res["passed"]:
+                fail_count += 1
+        if fail_count:
+            db.record_alert(
+                "quality_check_failed",
+                pipeline_name,
+                f"{fail_count}/{len(results)} quality rule(s) failed",
+            )
+            flash(request, f"Quality checks: {fail_count}/{len(results)} rule(s) failed.", "error")
+        else:
+            flash(request, f"Quality checks passed ({len(results)} rule(s)).")
     return RedirectResponse(f"/data/pipelines/{safe}?tab=quality", status_code=303)  # noqa: S601

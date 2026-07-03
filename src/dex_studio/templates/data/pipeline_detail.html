@@ -28,6 +28,18 @@
                        color:var(--state-{{ run_status }});text-transform:capitalize">
             {{ recent_runs[0].status if recent_runs else 'idle' }}
           </span>
+          {% if is_stale %}
+          <span style="font-size:10px;padding:2px 7px;border-radius:99px;background:color-mix(in oklch,var(--amber-9) 12%,transparent);color:var(--amber-11);text-transform:uppercase;letter-spacing:.04em">
+            stale
+          </span>
+          {% endif %}
+          {% if quality_score is not none %}
+          <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:99px;
+                       background:color-mix(in oklch,var(--{% if quality_score >= 80 %}green{% elif quality_score >= 50 %}amber{% else %}red{% endif %}-9) 12%,transparent);
+                       color:var(--{% if quality_score >= 80 %}green{% elif quality_score >= 50 %}amber{% else %}red{% endif %}-11)">
+            Q{{ quality_score }}
+          </span>
+          {% endif %}
         </div>
         <p class="inner-sub">
           {{ source_info.name | default('—') }} →

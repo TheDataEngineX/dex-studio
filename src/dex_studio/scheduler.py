@@ -28,9 +28,10 @@ from typing import Any
 
 import structlog
 import yaml
-from croniter import croniter  # type: ignore[import-untyped]
+from croniter import croniter
 from dataenginex.data.pipeline.dag import build_dag, downstream_of, root_pipelines
 
+from dex_studio import run_checks
 from dex_studio.studio_db import PgStudioDb, StudioDb, get_studio_db
 from dex_studio.watermark import WatermarkStore
 
@@ -38,7 +39,9 @@ log = structlog.get_logger().bind(src="scheduler")
 
 _MAX_TICK_S = 30  # upper bound on adaptive sleep
 _MIN_TICK_S = 5  # lower bound — avoid busy-spinning
-_LOCK_TIMEOUT_S = 7200  # 2 h — releases locks from crashed runs
+_LOCK_TIMEOUT_S = 3600  # 1 h — releases locks from crashed runs
+_COMPACTION_INTERVAL_S = 86400  # once per day
+_COMPACTION_SENTINEL = "__compaction__"  # synthetic "pipeline" key in scheduler_state
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -192,17 +195,17 @@ def _run_one_pipeline(
     run_id = db.start_run(name, triggered_by="scheduler")
     log.info("running scheduled pipeline", pipeline=name)
     try:
-        eng.run_pipeline(name)
+        result = eng.run_pipeline(name)
         run_ts = datetime.now(UTC)
-        db.finish_run(run_id, "success")
+        rows_input = getattr(result, "rows_input", 0) or 0 if result is not None else 0
+        rows_output = getattr(result, "rows_output", 0) or 0 if result is not None else 0
+        db.finish_run(run_id, "success", rows_input=rows_input, rows_output=rows_output)
         db.set_last_run(name, run_ts)
         db.release_lock(name)
         db.clear_run_state(name)
         log.info("pipeline complete", pipeline=name)
-        try:
-            eng.quality_check_all_tables()
-        except Exception as exc:
-            log.warning("quality check failed after pipeline run", pipeline=name, error=str(exc))
+        run_checks.run_quality_check(eng, db, name)
+        run_checks.check_row_reconciliation(db, name, rows_input, rows_output)
         _post_success_hooks(eng, name, db, cfg, dag, run_ts, _visited=_visited)
 
     except Exception as exc:
@@ -268,6 +271,29 @@ def _fire_retries(
                 ran_cb(name)
 
 
+def _maybe_run_compaction(eng: Any, db: StudioDb | PgStudioDb, now: datetime) -> None:
+    """Run a lakehouse compaction pass across all pipelines, at most once per
+
+    _COMPACTION_INTERVAL_S. Only called by the scheduler leader (same gating
+    as the rest of scheduler_loop), and cheap to call every tick since it
+    no-ops until the interval has elapsed.
+    """
+    last = db.get_last_run(_COMPACTION_SENTINEL)
+    if last is not None and (now - last).total_seconds() < _COMPACTION_INTERVAL_S:
+        return
+    try:
+        from dex_studio.compaction import CompactionEngine
+
+        pipelines = list((eng.config.data.pipelines or {}).keys())
+        engine = CompactionEngine(eng.project_dir, db)
+        results = engine.compact_all(pipelines)
+        log.info("scheduled compaction complete", pipelines_compacted=len(results))
+    except Exception as exc:
+        log.warning("scheduled compaction failed", error=str(exc))
+    finally:
+        db.set_last_run(_COMPACTION_SENTINEL, now)
+
+
 def _compute_next_tick(
     db: StudioDb | PgStudioDb,
     dag: dict[str, list[str]],
@@ -285,6 +311,44 @@ def _compute_next_tick(
     return max(_MIN_TICK_S, int(next_wait))
 
 
+def _reconcile_stale_locks(db: StudioDb | PgStudioDb) -> None:
+    """Force-clear expired pipeline locks and reconcile their orphaned runs.
+
+    A crashed process or a mid-run restart leaves a pipeline_locks row behind
+    forever and its pipeline_runs row stuck at status='running' — the run
+    never got a chance to call finish_run(). clear_stale_locks() already
+    force-clears the lock after _LOCK_TIMEOUT_S; this also marks that
+    pipeline's stuck 'running' run(s) as failed so the UI doesn't show it as
+    actively running indefinitely, and records an alert so it's visible.
+    """
+    cutoff_iso = datetime.fromtimestamp(
+        datetime.now(UTC).timestamp() - _LOCK_TIMEOUT_S, tz=UTC
+    ).isoformat()
+    stale_pipelines = db.stale_locked_pipelines(_LOCK_TIMEOUT_S)
+    db.clear_stale_locks(_LOCK_TIMEOUT_S)
+    for name in stale_pipelines:
+        try:
+            reconciled = db.reconcile_stale_running_runs(name, cutoff_iso)
+        except Exception as exc:
+            log.warning("failed to reconcile stale running runs", pipeline=name, error=str(exc))
+            continue
+        if reconciled:
+            log.warning(
+                "reconciled stale running run(s) after stale lock clear",
+                pipeline=name,
+                count=reconciled,
+            )
+            try:
+                db.record_alert(
+                    "run_stuck_reconciled",
+                    name,
+                    f"stale lock cleared; {reconciled} run(s) marked failed"
+                    " — run did not report a terminal status",
+                )
+            except Exception as exc:
+                log.warning("run_stuck_reconciled alert failed", pipeline=name, error=str(exc))
+
+
 def _run_due_pipelines(
     eng: Any,
     cfg: SchedulerConfig,
@@ -297,7 +361,7 @@ def _run_due_pipelines(
     Returns the number of seconds to sleep before the next check (adaptive
     tick — sleeps until the next cron fires rather than a fixed interval).
     """
-    db.clear_stale_locks(_LOCK_TIMEOUT_S)
+    _reconcile_stale_locks(db)
     pipelines: dict[str, Any] = eng.config.data.pipelines or {}
     dag = build_dag(pipelines)
     now = datetime.now(UTC)
@@ -315,6 +379,8 @@ def _run_due_pipelines(
             _run_one_pipeline(eng, name, db, cfg, dag)
             if ran_cb:
                 ran_cb(name)
+
+    _maybe_run_compaction(eng, db, now)
 
     return _compute_next_tick(db, dag, pipelines)
 

@@ -196,7 +196,7 @@ wheels = [
 [[package]]
 name = "dataenginex"
 version = "0.4.4"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../dataenginex" }
 dependencies = [
     { name = "click" },
     { name = "croniter" },
@@ -210,10 +210,54 @@ dependencies = [
     { name = "pyyaml" },
     { name = "structlog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/f8/5c4537f925df2589d23b96d728f5e4a1f5c691db4be35b697988db1f0970/dataenginex-0.4.4.tar.gz", hash = "sha256:260c405e438f2cf83bf04ea1dd43cbe151fa3406949cd495dea90c97bd1bef59", size = 514154, upload-time = "2026-06-27T07:29:03.263Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/ed/d70f0a2ecf9fb0a4956d70fc1f0e3662513a042f36c702d44b0af644cf9b/dataenginex-0.4.4-py3-none-any.whl", hash = "sha256:e20ff397d25f7f7f83d48cc912d8c4da9cd8065d3037e0c592bcdede2c288672", size = 211508, upload-time = "2026-06-27T07:29:01.567Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "arq", marker = "extra == 'queue'", specifier = ">=0.28.0" },
+    { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.31.0" },
+    { name = "boto3", marker = "extra == 'cloud'", specifier = ">=1.43.7" },
+    { name = "click", specifier = ">=8.3.3" },
+    { name = "croniter", specifier = ">=6.2.2" },
+    { name = "deltalake", marker = "extra == 'delta'", specifier = ">=0.24.0" },
+    { name = "duckdb", specifier = ">=1.5.2" },
+    { name = "google-cloud-bigquery", marker = "extra == 'cloud'", specifier = ">=3.41.0" },
+    { name = "google-cloud-storage", marker = "extra == 'cloud'", specifier = ">=3.10.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "orjson", specifier = ">=3.11.0" },
+    { name = "prometheus-client", specifier = ">=0.25.0" },
+    { name = "pyarrow", specifier = ">=23.0.1" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pydantic-settings", specifier = ">=2.14.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.18.0" },
+    { name = "structlog", specifier = ">=25.5.0" },
+    { name = "torch", marker = "extra == 'pytorch'", specifier = ">=2.0.0" },
 ]
+provides-extras = ["cloud", "delta", "postgres", "qdrant", "queue", "pytorch"]
+
+[package.metadata.requires-dev]
+data = [{ name = "pyspark", specifier = ">=4.1.2" }]
+dev = [
+    { name = "mkdocs-material", specifier = ">=9.7.6" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.4" },
+    { name = "mypy", specifier = ">=2.1.0" },
+    { name = "pip-audit", specifier = ">=2.10.0" },
+    { name = "poethepoet", specifier = ">=0.46.0" },
+    { name = "pre-commit", specifier = ">=4.6.0" },
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "ruff", specifier = ">=0.15.14" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20260408" },
+    { name = "types-requests", specifier = ">=2.33.0.20260503" },
+    { name = "uv", specifier = ">=0.11.16" },
+]
+ml = [
+    { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "sentence-transformers", specifier = ">=5.5.1" },
+]
+notebook = [{ name = "pandas", specifier = ">=3.0.2" }]
+tracking = [{ name = "mlflow", specifier = ">=3.12.0" }]
 
 [[package]]
 name = "detect-installer"
@@ -267,7 +311,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dataenginex", specifier = ">=0.4.4" },
+    { name = "dataenginex", editable = "../dataenginex" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "jinja2", specifier = ">=3.1.4" },

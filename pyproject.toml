@@ -113,3 +113,6 @@ warn_unused_ignores = false
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+
+[tool.uv.sources]
+dataenginex = { path = "../dataenginex", editable = true }

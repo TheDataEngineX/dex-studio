@@ -91,7 +91,7 @@ def _next_run(cron: str, last: datetime | None) -> str | None:
     import contextlib
     from datetime import UTC
 
-    from croniter import croniter  # type: ignore[import-untyped]
+    from croniter import croniter
 
     with contextlib.suppress(Exception):
         from datetime import datetime as _dt
