@@ -132,4 +132,10 @@ def bridge_uvicorn() -> None:
 
 def get_logger(src: str) -> structlog.typing.FilteringBoundLogger:
     """Project convention: ``logger = get_logger("app")``."""
-    return structlog.get_logger().bind(src=src)  # type: ignore[no-any-return]
+    logger: structlog.typing.FilteringBoundLogger = structlog.get_logger()
+    return logger.bind(src=src)
+
+
+def log_format() -> str:
+    """Resolved output format ("json" or "console") — for startup banners."""
+    return "json" if _use_json() else "console"  # type: ignore[no-any-return]

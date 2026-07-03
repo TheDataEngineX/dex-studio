@@ -19,7 +19,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from dex_studio import __version__
-from dex_studio.logging_setup import _use_json, bridge_uvicorn, get_logger, setup_logging
+from dex_studio.logging_setup import (
+    bridge_uvicorn,
+    get_logger,
+    log_format,
+    setup_logging,
+)
 from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
 
 # ── Logging — configured centrally in dex_studio.logging_setup ───────────────
@@ -83,7 +88,7 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         "DEX Studio starting up",
         version=__version__,
         port=7860,
-        mode="json" if _use_json() else "console",
+        mode=log_format(),
         https=os.environ.get("DEX_HTTPS", "").lower() in ("1", "true", "yes"),
         trusted_proxies=os.environ.get("DEX_TRUSTED_PROXIES", "0"),
         config_path=os.environ.get("DEX_CONFIG_PATH", ""),
