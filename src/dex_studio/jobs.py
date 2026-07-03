@@ -260,6 +260,7 @@ def _run(name: str) -> None:
                 sdb.finish_run(run_id, "success" if status == "success" else "failed", error_msg)
             if status == "success":
                 from datetime import UTC, datetime
+
                 with contextlib.suppress(Exception):
                     sdb.set_last_run(name, datetime.now(UTC))
         if lock_held and sdb is not None:

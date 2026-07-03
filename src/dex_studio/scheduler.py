@@ -466,8 +466,9 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
                 if db is not None:
                     sched_cfg = read_scheduler_config(eng)
                     if sched_cfg.enabled and not db.is_paused():
-                        pipelines_count = len(
-                            eng.config.data.pipelines or {}) if eng.config.data else 0
+                        pipelines_count = (
+                            len(eng.config.data.pipelines or {}) if eng.config.data else 0
+                        )
                         tick_s = await asyncio.to_thread(
                             _run_due_pipelines, eng, sched_cfg, db, datetime.now(UTC)
                         )

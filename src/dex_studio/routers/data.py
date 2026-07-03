@@ -1378,8 +1378,9 @@ def add_quality_test(
 
         sdb = get_studio_db(eng)
         if sdb:
-            sdb.add_quality_test(table_name=table, test_type=test_type,
-                                  col_name=column, threshold=threshold)
+            sdb.add_quality_test(
+                table_name=table, test_type=test_type, col_name=column, threshold=threshold
+            )
         flash(request, f"Test '{test_type}' added for table '{table}'.")
     except Exception as exc:
         flash(request, str(exc), "error")

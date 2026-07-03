@@ -54,7 +54,6 @@ class CompactionResult:
             return 0.0
         return (1 - self.bytes_after / self.bytes_before) * 100
 
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "pipeline": self.pipeline,

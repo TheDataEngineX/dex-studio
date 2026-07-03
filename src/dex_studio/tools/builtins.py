@@ -348,9 +348,12 @@ def _tool_finetune(  # noqa: C901
             sdb = get_studio_db(eng)
             if sdb:
                 sdb.add_model_registry_entry(
-                    model_name=reg_name, artifact_path=str(artifact_path),
-                    stage="development", algorithm=algorithm,
-                    feature_names=feature_cols, target=target,
+                    model_name=reg_name,
+                    artifact_path=str(artifact_path),
+                    stage="development",
+                    algorithm=algorithm,
+                    feature_names=feature_cols,
+                    target=target,
                 )
         except Exception:
             pass

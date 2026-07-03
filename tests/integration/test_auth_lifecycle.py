@@ -182,9 +182,7 @@ class TestLoginLogout:
 class TestResetFlow:
     """Password reset via reset_password + setup flow."""
 
-    def test_setup_redirects_to_login_when_password_exists(
-        self, authed_client: TestClient
-    ) -> None:
+    def test_setup_redirects_to_login_when_password_exists(self, authed_client: TestClient) -> None:
         resp = authed_client.get("/setup")
         assert resp.status_code in (302, 303)
         assert "/login" in resp.headers.get("location", "")

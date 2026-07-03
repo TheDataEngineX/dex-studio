@@ -95,6 +95,7 @@ class TestAuthFlow:
             # Seed CSRF via GET, then POST logout with CSRF token
             get_r = tc.get("/")
             import re
+
             csrf = re.search(rb'<meta name="csrf-token" content="([^"]+)"', get_r.content)
             headers = {"X-CSRF-Token": csrf.group(1).decode()} if csrf else {}
             r = tc.post("/logout", headers=headers)

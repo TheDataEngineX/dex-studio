@@ -438,9 +438,7 @@ class TestSQLInjection:
 class TestXSSEscaping:
     """Jinja2 autoescapes by default — injected script tags must not appear raw in HTML."""
 
-    def test_xss_pipeline_name_escaped_in_response(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_xss_pipeline_name_escaped_in_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
 
@@ -468,9 +466,7 @@ class TestXSSEscaping:
                 "XSS payload was not escaped by the template engine in HTML body"
             )
 
-    def test_xss_source_name_escaped_in_catalog(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_xss_source_name_escaped_in_catalog(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
         _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
 
