@@ -126,12 +126,12 @@ class ToolRegistry:
 
         try:
             from dataenginex.ai.tools import (
-                tool_registry as _dex_tr,  # type: ignore[import-untyped]
+                tool_registry as _dex_tr,
             )
 
             return _dex_tr.call("query", sql=sql)
         except Exception:
-            import duckdb  # type: ignore[import-untyped]
+            import duckdb
 
             with duckdb.connect(":memory:") as conn:
                 return conn.execute(sql).fetchdf()
@@ -142,7 +142,7 @@ class ToolRegistry:
             ai_cfg = getattr(eng.config, "ai", None)
             tools_cfg = getattr(ai_cfg, "tools", None) or []
             if hasattr(tools_cfg, "items") and hasattr(tools_cfg, "values"):
-                tools_cfg = list(tools_cfg.values())  # type: ignore[union-attr]
+                tools_cfg = list(tools_cfg.values())
             for entry in tools_cfg:
                 if isinstance(entry, dict):
                     name = str(entry.get("name", ""))
@@ -181,7 +181,7 @@ class ToolRegistry:
                 spec = importlib.util.spec_from_file_location(f"_dex_tools_{py_file.stem}", py_file)
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)  # type: ignore[union-attr]
+                    spec.loader.exec_module(module)
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
                         if callable(attr) and getattr(attr, "_dex_tool", False):

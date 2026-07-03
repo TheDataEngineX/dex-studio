@@ -46,8 +46,8 @@ def templates(request: Request) -> Jinja2Templates:
 
 def render(request: Request, template: str, ctx: dict[str, Any]) -> HTMLResponse:
     """Single call site for Jinja2Templates.TemplateResponse (new-API signature)."""
-    tmpl: Jinja2Templates = request.app.state.templates  # type: ignore[no-any-return]
-    return tmpl.TemplateResponse(request, template, ctx)  # type: ignore[arg-type]
+    tmpl: Jinja2Templates = request.app.state.templates
+    return tmpl.TemplateResponse(request, template, ctx)
 
 
 def _get_csrf_token(request: Request) -> str:
@@ -388,10 +388,4 @@ def flash(request: Request, msg: str, kind: str = "success") -> None:
     request.session["flash"] = {"msg": msg, "kind": kind}
 
 
-def stub_page(request: Request, titles: dict[str, str]) -> HTMLResponse:
-    """Render stub.html for not-yet-implemented pages.
 
-    *titles* maps URL paths to human-readable page titles.
-    """
-    ctx = base_ctx(request) | {"page_title": titles.get(request.url.path, "Coming Soon")}
-    return render(request, "stub.html", ctx)

@@ -299,6 +299,13 @@ def secops_overview(request: Request, eng: ReadDep) -> HTMLResponse:  # noqa: C9
 
     chart_json = _audit_chart_json(audit) if audit is not None else "[" + ",".join(["0"] * 42) + "]"
 
+    firing_count = 0
+    with contextlib.suppress(Exception):
+        for name in eng.config.data.pipelines or {}:
+            last = eng.pipeline_last_run(name)
+            if last and not last.success:
+                firing_count += 1
+
     ctx = base_ctx(request) | {
         "guard_enabled": guard_enabled,
         "guard_active": guard_active,
@@ -330,6 +337,7 @@ def secops_overview(request: Request, eng: ReadDep) -> HTMLResponse:  # noqa: C9
             "masking",
             None,
         ),
+        "firing_count": firing_count,
     }
     return render(request, "secops/overview.html", ctx)
 

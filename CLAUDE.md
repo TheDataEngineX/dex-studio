@@ -37,3 +37,32 @@ uv run poe dev          # uvicorn dev server (port 7860)
 | `src/dex_studio/watermark.py` | Ingestion watermark + hash dedup |
 | `src/dex_studio/compaction.py` | Parquet file compaction |
 | `src/dex_studio/backfill.py` | Pipeline backfill engine |
+
+## Data Infrastructure UAT Framework
+
+Standing rubric for judging pipeline/warehouse production-readiness. Apply when auditing or reviewing changes to `jobs.py`, `scheduler.py`, `studio_db.py`, `watermark.py`, `compaction.py`, `backfill.py`.
+
+**Data Quality SLAs**
+- Reconciliation: 100% row-count/sum match, source vs target.
+- Schema integrity: zero unexpected nulls in PK/FK columns.
+- Freshness: loaded within window (e.g. daily 6am, or <5min streaming).
+- Anomaly frequency: <2 automated DQ alerts/week.
+
+**Operational Reliability KPIs**
+- Pipeline success rate: >99% of scheduled runs complete without manual intervention.
+- MTTD: alerted within 15 min of failure.
+- MTTR: fixed + backfilled within 2 hours for critical dashboards.
+- Storage cost efficiency: linear scaling, compression ratios monitored.
+
+**Performance & Usability**
+- Query latency P95 <5s. Dashboard load <3s.
+- Zero query queuing/timeouts at peak concurrency.
+- System availability 99.9%.
+
+**UAT Checklist (pre-signoff)**
+- [ ] Source-to-target row-count/checksum validation, all core tables.
+- [ ] Historical backfill check — no truncation/corruption.
+- [ ] Schema evolution test — pipeline survives source schema change without silent breakage.
+- [ ] Stress/concurrency test — 50+ simultaneous analytical queries.
+- [ ] Downstream BI validation — dashboard numbers match legacy reports exactly.
+- [ ] Permissions/security audit — RBAC restricts PII correctly.

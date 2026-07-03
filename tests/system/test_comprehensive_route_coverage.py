@@ -286,6 +286,7 @@ _KNOWN_JSON_AUTH = {  # routes using JsonReadDep — return 401 not 303 redirect
     "/intelligence/native",
     "/intelligence/context",
     "/intelligence/predict/models",
+    "/system/metrics-live",
 }
 _KNOWN_POST_CRASH = {  # POST routes that crash with 500 on empty body
     "/intelligence/chat",
@@ -351,7 +352,6 @@ class TestAuthenticatedRoutes:
 class TestUnauthenticatedAccess:
     PUBLIC_PATHS = {
         "/health",
-        "/system/metrics-live",
     }
 
     def test_public_routes_accessible(self) -> None:

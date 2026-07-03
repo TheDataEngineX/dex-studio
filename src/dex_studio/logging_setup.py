@@ -138,4 +138,4 @@ def get_logger(src: str) -> structlog.typing.FilteringBoundLogger:
 
 def log_format() -> str:
     """Resolved output format ("json" or "console") — for startup banners."""
-    return "json" if _use_json() else "console"  # type: ignore[no-any-return]
+    return "json" if _use_json() else "console"

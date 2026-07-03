@@ -39,6 +39,8 @@ NAV_GROUPS: list[dict[str, Any]] = [
         "label": "Data",
         "id": "data",
         "items": [
+            _item("Dashboard", "/data/dashboard", "layout-dashboard",
+                  "Pipeline health at a glance"),
             _item("Sources", "/data/sources", "link", "Connectors and ingest configs"),
             _item("Catalog", "/data/catalog", "table-2", "Browse bronze / silver / gold"),
             _item("Warehouse", "/data/warehouse", "database", "Gold layer — BI-ready tables"),
@@ -72,6 +74,8 @@ NAV_GROUPS: list[dict[str, Any]] = [
                 badge="live",
                 badge_color="green",
             ),
+            _item("Dashboard", "/intelligence/dashboard", "layout-dashboard",
+                  "Unified ML + AI health overview"),
             _item("Models", "/intelligence/models", "box", "Model registry and deployment"),
             _item(
                 "Experiments",
@@ -102,6 +106,7 @@ NAV_GROUPS: list[dict[str, Any]] = [
         "items": [
             _item("Privacy", "/secops", "shield", "PrivacyGuard — PII protection"),
             _item("Audit log", "/secops/audit", "file-text", "Immutable event record"),
+            _item("Policies", "/secops/policies", "file-check", "Data access policies"),
             _item("Compaction", "/system/compaction", "archive", "Merge small parquet files"),
             _item("Alerting", "/system/alerting", "bell", "Webhook alerts and SLA"),
             _item("Logs", "/system/logs", "scroll", "Structured log viewer"),

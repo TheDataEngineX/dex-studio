@@ -29,7 +29,6 @@ from dex_studio.routers._deps import (
     flash,
     get_eng,
     render,
-    stub_page,
 )
 from dex_studio.utils import fmt_ts
 
@@ -178,7 +177,7 @@ def _count_memory(obj: Any) -> int:
             if callable(v):
                 return int(v())
             if v is not None:
-                return len(v)  # type: ignore[arg-type]
+                return len(v)
     return 0
 
 
@@ -213,7 +212,7 @@ async def _agent_result(agent: Any, text: str) -> tuple[str, float, int]:
         content = (
             result.get("response") or result.get("reply") or result.get("content") or str(result)
         )
-        return str(content), latency_ms, tool_calls  # type: ignore[return-value]
+        return str(content), latency_ms, tool_calls
     return str(result), latency_ms, tool_calls
 
 
@@ -1450,7 +1449,7 @@ async def ambient_context(request: Request, eng: JsonReadDep, page: str = "") ->
 
 @router.websocket("/playground/ws/{agent_name}")
 async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
-    if not is_authenticated(websocket):  # type: ignore[arg-type]
+    if not is_authenticated(websocket):
         await websocket.close(code=3000)
         return
     await websocket.accept()
@@ -1485,21 +1484,3 @@ async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
     except WebSocketDisconnect:
         pass
 
-
-# ── Stub pages ────────────────────────────────────────────────────────────────
-
-
-_STUB_TITLES = {
-    "/intelligence/hyperopt": "Hyperparameter Optimization",
-    "/intelligence/ab-test": "A/B Testing",
-    "/intelligence/rag-eval": "RAG Evaluation",
-    "/intelligence/hitl": "Human-in-the-Loop",
-}
-
-
-@router.get("/hyperopt", response_class=HTMLResponse)
-@router.get("/ab-test", response_class=HTMLResponse)
-@router.get("/rag-eval", response_class=HTMLResponse)
-@router.get("/hitl", response_class=HTMLResponse)
-def intelligence_stub(request: Request, _: ReadDep) -> HTMLResponse:
-    return stub_page(request, _STUB_TITLES)

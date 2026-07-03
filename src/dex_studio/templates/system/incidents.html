@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import metric_card, empty_state %}
+
+{% block title %}Incidents — System — DEX Studio{% endblock %}
+{% block page_title %}Incidents{% endblock %}
+{% block page_sub %}{{ dead_letter|length }} dead-lettered · {{ failures|length }} recent failures{% endblock %}
+
+{% block content %}
+<div style="--domain-color: var(--domain-system)">
+
+{% if dead_letter or failures %}
+<div class="row" style="gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
+  {{ metric_card("Dead letter", dead_letter|length, "archive", "red") }}
+  {{ metric_card("Recent failures", failures|length, "alert-triangle", "orange") }}
+</div>
+{% endif %}
+
+{% if dead_letter %}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="archive" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Dead Letter Queue</span>
+</div>
+<div class="card bare" style="margin-bottom:24px">
+  <table class="dex-table">
+    <thead>
+      <tr>
+        <th>Pipeline</th>
+        <th>Error</th>
+        <th>Attempts</th>
+        <th style="width:150px">Recorded at</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dead_letter %}
+      <tr>
+        <td class="mono" style="font-size:12px">{{ d.pipeline }}</td>
+        <td class="mono" style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ d.error }}">{{ d.error }}</td>
+        <td>{{ d.attempts }}</td>
+        <td class="mono muted" style="font-size:10px">{{ d.recorded_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if failures %}
+<div class="section-h" style="margin-bottom:12px">
+  <i data-lucide="alert-triangle" style="width:13px;height:13px;color:var(--text-4)"></i>
+  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Recent Failed Runs</span>
+</div>
+<div class="card bare">
+  <table class="dex-table">
+    <thead>
+      <tr>
+        <th>Pipeline</th>
+        <th>Status</th>
+        <th>Duration</th>
+        <th style="width:150px">Finished at</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in failures %}
+      <tr>
+        <td class="mono" style="font-size:12px">{{ f.pipeline }}</td>
+        <td><span class="dex-log-badge dex-log-error">{{ f.status }}</span></td>
+        <td class="mono">{{ f.duration_s }}s</td>
+        <td class="mono muted" style="font-size:10px">{{ f.finished_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if not dead_letter and not failures %}
+{{ empty_state("check-circle", "No incidents", "All pipelines running normally.") }}
+{% endif %}
+
+</div>
+{% endblock %}

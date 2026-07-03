@@ -60,7 +60,7 @@ def _embed_texts(texts: list[str], model: str, host: str) -> list[list[float]] |
 
 def _load_source_rows(eng: Any, source_table: str, source_col: str) -> tuple[list[Any], str]:
     """Load text rows from a lakehouse parquet file. Returns (rows, error)."""
-    import duckdb  # type: ignore[import-untyped]
+    import duckdb
 
     layer = _find_layer(eng, source_table)
     if not layer:

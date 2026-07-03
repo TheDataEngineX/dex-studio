@@ -43,6 +43,11 @@
     </div>
   </div>
 
+  {# ──── YAML-level thresholds hint ──── #}
+  <div style="padding:0 2px;margin-bottom:4px;font-size:11px;color:var(--text-4);display:flex;gap:10px;flex-wrap:wrap">
+    <span>Pipeline-level completeness / uniqueness thresholds are set in <code style="font-size:10px;background:var(--bg-hover);padding:1px 5px;border-radius:3px">dex.yaml</code> under <code style="font-size:10px;background:var(--bg-hover);padding:1px 5px;border-radius:3px">pipelines.&lt;name&gt;.quality</code></span>
+  </div>
+
   {# ──── Main layout: column list (260px) + detail panel (flex-1) ──── #}
   <div style="display:flex;gap:12px;flex:1;min-height:0;overflow:hidden">
 
@@ -135,10 +140,12 @@
 
                   {# Header: status + type + actions #}
                   <div class="row" style="margin-bottom:8px">
-                    {% if rule.get('last_result', True) %}
+                    {% if rule.get('last_result') is true %}
                       <span class="sdot ok" style="width:8px;height:8px;flex-shrink:0"></span>
-                    {% else %}
+                    {% elif rule.get('last_result') is false %}
                       <span class="sdot error" style="width:8px;height:8px;flex-shrink:0"></span>
+                    {% else %}
+                      <span class="sdot idle" style="width:8px;height:8px;flex-shrink:0" title="Not yet checked"></span>
                     {% endif %}
                     <span class="pill" style="height:18px;padding:0 6px;font-size:10px;background:color-mix(in oklch,var(--accent-9) 12%,transparent);color:var(--accent-11);border-color:color-mix(in oklch,var(--accent-9) 24%,transparent)">
                       {{ rule.rule_type }}
@@ -154,11 +161,11 @@
 
                   {# Pass/fail progress bar #}
                   <div style="height:4px;background:var(--bg-elev-2);border-radius:999px;overflow:hidden;margin-bottom:8px">
-                    <div style="height:100%;background:var(--green-9);width:{{ rule.get('pass_pct', 90) }}%"></div>
+                    <div style="height:100%;background:{% if rule.get('last_result') is false %}var(--red-9){% elif rule.get('last_result') is true %}var(--green-9){% else %}var(--text-4){% endif %};width:{% if rule.get('last_result') is false %}100{% elif rule.get('last_result') is true %}100{% else %}0{% endif %}%"></div>
                   </div>
 
                   {# Violation callout #}
-                  {% if not rule.get('last_result', True) %}
+                  {% if rule.get('last_result') is false %}
                     <div style="padding:8px;background:color-mix(in oklch,var(--red-9) 12%,transparent);border:1px solid color-mix(in oklch,var(--red-9) 24%,transparent);border-radius:var(--r-2);margin-bottom:8px">
                       <div style="font-size:11px;color:var(--red-9);font-weight:500">Rule violation</div>
                       {% if rule.get('violation_desc') %}

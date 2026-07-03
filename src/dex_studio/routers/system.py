@@ -9,12 +9,13 @@ from html import escape as _html_escape
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
+from dex_studio._engine import init_engine
 from dex_studio.logstore import log_store
-from dex_studio.routers._deps import ReadDep, base_ctx, render, stub_page
+from dex_studio.routers._deps import JsonReadDep, ReadDep, WriteDep, base_ctx, flash, render
 from dex_studio.studio_db import get_studio_db
 
 router = APIRouter()
@@ -195,7 +196,7 @@ def logs_stream(request: Request, _: ReadDep, level: str = "INFO") -> EventSourc
 
 
 @router.get("/metrics-live", response_class=JSONResponse)
-def system_metrics_live(_request: Request) -> JSONResponse:
+def system_metrics_live(_request: Request, _eng: JsonReadDep) -> JSONResponse:
     return JSONResponse(_sys_metrics())
 
 
@@ -360,22 +361,180 @@ def system_alerting(request: Request, eng: ReadDep) -> HTMLResponse:
     return render(request, "system/alerting.html", ctx)
 
 
-# ── Stubs ─────────────────────────────────────────────────────────────────────
-
-
-_SYSTEM_STUB_TITLES = {
-    "/system/traces": "System Traces",
-    "/system/activity": "Activity Log",
-    "/system/incidents": "Incidents",
-    "/system/settings": "Settings",
-    "/system/connection": "Connection Pool",
-}
+# ── Traces ────────────────────────────────────────────────────────────────────
 
 
 @router.get("/traces", response_class=HTMLResponse)
+def system_traces(request: Request, _: ReadDep, level: str = "INFO") -> HTMLResponse:
+    level_upper = level.upper()
+    records = [r for r in log_store.recent(limit=500) if r.level >= level_upper][:200]
+    ctx = base_ctx(request) | {
+        "entries": [{"ts": r.ts, "level": r.level, "msg": r.msg} for r in records],
+        "level": level_upper,
+        "levels": ["DEBUG", "INFO", "WARNING", "ERROR"],
+    }
+    return render(request, "system/traces.html", ctx)
+
+
+# ── Activity ──────────────────────────────────────────────────────────────────
+
+
 @router.get("/activity", response_class=HTMLResponse)
+def system_activity(request: Request, eng: ReadDep) -> HTMLResponse:
+    events: list[dict[str, str]] = []
+    audit = getattr(eng, "secops_audit", None)
+    if audit is not None:
+        for ev in getattr(audit, "events", [])[-100:]:
+            events.append({
+                "ts": str(getattr(ev, "occurred_at", ""))[:19],
+                "action": getattr(ev, "operation", ""),
+                "dataset": getattr(ev, "dataset_name", ""),
+                "actor": getattr(ev, "actor", ""),
+            })
+    if not events:
+        for r in reversed(getattr(eng.store, "get_pipeline_runs", lambda: [])()[-50:]):
+            ts = str(getattr(r, "timestamp", ""))[:19].replace("T", " ")
+            events.append({
+                "ts": ts,
+                "action": "pipeline_run",
+                "dataset": getattr(r, "pipeline_name", ""),
+                "actor": "scheduler",
+            })
+    ctx = base_ctx(request) | {"events": events}
+    return render(request, "system/activity.html", ctx)
+
+
+# ── Incidents ─────────────────────────────────────────────────────────────────
+
+
 @router.get("/incidents", response_class=HTMLResponse)
-@router.get("/settings", response_class=HTMLResponse)
+def system_incidents(request: Request, eng: ReadDep) -> HTMLResponse:
+    dead: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        sdb = get_studio_db(eng)
+        if sdb is not None:
+            dead = sdb.get_dead_letter()
+            recent = sdb.get_runs(None, limit=50)
+            failures = [
+                {"pipeline": r.get("pipeline", ""), "status": r.get("status", ""),
+                 "finished_at": str(r.get("finished_at", "") or ""),
+                 "duration_s": r.get("duration_s")}
+                for r in recent if r.get("status", "") in ("failed", "failure", "error")
+            ]
+    ctx = base_ctx(request) | {"dead_letter": dead, "failures": failures}
+    return render(request, "system/incidents.html", ctx)
+
+
+# ── Connection Pool ───────────────────────────────────────────────────────────
+
+
 @router.get("/connection", response_class=HTMLResponse)
-def system_stub(request: Request, _: ReadDep) -> HTMLResponse:
-    return stub_page(request, _SYSTEM_STUB_TITLES)
+def system_connection(request: Request, eng: ReadDep) -> HTMLResponse:
+    sources: list[dict[str, str]] = []
+    for name, cfg in (getattr(getattr(eng.config, "data", None), "sources", {}) or {}).items():
+        sources.append({
+            "name": name,
+            "type": str(getattr(cfg, "type", "")),
+            "path": str(getattr(cfg, "path", "") or getattr(cfg, "url", "") or ""),
+            "status": "configured",
+        })
+    ctx = base_ctx(request) | {"sources": sources}
+    return render(request, "system/connection.html", ctx)
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def system_settings(request: Request, eng: ReadDep) -> HTMLResponse:
+    cfg = eng.config
+    ai = getattr(cfg, "ai", None)
+    sec = getattr(cfg, "secops", None)
+    obs = getattr(cfg, "observability", None)
+    llm = getattr(ai, "llm", None) if ai else None
+    ret = getattr(ai, "retrieval", None) if ai else None
+    pii = getattr(sec, "pii", None) if sec else None
+    audit = getattr(sec, "audit", None) if sec else None
+    guard = getattr(sec, "guard", None) if sec else None
+    ctx = base_ctx(request) | {
+        "config_path": str(eng.config_path),
+        "proj_name": cfg.project.name,
+        "proj_version": cfg.project.version,
+        "proj_description": cfg.project.description or "",
+        "sched_timezone": "UTC",
+        "sched_max_concurrent": 3,
+        "sched_retry_attempts": 3,
+        "sched_retry_backoff": 60,
+        "sched_enabled": True,
+        "llm_provider": llm.provider if llm else "ollama",
+        "llm_model": llm.model if llm else "qwen3:8b",
+        "llm_host": getattr(llm, "host", "") if llm else "",
+        "ret_strategy": ret.strategy if ret else "hybrid",
+        "ret_top_k": ret.top_k if ret else 10,
+        "ret_reranker": getattr(ret, "reranker", True) if ret else True,
+        "pii_scan": getattr(pii, "scan", False) if pii else False,
+        "audit_enabled": getattr(audit, "enabled", False) if audit else False,
+        "guard_enabled": getattr(guard, "enabled", True) if guard else False,
+        "guard_block_on_detect": getattr(guard, "block_on_detect", False) if guard else False,
+        "guard_log_all_outbound": getattr(guard, "log_all_outbound", True) if guard else False,
+        "obs_log_level": obs.log_level if obs else "INFO",
+        "obs_metrics": obs.metrics if obs else True,
+        "obs_tracing": obs.tracing if obs else False,
+    }
+    return render(request, "system/settings.html", ctx)
+
+
+@router.post("/settings")
+def system_settings_save(
+    request: Request,
+    eng: WriteDep,
+    proj_name: str = Form(""),
+    proj_version: str = Form(""),
+    proj_description: str = Form(""),
+    sched_timezone: str = Form("UTC"),
+    sched_max_concurrent: int = Form(3),
+    sched_retry_attempts: int = Form(3),
+    sched_retry_backoff: int = Form(60),
+    sched_enabled: bool = Form(False),
+    llm_provider: str = Form("ollama"),
+    llm_model: str = Form("qwen3:8b"),
+    llm_host: str = Form(""),
+    ret_strategy: str = Form("hybrid"),
+    ret_top_k: int = Form(10),
+    ret_reranker: bool = Form(False),
+    pii_scan: bool = Form(False),
+    audit_enabled: bool = Form(False),
+    guard_enabled: bool = Form(False),
+    guard_block_on_detect: bool = Form(False),
+    guard_log_all_outbound: bool = Form(False),
+    obs_log_level: str = Form("INFO"),
+    obs_metrics: bool = Form(False),
+    obs_tracing: bool = Form(False),
+) -> RedirectResponse:
+    eng.config.project.name = proj_name
+    eng.config.project.version = proj_version
+    eng.config.project.description = proj_description
+    ai = getattr(eng.config, "ai", None)
+    if ai:
+        ai.llm.provider = llm_provider
+        ai.llm.model = llm_model
+        ai.retrieval.strategy = ret_strategy
+        ai.retrieval.top_k = ret_top_k
+        ai.retrieval.reranker = ret_reranker
+    sec = getattr(eng.config, "secops", None)
+    if sec:
+        sec.pii.scan = pii_scan
+        sec.audit.enabled = audit_enabled
+        sec.guard.enabled = guard_enabled
+        sec.guard.block_on_detect = guard_block_on_detect
+        sec.guard.log_all_outbound = guard_log_all_outbound
+    obs = getattr(eng.config, "observability", None)
+    if obs:
+        obs.log_level = obs_log_level
+        obs.metrics = obs_metrics
+        obs.tracing = obs_tracing
+    eng._save_config()
+    init_engine(eng.config_path)
+    flash(request, "Settings saved and engine reloaded.")
+    return RedirectResponse("/system/settings", status_code=303)
