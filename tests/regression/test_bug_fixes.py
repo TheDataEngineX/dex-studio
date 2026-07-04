@@ -20,6 +20,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -31,6 +32,17 @@ from dex_studio.auth import _hash_password
 from dex_studio.routers.data import _build_pipeline_rows
 from dex_studio.scheduler import scheduler_clear_dead_letter
 from dex_studio.studio_db import StudioDb
+
+
+# Helper to create a mock engine with a real temp directory
+def _mock_engine_with_temp_dir(pipelines: dict | None = None) -> MagicMock:
+    eng = MagicMock()
+    eng.config.data.pipelines = pipelines or {}
+    tmp = TemporaryDirectory()
+    eng._dex_dir = Path(tmp.name)
+    eng._tmp_dir = tmp  # Keep reference to prevent cleanup
+    return eng
+
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -133,11 +145,8 @@ class TestBug1PipelineStatusRace:
         failed_run.rows_input = 0
         failed_run.rows_output = 0
 
-        eng = MagicMock()
-        eng.config.data.pipelines = {"ingest": _PipeCfg()}
+        eng = _mock_engine_with_temp_dir({"ingest": _PipeCfg()})
         eng.pipeline_last_run.return_value = failed_run
-        eng._dex_dir = MagicMock()
-        eng._dex_dir.__truediv__ = lambda s, o: MagicMock(exists=lambda: False)
 
         # Simulate the background thread marking the pipeline as running
         with jobs_mod._lock:
@@ -162,11 +171,8 @@ class TestBug1PipelineStatusRace:
         failed_run.rows_input = 0
         failed_run.rows_output = 0
 
-        eng = MagicMock()
-        eng.config.data.pipelines = {"ingest": _PipeCfg()}
+        eng = _mock_engine_with_temp_dir({"ingest": _PipeCfg()})
         eng.pipeline_last_run.return_value = failed_run
-        eng._dex_dir = MagicMock()
-        eng._dex_dir.__truediv__ = lambda s, o: MagicMock(exists=lambda: False)
 
         rows_captured: list[list[dict]] = []
         ready = threading.Event()
@@ -205,11 +211,8 @@ class TestBug1PipelineStatusRace:
         failed_run.rows_input = 0
         failed_run.rows_output = 0
 
-        eng = MagicMock()
-        eng.config.data.pipelines = {"ingest": _PipeCfg()}
+        eng = _mock_engine_with_temp_dir({"ingest": _PipeCfg()})
         eng.pipeline_last_run.return_value = failed_run
-        eng._dex_dir = MagicMock()
-        eng._dex_dir.__truediv__ = lambda s, o: MagicMock(exists=lambda: False)
 
         # Pipeline is NOT running — _running set is empty (via autouse fixture)
         with patch("dex_studio.routers.data.get_studio_db", return_value=None):

@@ -10,6 +10,8 @@ overrides whatever the DB says.
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -18,8 +20,11 @@ from unittest.mock import MagicMock, patch
 def _mock_engine(pipelines: dict | None = None) -> MagicMock:
     eng = MagicMock()
     eng.config.data.pipelines = pipelines or {}
-    eng._dex_dir = MagicMock()
-    eng._dex_dir.__truediv__ = lambda self, other: MagicMock(exists=lambda: False)
+    # Use a real temporary directory instead of MagicMock to avoid creating
+    # directories with MagicMock's string representation
+    tmp = TemporaryDirectory()
+    eng._dex_dir = Path(tmp.name)
+    eng._tmp_dir = tmp  # Keep reference to prevent cleanup during test
     return eng
 
 

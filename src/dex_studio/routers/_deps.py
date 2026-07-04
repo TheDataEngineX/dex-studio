@@ -386,6 +386,3 @@ JsonWriteDep = Annotated[DexBackend, Depends(json_engine_csrf_dep)]
 def flash(request: Request, msg: str, kind: str = "success") -> None:
     """Write a flash message into the session for the next page render."""
     request.session["flash"] = {"msg": msg, "kind": kind}
-
-
-

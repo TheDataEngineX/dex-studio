@@ -31,7 +31,7 @@ import yaml
 from croniter import croniter
 from dataenginex.data.pipeline.dag import build_dag, downstream_of, root_pipelines
 
-from dex_studio import run_checks
+from dex_studio import jobs, run_checks
 from dex_studio.studio_db import PgStudioDb, StudioDb, get_studio_db
 from dex_studio.watermark import WatermarkStore
 
@@ -192,8 +192,29 @@ def _run_one_pipeline(
         log.debug("pipeline already locked — skipping", pipeline=name)
         return
 
+    # Record the attempt (with backoff) before doing any risky work. A hard
+    # kill (e.g. OOM SIGKILL) never reaches the except block below, and the
+    # Postgres advisory lock backing acquire_lock() releases the instant the
+    # killed connection drops — so without this, a crashed run leaves no
+    # trace and the next leader refires it immediately, forever. Writing the
+    # attempt first means _run_due_pipelines' retrying/dead check gates the
+    # next tick even if this process never comes back.
+    retry_at = datetime.fromtimestamp(datetime.now(UTC).timestamp() + cfg.retry_backoff_s, tz=UTC)
+    attempts = db.increment_attempts(name, retry_at)
+
+    # If repeated hard kills already burned through the attempt budget
+    # without ever reaching the except block below, dead-letter here instead
+    # of running again — otherwise attempts keeps climbing past the cap with
+    # backoff but the pipeline never actually reaches "dead" state.
+    if attempts > cfg.retry_attempts:
+        db.record_dead_letter(name, "exceeded max attempts (killed before completing)", attempts)
+        db.mark_dead(name)
+        db.release_lock(name)
+        log.warning("pipeline dead-lettered before run", pipeline=name, attempts=attempts)
+        return
+
     run_id = db.start_run(name, triggered_by="scheduler")
-    log.info("running scheduled pipeline", pipeline=name)
+    log.info("running scheduled pipeline", pipeline=name, attempt=attempts)
     try:
         result = eng.run_pipeline(name)
         run_ts = datetime.now(UTC)
@@ -211,10 +232,6 @@ def _run_one_pipeline(
     except Exception as exc:
         db.finish_run(run_id, "failure", str(exc))
         db.release_lock(name)
-        retry_at = datetime.fromtimestamp(
-            datetime.now(UTC).timestamp() + cfg.retry_backoff_s, tz=UTC
-        )
-        attempts = db.increment_attempts(name, retry_at)
         log.warning(
             "pipeline failed",
             pipeline=name,
@@ -368,7 +385,18 @@ def _run_due_pipelines(
 
     _fire_retries(eng, cfg, db, dag, pipelines, now, ran_cb)
 
+    # max_concurrent gates against ALL in-flight execution (background API
+    # jobs included, via jobs.running_pipelines()), not just this tick's own
+    # loop — otherwise an operator capping concurrency at 1 has no effect
+    # while a user-triggered background run is already in progress.
+    in_flight = len(jobs.running_pipelines())
     for name in root_pipelines(dag):
+        if in_flight >= cfg.max_concurrent:
+            log.info(
+                "max_concurrent_pipelines reached — deferring remaining due pipelines to next tick",
+                max_concurrent=cfg.max_concurrent,
+            )
+            break
         pipe_cfg = pipelines.get(name)
         if pipe_cfg is None:
             continue
@@ -377,6 +405,7 @@ def _run_due_pipelines(
             continue
         if _should_fire(name, pipe_cfg, db, now):
             _run_one_pipeline(eng, name, db, cfg, dag)
+            in_flight += 1
             if ran_cb:
                 ran_cb(name)
 
@@ -555,18 +584,48 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
 # ── FastAPI lifespan helpers ──────────────────────────────────────────────────
 
 
+_LEADERSHIP_POLL_S = 30  # how often a follower retries claiming leadership
+
+
+async def _leadership_poll_loop(app: Any, db: Any, stop_event: asyncio.Event) -> None:
+    """Followers periodically retry claiming leadership.
+
+    try_scheduler_leadership() was previously only ever called once at boot —
+    if the current leader crashes its session-scoped advisory lock releases
+    immediately, but if it merely *hangs* (stuck in a long blocking call
+    while still holding its connection open) the lock stays held and no
+    follower would ever re-check on its own, silently stopping all scheduled
+    pipelines cluster-wide until someone notices and restarts that pod.
+    """
+    while not stop_event.is_set():
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop_event.wait(), timeout=_LEADERSHIP_POLL_S)
+        if stop_event.is_set():
+            return
+        if db.try_scheduler_leadership():
+            log.info("acquired scheduler leadership from a follower poll")
+            app.state.scheduler_task = asyncio.create_task(
+                scheduler_loop(stop_event), name="dex-scheduler"
+            )
+            return
+
+
 def start_scheduler(app: Any) -> None:
     from dex_studio._engine import get_engine
+
+    stop_event = asyncio.Event()
+    app.state.scheduler_stop_event = stop_event
 
     eng = get_engine()
     if eng:
         db = get_studio_db(eng)
         if db and not db.try_scheduler_leadership():
-            log.info("not scheduler leader — another pod holds the lock")
+            log.info("not scheduler leader — polling to take over if the leader hangs")
+            app.state.scheduler_task = asyncio.create_task(
+                _leadership_poll_loop(app, db, stop_event), name="dex-scheduler-follower"
+            )
             return
-    stop_event = asyncio.Event()
     task: asyncio.Task[None] = asyncio.create_task(scheduler_loop(stop_event), name="dex-scheduler")
-    app.state.scheduler_stop_event = stop_event
     app.state.scheduler_task = task
     log.info("background scheduler started")
 
