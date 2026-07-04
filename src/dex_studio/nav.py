@@ -39,8 +39,9 @@ NAV_GROUPS: list[dict[str, Any]] = [
         "label": "Data",
         "id": "data",
         "items": [
-            _item("Dashboard", "/data/dashboard", "layout-dashboard",
-                  "Pipeline health at a glance"),
+            _item(
+                "Dashboard", "/data/dashboard", "layout-dashboard", "Pipeline health at a glance"
+            ),
             _item("Sources", "/data/sources", "link", "Connectors and ingest configs"),
             _item("Catalog", "/data/catalog", "table-2", "Browse bronze / silver / gold"),
             _item("Warehouse", "/data/warehouse", "database", "Gold layer — BI-ready tables"),
@@ -74,8 +75,12 @@ NAV_GROUPS: list[dict[str, Any]] = [
                 badge="live",
                 badge_color="green",
             ),
-            _item("Dashboard", "/intelligence/dashboard", "layout-dashboard",
-                  "Unified ML + AI health overview"),
+            _item(
+                "Dashboard",
+                "/intelligence/dashboard",
+                "layout-dashboard",
+                "Unified ML + AI health overview",
+            ),
             _item("Models", "/intelligence/models", "box", "Model registry and deployment"),
             _item(
                 "Experiments",

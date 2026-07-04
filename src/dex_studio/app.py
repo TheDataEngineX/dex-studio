@@ -194,6 +194,20 @@ def _session_secret() -> str:
     env = os.environ.get("DEX_STUDIO_SESSION_SECRET")
     if env:
         return env
+    # Falling back here means each replica mints/reads its own local secret.
+    # In-cluster (KUBERNETES_SERVICE_HOST set) with no shared filesystem,
+    # that means a different secret per pod — users get randomly logged out
+    # depending which replica the load balancer routes them to, and it fails
+    # silently (looks like a flaky auth bug, not a config problem). Loud
+    # warning so a future deploy that drops the env var is caught immediately
+    # instead of debugged blind.
+    if os.environ.get("KUBERNETES_SERVICE_HOST"):
+        logger.warning(
+            "DEX_STUDIO_SESSION_SECRET not set — falling back to a local"
+            " per-pod session key. In a multi-replica deployment this causes"
+            " random session invalidation depending which pod serves a"
+            " request. Set DEX_STUDIO_SESSION_SECRET explicitly."
+        )
     key_file = Path.home() / ".dex-studio" / "session.key"
     if key_file.exists():
         return key_file.read_text().strip()

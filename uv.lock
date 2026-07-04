@@ -195,7 +195,7 @@ wheels = [
 
 [[package]]
 name = "dataenginex"
-version = "0.4.5"
+version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -210,9 +210,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "structlog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/cb/a15f80d0120eb14b7927866a97f181644c824a259985e4e83428b55304f1/dataenginex-0.4.5.tar.gz", hash = "sha256:ce6410ddc8b4a539bd89d8dc6279738a45e46b7ae43d26493dcc98aa3a7f110c", size = 516274, upload-time = "2026-07-03T19:36:23.797Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/5e/068257b1b2f07fe2a35acd99044055aa0cce57c56047cebeffc8aec0212d/dataenginex-0.4.6.tar.gz", hash = "sha256:98f4e84eae9fa258598f665a1458dbec49f4ebc7ddbefe2ffb08fdcbd5ea29a2", size = 517151, upload-time = "2026-07-04T01:20:40.903Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/34/bbc55da2f7c85947c8ccc23b0866b0383d5814948329c7c0585d46ef0f3c/dataenginex-0.4.5-py3-none-any.whl", hash = "sha256:e54c1dc75b37169139b2b6020477736f14ea4557738eb7075b68f60254d7f9b9", size = 211687, upload-time = "2026-07-03T19:36:22.218Z" },
+    { url = "https://files.pythonhosted.org/packages/66/ac/bf0d2ecf5d8f26eb900d72517efabcdfa4a1d0c87e4f62b904d546d7f4b9/dataenginex-0.4.6-py3-none-any.whl", hash = "sha256:e7f39674574292dfae5551f4f0265226d1921430df48b1496af1f0ac07a98e24", size = 212566, upload-time = "2026-07-04T01:20:39.169Z" },
 ]
 
 [[package]]
@@ -267,7 +267,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dataenginex", specifier = ">=0.4.5" },
+    { name = "dataenginex", specifier = ">=0.4.6" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "jinja2", specifier = ">=3.1.4" },

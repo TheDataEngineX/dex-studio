@@ -18,6 +18,23 @@ from typing import Any
 __all__ = ["ToolDef", "ToolRegistry", "get_registry", "tool"]
 
 
+def _strip_placeholders(sql: str) -> str:
+    """Remove any remaining {placeholder} tokens in linear time (no regex backtracking)."""
+    out = []
+    i, n = 0, len(sql)
+    while i < n:
+        if sql[i] == "{":
+            end = sql.find("}", i + 1)
+            if end == -1:
+                out.append(sql[i:])
+                break
+            i = end + 1
+        else:
+            out.append(sql[i])
+            i += 1
+    return "".join(out)
+
+
 @dataclass
 class ToolParam:
     name: str
@@ -105,8 +122,6 @@ class ToolRegistry:
 
     def _run_sql(self, td: ToolDef, kwargs: dict[str, Any]) -> Any:
         """Execute a SQL template tool, validating and injecting typed params."""
-        import re
-
         sql = td.sql_template
         for param in td.params:
             val = kwargs.get(param.name, param.default)
@@ -119,10 +134,9 @@ class ToolRegistry:
                 safe = str(val).replace("'", "''")
                 sql = sql.replace(f"{{{param.name}}}", safe)
         # Fallback: replace any remaining {placeholders} with empty string
-        # Cap length before regex to prevent ReDoS on unbounded user-supplied input
         if len(sql) > 65536:
             raise ValueError("SQL template exceeds maximum allowed length")
-        sql = re.sub(r"\{[^}]+\}", "", sql)
+        sql = _strip_placeholders(sql)
 
         try:
             from dataenginex.ai.tools import (

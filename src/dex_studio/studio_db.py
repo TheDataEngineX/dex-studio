@@ -1588,20 +1588,38 @@ class PgStudioDb:
             conn.close()
 
     def clear_stale_locks(self, timeout_s: int = 7200) -> int:
-        from sqlalchemy import text
+        """Delete pipeline_locks rows for pipelines confirmed orphaned.
 
-        cutoff_iso = datetime.fromtimestamp(
-            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
-        ).isoformat()
+        Only deletes rows for names whose advisory lock probes free (see
+        stale_locked_pipelines' docstring) — a wall-clock-old row for a
+        pipeline still legitimately running past the timeout is left alone,
+        so locked_pipelines() doesn't incorrectly stop showing it as active.
+        """
+        orphaned = self.stale_locked_pipelines(timeout_s)
+        if not orphaned:
+            return 0
+        from sqlalchemy import bindparam, text
+
+        stmt = text("DELETE FROM pipeline_locks WHERE pipeline IN :names").bindparams(
+            bindparam("names", expanding=True)
+        )
         with self._conn() as conn:
-            result = conn.execute(
-                text("DELETE FROM pipeline_locks WHERE locked_at < :c"), {"c": cutoff_iso}
-            )
+            result = conn.execute(stmt, {"names": orphaned})
             conn.commit()
             return result.rowcount  # type: ignore[no-any-return]
 
     def stale_locked_pipelines(self, timeout_s: int = 7200) -> list[str]:
-        """Return pipeline names whose lock is older than *timeout_s*.
+        """Return pipeline names whose lock is older than *timeout_s* AND
+        genuinely orphaned — not just long-running.
+
+        Wall-clock age alone can't tell a crashed run from one that's still
+        legitimately executing past the timeout (e.g. a large download).
+        acquire_lock() holds a session-scoped pg_try_advisory_lock() on a
+        live connection, which Postgres releases the instant that connection
+        dies — so probing pg_try_advisory_lock() here is a reliable
+        crashed-vs-still-running signal: if we can acquire it, the previous
+        holder is confirmed dead and we release our own probe immediately;
+        if we can't, it's still running and must not be reconciled as failed.
 
         Meant to be called just before ``clear_stale_locks`` so the caller
         knows which pipelines are about to have their lock force-cleared —
@@ -1616,7 +1634,19 @@ class PgStudioDb:
             rows = conn.execute(
                 text("SELECT pipeline FROM pipeline_locks WHERE locked_at < :c"), {"c": cutoff_iso}
             ).fetchall()
-        return [r[0] for r in rows]
+            candidates = [r[0] for r in rows]
+
+            orphaned = []
+            for name in candidates:
+                key = _lock_key(name)
+                acquired = conn.execute(
+                    text("SELECT pg_try_advisory_lock(:k)"), {"k": key}
+                ).scalar()
+                if acquired:
+                    conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+                    orphaned.append(name)
+            conn.commit()
+        return orphaned
 
     def locked_pipelines(self) -> list[str]:
         from sqlalchemy import text
@@ -1744,9 +1774,7 @@ class PgStudioDb:
                 row = conn.execute(
                     text("SELECT started_at FROM pipeline_runs WHERE id=:id"), {"id": run_id}
                 ).fetchone()
-                started = (
-                    datetime.fromisoformat(row[0]).replace(tzinfo=UTC) if row else None
-                )
+                started = datetime.fromisoformat(row[0]).replace(tzinfo=UTC) if row else None
                 duration_s = round((finished - started).total_seconds(), 2) if started else None
                 conn.execute(
                     text(

@@ -114,9 +114,7 @@ class CompactionEngine:
                 input_row = conn.execute(
                     f"SELECT COUNT(*) FROM read_parquet([{paths_sql}])"
                 ).fetchone()
-                output_row = conn.execute(
-                    f"SELECT COUNT(*) FROM read_parquet('{tmp}')"
-                ).fetchone()
+                output_row = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{tmp}')").fetchone()
                 input_rows = input_row[0] if input_row else -1
                 output_rows = output_row[0] if output_row else -2
 

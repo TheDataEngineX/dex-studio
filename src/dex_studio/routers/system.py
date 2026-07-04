@@ -385,21 +385,25 @@ def system_activity(request: Request, eng: ReadDep) -> HTMLResponse:
     audit = getattr(eng, "secops_audit", None)
     if audit is not None:
         for ev in getattr(audit, "events", [])[-100:]:
-            events.append({
-                "ts": str(getattr(ev, "occurred_at", ""))[:19],
-                "action": getattr(ev, "operation", ""),
-                "dataset": getattr(ev, "dataset_name", ""),
-                "actor": getattr(ev, "actor", ""),
-            })
+            events.append(
+                {
+                    "ts": str(getattr(ev, "occurred_at", ""))[:19],
+                    "action": getattr(ev, "operation", ""),
+                    "dataset": getattr(ev, "dataset_name", ""),
+                    "actor": getattr(ev, "actor", ""),
+                }
+            )
     if not events:
         for r in reversed(getattr(eng.store, "get_pipeline_runs", lambda: [])()[-50:]):
             ts = str(getattr(r, "timestamp", ""))[:19].replace("T", " ")
-            events.append({
-                "ts": ts,
-                "action": "pipeline_run",
-                "dataset": getattr(r, "pipeline_name", ""),
-                "actor": "scheduler",
-            })
+            events.append(
+                {
+                    "ts": ts,
+                    "action": "pipeline_run",
+                    "dataset": getattr(r, "pipeline_name", ""),
+                    "actor": "scheduler",
+                }
+            )
     ctx = base_ctx(request) | {"events": events}
     return render(request, "system/activity.html", ctx)
 
@@ -417,10 +421,14 @@ def system_incidents(request: Request, eng: ReadDep) -> HTMLResponse:
             dead = sdb.get_dead_letter()
             recent = sdb.get_runs(None, limit=50)
             failures = [
-                {"pipeline": r.get("pipeline", ""), "status": r.get("status", ""),
-                 "finished_at": str(r.get("finished_at", "") or ""),
-                 "duration_s": r.get("duration_s")}
-                for r in recent if r.get("status", "") in ("failed", "failure", "error")
+                {
+                    "pipeline": r.get("pipeline", ""),
+                    "status": r.get("status", ""),
+                    "finished_at": str(r.get("finished_at", "") or ""),
+                    "duration_s": r.get("duration_s"),
+                }
+                for r in recent
+                if r.get("status", "") in ("failed", "failure", "error")
             ]
     ctx = base_ctx(request) | {"dead_letter": dead, "failures": failures}
     return render(request, "system/incidents.html", ctx)
@@ -433,12 +441,14 @@ def system_incidents(request: Request, eng: ReadDep) -> HTMLResponse:
 def system_connection(request: Request, eng: ReadDep) -> HTMLResponse:
     sources: list[dict[str, str]] = []
     for name, cfg in (getattr(getattr(eng.config, "data", None), "sources", {}) or {}).items():
-        sources.append({
-            "name": name,
-            "type": str(getattr(cfg, "type", "")),
-            "path": str(getattr(cfg, "path", "") or getattr(cfg, "url", "") or ""),
-            "status": "configured",
-        })
+        sources.append(
+            {
+                "name": name,
+                "type": str(getattr(cfg, "type", "")),
+                "path": str(getattr(cfg, "path", "") or getattr(cfg, "url", "") or ""),
+                "status": "configured",
+            }
+        )
     ctx = base_ctx(request) | {"sources": sources}
     return render(request, "system/connection.html", ctx)
 

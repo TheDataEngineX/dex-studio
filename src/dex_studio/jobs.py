@@ -58,6 +58,7 @@ def _post_success_checks(
     except Exception:
         logger.exception(f"quality check failed after {log_ctx}", pipeline=name)
 
+
 # max_workers=2 allows 2 concurrent pipelines per pod (3 pods = 6 cluster-wide).
 # Increase memory limits in kustomization.yaml accordingly (6Gi/3Gi recommended).
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dex-job")
@@ -96,7 +97,9 @@ def _purge_stale() -> None:
 
 
 def _run_pipeline_with_timeout(
-    eng: DexEngine, name: str, timeout_s: int = _PIPELINE_TIMEOUT_S,
+    eng: DexEngine,
+    name: str,
+    timeout_s: int = _PIPELINE_TIMEOUT_S,
 ) -> Any:
     """Run *eng.run_pipeline(name)* with a hard *timeout_s* ceiling.
 
@@ -104,16 +107,25 @@ def _run_pipeline_with_timeout(
     """
     import concurrent.futures
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
-        fut = _pool.submit(eng.run_pipeline, name)
-        try:
-            return fut.result(timeout=timeout_s)
-        except _TimeoutError:
-            logger.error("pipeline run timed out", pipeline=name, timeout_s=timeout_s)
-            raise
-        except Exception:
-            logger.exception("pipeline run failed", pipeline=name)
-            raise
+    # No `with` here on purpose: ThreadPoolExecutor.__exit__ calls
+    # shutdown(wait=True), which would block this worker until the hung
+    # pipeline thread actually finishes — which may be never (stuck HTTP
+    # download, blocking DuckDB call). shutdown(wait=False) lets this
+    # worker return immediately on timeout; the orphaned thread keeps
+    # running until it finishes on its own, but no longer wedges an
+    # _EXECUTOR slot forever.
+    _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    fut = _pool.submit(eng.run_pipeline, name)
+    try:
+        return fut.result(timeout=timeout_s)
+    except _TimeoutError:
+        logger.error("pipeline run timed out", pipeline=name, timeout_s=timeout_s)
+        raise
+    except Exception:
+        logger.exception("pipeline run failed", pipeline=name)
+        raise
+    finally:
+        _pool.shutdown(wait=False)
 
 
 def is_pipeline_running(name: str) -> bool:
@@ -218,8 +230,11 @@ def _finalize_pipeline(
         with contextlib.suppress(Exception):
             terminal = "success" if status == "success" else "failed"
             sdb.finish_run(
-                run_id, terminal, error_msg,
-                rows_input=rows_input, rows_output=rows_output,
+                run_id,
+                terminal,
+                error_msg,
+                rows_input=rows_input,
+                rows_output=rows_output,
             )
         if status == "success":
             from datetime import UTC, datetime
@@ -267,8 +282,15 @@ def _run_all() -> None:
                     name, sdb, store, eng, "run-all"
                 )
                 _finalize_pipeline(
-                    name, status, error_msg, run_id, lock_held, sdb, store,
-                    rows_input=rows_input, rows_output=rows_output,
+                    name,
+                    status,
+                    error_msg,
+                    run_id,
+                    lock_held,
+                    sdb,
+                    store,
+                    rows_input=rows_input,
+                    rows_output=rows_output,
                 )
                 pbar.update(1)
     except Exception:
@@ -342,8 +364,11 @@ def _finalize_run(
     if sdb is not None and run_id is not None:
         try:
             sdb.finish_run(
-                run_id, "success" if status == "success" else "failed", error_msg,
-                rows_input=rows_input, rows_output=rows_output,
+                run_id,
+                "success" if status == "success" else "failed",
+                error_msg,
+                rows_input=rows_input,
+                rows_output=rows_output,
             )
         except Exception:
             logger.exception("sdb.finish_run failed", pipeline=name, run_id=run_id)

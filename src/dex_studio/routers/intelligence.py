@@ -23,6 +23,7 @@ from dex_studio import _json
 from dex_studio.auth import is_authenticated
 from dex_studio.routers._deps import (
     JsonReadDep,
+    JsonWriteDep,
     ReadDep,
     WriteDep,
     base_ctx,
@@ -1364,7 +1365,7 @@ async def predict_models_api(request: Request, eng: JsonReadDep) -> Any:
 
 
 @router.post("/native")
-async def native_call(request: Request, eng: JsonReadDep) -> Any:
+async def native_call(request: Request, eng: JsonWriteDep) -> Any:
     """Direct tool call — no LLM. Body: {tool, args}."""
     from fastapi.responses import JSONResponse
 
@@ -1483,4 +1484,3 @@ async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
                 await websocket.send_json({"role": "error", "content": str(exc)})
     except WebSocketDisconnect:
         pass
-
