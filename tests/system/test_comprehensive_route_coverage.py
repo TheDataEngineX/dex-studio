@@ -536,6 +536,22 @@ class TestIntelligenceRoutes:
         r = authenticated_client.get("/intelligence/finetune")
         assert r.status_code in (200, 303)
 
+    def test_finetune_embeddings_run(
+        self, authenticated_client: TestClient, csrf_token: str
+    ) -> None:
+        r = authenticated_client.post(
+            "/intelligence/finetune/embeddings/run",
+            data={
+                "_csrf": csrf_token,
+                "dataset_table": "does_not_exist",
+                "text_a_column": "a",
+                "text_b_column": "b",
+                "label_column": "label",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert r.status_code in (200, 302, 303), f"Got {r.status_code}: {r.text[:200]}"
+
     def test_traces_page(self, authenticated_client: TestClient) -> None:
         r = authenticated_client.get("/intelligence/traces")
         assert r.status_code in (200, 303)

@@ -46,6 +46,17 @@
       </button>
     </form>
 
+    {% if oidc_enabled %}
+    <div style="display:flex;align-items:center;gap:10px;margin:18px 0">
+      <div style="flex:1;height:1px;background:var(--gray-6)"></div>
+      <span style="font-size:11px;color:var(--text-4)">or</span>
+      <div style="flex:1;height:1px;background:var(--gray-6)"></div>
+    </div>
+    <a href="/login/oidc" class="btn" style="width:100%;height:36px;font-size:13px;display:flex;align-items:center;justify-content:center;text-decoration:none">
+      Sign in with SSO
+    </a>
+    {% endif %}
+
     <p style="font-size:11px;color:var(--text-4);text-align:center;margin-top:20px">
       Forgot your passphrase? Set <code style="font-size:10px;background:var(--bg-elev-2);padding:1px 5px;border-radius:3px">DEX_STUDIO_PASSPHRASE</code> env var and restart.
     </p>

@@ -1092,12 +1092,19 @@ def finetune_page(request: Request, eng: ReadDep) -> HTMLResponse:
     gold_tables: list[str] = []
     with contextlib.suppress(Exception):
         gold_tables = [t["name"] for t in (eng.warehouse_tables("gold") or [])]
+    text_tables: list[str] = []
+    with contextlib.suppress(Exception):
+        for layer in ("bronze", "silver", "gold"):
+            text_tables.extend(t["name"] for t in (eng.warehouse_tables(layer) or []))
     model_names = eng.model_registry.list_models()
     ctx = base_ctx(request) | {
         "gold_tables": gold_tables,
+        "text_tables": text_tables,
         "model_names": model_names,
         "finetune_result": request.session.pop("finetune_result", None),
         "finetune_error": request.session.pop("finetune_error", None),
+        "embedding_finetune_result": request.session.pop("embedding_finetune_result", None),
+        "embedding_finetune_error": request.session.pop("embedding_finetune_error", None),
     }
     return render(request, "intelligence/finetune.html", ctx)
 
@@ -1124,6 +1131,43 @@ async def run_finetune(
             flash(request, f"Model '{result.get('model_name')}' trained and registered.")
     except Exception as exc:
         request.session["finetune_error"] = str(exc)
+    return RedirectResponse("/intelligence/finetune", status_code=303)
+
+
+@router.post("/finetune/embeddings/run")
+async def run_finetune_embeddings(
+    request: Request,
+    eng: WriteDep,
+    dataset_table: Annotated[str, Form()],
+    text_a_column: Annotated[str, Form()],
+    text_b_column: Annotated[str, Form()],
+    label_column: Annotated[str, Form()],
+    base_model: Annotated[str, Form()] = "all-MiniLM-L6-v2",
+    loss_type: Annotated[str, Form()] = "contrastive",
+    model_name: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    import asyncio
+
+    from dex_studio.tools.builtins import _tool_finetune_embeddings
+
+    try:
+        result = await asyncio.to_thread(
+            _tool_finetune_embeddings,
+            dataset_table,
+            text_a_column,
+            text_b_column,
+            label_column,
+            base_model,
+            loss_type,
+            model_name,
+        )
+        if "error" in result:
+            request.session["embedding_finetune_error"] = result["error"]
+        else:
+            request.session["embedding_finetune_result"] = result
+            flash(request, f"Embedding model '{result.get('model_name')}' trained and registered.")
+    except Exception as exc:
+        request.session["embedding_finetune_error"] = str(exc)
     return RedirectResponse("/intelligence/finetune", status_code=303)
 
 

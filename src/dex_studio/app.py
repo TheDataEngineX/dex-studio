@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
 from collections.abc import AsyncGenerator
@@ -126,6 +127,31 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             if _ENGINE is not None:
                 _ENGINE.close()
                 logger.info("engine closed")
+
+
+def _load_project_graphql_schema(eng: Any) -> Any | None:
+    """Return the current project's GraphQL schema, if it defines one.
+
+    Convention: ``<project_dir>/plugins/graphql_schema.py`` defining a
+    ``build_schema(engine) -> strawberry.Schema`` function — same project-local
+    plugin directory dataenginex.core.project_plugins.load_project_plugins
+    scans for connectors/transforms, but loaded directly here since we need
+    its return value (the schema), not just import side effects.
+    """
+    import importlib.util
+
+    schema_file = Path(eng.project_dir) / "plugins" / "graphql_schema.py"
+    if not schema_file.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("_dex_project_graphql_schema", schema_file)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    build_schema = getattr(module, "build_schema", None)
+    if build_schema is None:
+        return None
+    return build_schema(eng)
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -327,6 +353,22 @@ def create_app() -> FastAPI:
     app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
     app.include_router(api.router, prefix="/api")
+
+    # ── GraphQL (optional) ───────────────────────────────────────────────────
+    # Read-only, unauthenticated by design (spec: gold-layer reads are public).
+    # Mounted only when the current project defines a schema — most projects
+    # don't, and forcing an empty schema on every project would be pointless.
+    with contextlib.suppress(Exception):
+        from dex_studio._engine import get_engine as _get_engine_for_gql
+
+        gql_eng = _get_engine_for_gql()
+        if gql_eng is not None:
+            schema = _load_project_graphql_schema(gql_eng)
+            if schema is not None:
+                from strawberry.fastapi import GraphQLRouter
+
+                app.include_router(GraphQLRouter(schema), prefix="/graphql")
+                logger.info("GraphQL schema mounted", path="/graphql")
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> FileResponse:

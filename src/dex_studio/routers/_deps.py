@@ -379,6 +379,38 @@ JsonWriteDep = Annotated[DexBackend, Depends(json_engine_csrf_dep)]
 
 
 # ---------------------------------------------------------------------------
+# OIDC bearer-JWT dep — for admin/API routes, independent of the session cookie
+# ---------------------------------------------------------------------------
+
+
+def admin_dep(request: Request) -> dict[str, Any]:
+    """Admin routes: validates ``Authorization: Bearer <JWT>`` against Authentik's JWKS.
+
+    Raises HTTP 401 on a missing/invalid token, 403 if valid but lacking the
+    admin group claim (``DEX_STUDIO_OIDC_ADMIN_GROUP``, default
+    "dex-studio-admins"). Independent of the password/OIDC session — for
+    machine/API callers presenting a token directly (e.g. a future GraphQL
+    admin mutation layer).
+    """
+    from dex_studio import oidc
+
+    authz = request.headers.get("Authorization", "")
+    if not authz.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authz.removeprefix("Bearer ").strip()
+    try:
+        claims = oidc.validate_bearer_token(token)
+    except oidc.OIDCError as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+    if not oidc.is_admin_claims(claims):
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return claims
+
+
+AdminDep = Annotated[dict[str, Any], Depends(admin_dep)]
+
+
+# ---------------------------------------------------------------------------
 # Shared helpers extracted to eliminate duplication across domain routers
 # ---------------------------------------------------------------------------
 

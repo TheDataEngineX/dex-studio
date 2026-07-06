@@ -87,6 +87,25 @@ def register_builtins(registry: ToolRegistry) -> None:
             ToolParam("model_name", "str", False, "", "Name to register model under"),
         ],
     )
+    registry.register_builtin(
+        "finetune_embeddings",
+        "Fine-tune a sentence-transformers embedding model on labeled sentence-pair "
+        "similarity data from a lakehouse table.",
+        _tool_finetune_embeddings,
+        [
+            ToolParam(
+                "dataset_table", "str", True, description="Table with pair + label columns"
+            ),
+            ToolParam("text_a_column", "str", True, description="First sentence column"),
+            ToolParam("text_b_column", "str", True, description="Second sentence column"),
+            ToolParam("label_column", "str", True, description="Similarity label column"),
+            ToolParam(
+                "base_model", "str", False, "all-MiniLM-L6-v2", "Pretrained base model to start from"
+            ),
+            ToolParam("loss_type", "str", False, "contrastive", "contrastive or cosine"),
+            ToolParam("model_name", "str", False, "", "Name to register model under"),
+        ],
+    )
 
 
 # ── Tool implementations ───────────────────────────────────────────────────────
@@ -365,6 +384,100 @@ def _tool_finetune(  # noqa: C901
                 "rows_trained": len(X_train),
                 metric_name: round(metric, 4),
                 "artifact": str(artifact_path),
+                "status": "registered",
+            }
+        )
+
+    except Exception as exc:
+        result["error"] = str(exc)
+
+    return result
+
+
+def _tool_finetune_embeddings(  # noqa: C901
+    dataset_table: str,
+    text_a_column: str,
+    text_b_column: str,
+    label_column: str,
+    base_model: str = "all-MiniLM-L6-v2",
+    loss_type: str = "contrastive",
+    model_name: str = "",
+) -> dict[str, Any]:
+    """Fine-tune a sentence-transformers embedding model on pair-similarity data."""
+
+    result: dict[str, Any] = {
+        "dataset_table": dataset_table,
+        "base_model": base_model,
+        "loss_type": loss_type,
+    }
+    try:
+        import time
+
+        import pandas as pd
+        from dataenginex.ml.training import SentenceTransformerFinetuneTrainer
+
+        from dex_studio._engine import get_engine
+
+        eng = get_engine()
+        if eng is None:
+            return {"error": "No engine available"}
+
+        df_result = _tool_query(
+            f"SELECT {text_a_column}, {text_b_column}, {label_column} FROM {dataset_table}"
+        )
+        if hasattr(df_result, "to_pandas"):
+            df = df_result.to_pandas()
+        elif hasattr(df_result, "iloc"):
+            df = df_result
+        elif isinstance(df_result, list):
+            df = pd.DataFrame(df_result)
+        else:
+            return {"error": "Could not load training-pairs data"}
+
+        missing = [c for c in (text_a_column, text_b_column, label_column) if c not in df.columns]
+        if missing:
+            return {"error": f"Column(s) not found in '{dataset_table}': {missing}"}
+
+        df = df.dropna(subset=[text_a_column, text_b_column, label_column])
+        if len(df) < 10:
+            return {"error": "Not enough rows for training (need at least 10)"}
+
+        pairs = list(
+            zip(df[text_a_column].astype(str), df[text_b_column].astype(str), strict=True)
+        )
+        labels = df[label_column].astype(float).tolist()
+
+        reg_name = model_name or f"{dataset_table}_embedding_model"
+        trainer = SentenceTransformerFinetuneTrainer(
+            reg_name, base_model=base_model, loss_type=loss_type
+        )
+        training_result = trainer.train(pairs, labels)
+
+        models_dir = eng.project_dir / ".dex" / "models" / reg_name
+        artifact_path = trainer.save(str(models_dir / f"v{int(time.time())}"))
+
+        try:
+            from dex_studio.studio_db import get_studio_db
+
+            sdb = get_studio_db(eng)
+            if sdb:
+                sdb.add_model_registry_entry(
+                    model_name=reg_name,
+                    artifact_path=artifact_path,
+                    stage="development",
+                    algorithm=f"sentence_transformer_finetune:{loss_type}",
+                    feature_names=[text_a_column, text_b_column],
+                    target=label_column,
+                )
+        except Exception:
+            pass
+
+        result.update(
+            {
+                "model_name": reg_name,
+                "pairs_trained": len(pairs),
+                "metrics": training_result.metrics,
+                "artifact": artifact_path,
                 "status": "registered",
             }
         )

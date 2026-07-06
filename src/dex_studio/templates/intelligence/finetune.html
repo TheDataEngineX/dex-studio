@@ -66,6 +66,136 @@
 </div>
 {% endif %}
 
+{# ── Flash: embedding fine-tune result ── #}
+{% if embedding_finetune_result %}
+<div class="card" style="padding:14px 18px;margin-bottom:var(--space-3);display:flex;align-items:flex-start;gap:12px;
+     background:color-mix(in oklch,var(--green-9) 6%,transparent);
+     border-color:color-mix(in oklch,var(--green-9) 22%,transparent)">
+  <span style="flex-shrink:0;width:30px;height:30px;border-radius:6px;background:var(--green-3);
+               display:flex;align-items:center;justify-content:center">
+    <i data-lucide="check-circle-2" style="width:15px;height:15px;color:var(--green-9)"></i>
+  </span>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:13px;font-weight:600;color:var(--green-11);margin-bottom:6px">
+      Embedding model trained — <span class="mono">{{ embedding_finetune_result.model_name }}</span>
+    </div>
+    <div class="row" style="gap:16px;flex-wrap:wrap">
+      <div>
+        <span class="cap" style="display:block;margin-bottom:1px">Pairs trained</span>
+        <span class="mono" style="font-size:13px;font-weight:600">{{ "{:,}".format(embedding_finetune_result.pairs_trained) if embedding_finetune_result.pairs_trained else '—' }}</span>
+      </div>
+      {% if embedding_finetune_result.metrics and embedding_finetune_result.metrics.mean_cosine_similarity is defined %}
+      <div>
+        <span class="cap" style="display:block;margin-bottom:1px">Mean cosine similarity</span>
+        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.4f" | format(embedding_finetune_result.metrics.mean_cosine_similarity) }}</span>
+      </div>
+      {% endif %}
+      {% if embedding_finetune_result.metrics and embedding_finetune_result.metrics.mean_abs_error is defined %}
+      <div>
+        <span class="cap" style="display:block;margin-bottom:1px">Mean abs error</span>
+        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.4f" | format(embedding_finetune_result.metrics.mean_abs_error) }}</span>
+      </div>
+      {% endif %}
+      {% if embedding_finetune_result.status %}
+      <div>
+        <span class="cap" style="display:block;margin-bottom:1px">Status</span>
+        <span class="pill success" style="font-size:10px">{{ embedding_finetune_result.status }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% if embedding_finetune_result.artifact %}
+    <div style="margin-top:8px;font-size:11px;color:var(--text-3)">
+      Artifact: <span class="mono" style="font-size:11px;color:var(--text-2)">{{ embedding_finetune_result.artifact }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Flash: embedding fine-tune error ── #}
+{% if embedding_finetune_error %}
+<div style="margin-bottom:var(--space-3)">
+  {{ inline_error(embedding_finetune_error) }}
+</div>
+{% endif %}
+
+{# ── Fine-tune embeddings (sentence-transformers similarity) ── #}
+<div class="card" style="padding:20px 24px;margin-bottom:var(--space-3)">
+  <div class="section-h" style="margin-bottom:16px">
+    <h2 style="font-size:14px;font-weight:700;margin:0">Fine-tune embeddings</h2>
+    <div class="muted" style="font-size:12px">Fine-tune a sentence-transformers model on labeled sentence-pair similarity data.</div>
+  </div>
+  <form method="post" action="/intelligence/finetune/embeddings/run"
+        style="display:flex;flex-direction:column;gap:14px">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px">
+      <div>
+        <label class="cap" for="ftemb-table" style="display:block;margin-bottom:4px">
+          Training-pairs table *
+        </label>
+        <select id="ftemb-table" name="dataset_table" class="input" style="width:100%">
+          {% for t in text_tables %}
+          <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="cap" for="ftemb-base-model" style="display:block;margin-bottom:4px">
+          Base model
+        </label>
+        <input id="ftemb-base-model" type="text" name="base_model" class="input"
+               value="all-MiniLM-L6-v2" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="ftemb-text-a" style="display:block;margin-bottom:4px">
+          Sentence A column *
+        </label>
+        <input id="ftemb-text-a" type="text" name="text_a_column" class="input" required
+               placeholder="e.g. review_text_a" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="ftemb-text-b" style="display:block;margin-bottom:4px">
+          Sentence B column *
+        </label>
+        <input id="ftemb-text-b" type="text" name="text_b_column" class="input" required
+               placeholder="e.g. review_text_b" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="ftemb-label" style="display:block;margin-bottom:4px">
+          Similarity label column *
+        </label>
+        <input id="ftemb-label" type="text" name="label_column" class="input" required
+               placeholder="e.g. similarity_label" style="width:100%">
+      </div>
+      <div>
+        <label class="cap" for="ftemb-loss" style="display:block;margin-bottom:4px">
+          Loss
+        </label>
+        <select id="ftemb-loss" name="loss_type" class="input" style="width:100%">
+          <option value="contrastive">Contrastive</option>
+          <option value="cosine">Cosine similarity</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="cap" for="ftemb-model-name" style="display:block;margin-bottom:4px">
+        Model name
+      </label>
+      <input id="ftemb-model-name" type="text" name="model_name" class="input"
+             placeholder="Auto-generated if blank" style="width:100%">
+    </div>
+
+    <div style="padding-top:4px">
+      <button type="submit" class="btn primary" style="width:100%;justify-content:center">
+        <i data-lucide="play" style="width:13px;height:13px"></i>
+        Fine-tune embedding model
+      </button>
+    </div>
+  </form>
+</div>
+
 {% if gold_tables %}
 
 <div class="grid" style="grid-template-columns:1fr 340px;gap:var(--space-3);align-items:start">

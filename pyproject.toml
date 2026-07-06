@@ -32,11 +32,16 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "psycopg2-binary>=2.9",
     "tqdm>=4.66.0",
+    "httpx>=0.28.0",
+    "pyjwt[crypto]>=2.13.0",
 ]
 
 [project.optional-dependencies]
 # Resume PDF export
 pdf = ["weasyprint>=68.1"]
+
+[tool.uv.sources]
+dataenginex = { path = "../dataenginex", editable = true }
 
 [project.scripts]
 dex-studio = "dex_studio.cli:main"

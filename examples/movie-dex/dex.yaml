@@ -66,6 +66,52 @@ data:
           language: en-US
       options:
         records_key: results
+    tmdb_discover_movies:
+      type: rest
+      url: https://api.themoviedb.org/3/discover/movie
+      connection:
+        params:
+          api_key: "YOUR_TMDB_API_KEY"
+          language: en-US
+          sort_by: popularity.desc
+          vote_count.gte: 100
+      options:
+        records_key: results
+        timeout: 30
+        page_param: page
+        max_pages: 250
+    tmdb_movie_details:
+      type: tmdb
+      connection:
+        api_key: "YOUR_TMDB_API_KEY"
+        id_source_path: .dex/lakehouse/bronze/bronze_tmdb_movie_ids.parquet
+        id_column: id
+        media_type: movie
+        max_concurrency: 10
+        requests_per_second: 40.0
+    tmdb_discover_tv:
+      type: rest
+      url: https://api.themoviedb.org/3/discover/tv
+      connection:
+        params:
+          api_key: "YOUR_TMDB_API_KEY"
+          language: en-US
+          sort_by: popularity.desc
+          vote_count.gte: 100
+      options:
+        records_key: results
+        timeout: 30
+        page_param: page
+        max_pages: 100
+    tmdb_tv_details:
+      type: tmdb
+      connection:
+        api_key: "YOUR_TMDB_API_KEY"
+        id_source_path: .dex/lakehouse/bronze/bronze_tmdb_tv_ids.parquet
+        id_column: id
+        media_type: tv
+        max_concurrency: 10
+        requests_per_second: 40.0
   pipelines:
     bronze_titles:
       source: imdb_titles
@@ -345,26 +391,52 @@ data:
       - silver_movies
       - silver_directors
       schedule: 0 5 * * *
-    gold_genre_trends:
-      source: silver_genres
+    gold_tmdb_enriched_movies:
+      source: silver_movies
       transforms:
       - type: sql
-        sql: "SELECT\n  genre,\n  decade,\n  COUNT(*)                            AS\
-          \ movie_count,\n  ROUND(AVG(imdb_rating), 3)          AS avg_rating,\n \
-          \ SUM(vote_count)                     AS total_votes,\n  MAX(imdb_rating)\
-          \                    AS peak_rating,\n  MIN(imdb_rating)               \
-          \     AS floor_rating,\n  ROUND(\n    LN(SUM(vote_count) + 1.0) * AVG(imdb_rating)\
-          \ / 10.0, 4\n  )                                   AS popularity_index\n\
-          FROM silver_genres\nWHERE genre IS NOT NULL\n  AND genre != ''\n  AND imdb_rating\
-          \ IS NOT NULL\n  AND decade IS NOT NULL\nGROUP BY genre, decade\nORDER BY\
-          \ decade DESC, popularity_index DESC\n"
+        sql: "SELECT\n  m.movie_id,\n  m.title,\n  m.original_title,\n  m.release_year,\n\
+          \  m.runtime_min,\n  m.genres,\n  m.imdb_rating,\n  m.vote_count,\n  m.decade,\n\
+          \  d.tmdb_id,\n  d.match_confidence,\n  CAST(t.popularity AS DOUBLE)   \
+          \ AS tmdb_popularity,\n  CAST(t.vote_average AS DOUBLE)    AS tmdb_vote_average,\n\
+          \  t.overview\nFROM _data m\nINNER JOIN silver_entity_resolution d ON m.movie_id\
+          \ = d.tconst\nLEFT JOIN bronze_tmdb_movie_details t ON d.tmdb_id = t.id\n\
+          WHERE d.match_confidence >= 0.5\n"
+      quality:
+        completeness: 0.8
+        uniqueness:
+        - movie_id
+      destination: gold_tmdb_enriched_movies
+      target:
+        layer: gold
+      depends_on:
+      - silver_movies
+      - silver_entity_resolution
+      - bronze_tmdb_movie_details
+      schedule: 0 5 * * *
+    gold_genre_trends:
+      source: bronze_tmdb_movie_details
+      transforms:
+      - type: sql
+        sql: "WITH genre_expanded AS (\n  SELECT\n    (CAST(SUBSTR(CAST(d.release_date\
+          \ AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10 AS decade,\n    json_extract_string(g,\
+          \ '$.name') AS genre_name,\n    CAST(d.popularity AS DOUBLE) AS popularity,\n\
+          \    CAST(d.vote_average AS DOUBLE) AS vote_average\n  FROM _data d,\n  LATERAL\
+          \ (SELECT * FROM json_each(to_json(d.genres)) AS gen(g))\n  WHERE d.genres\
+          \ IS NOT NULL\n)\nSELECT\n  genre_name,\n  decade,\n  COUNT(*) AS movie_count,\n\
+          \  ROUND(AVG(vote_average), 3) AS avg_rating,\n  ROUND(AVG(popularity), 2)\
+          \ AS avg_popularity,\n  MAX(vote_average) AS peak_rating,\n  MIN(vote_average)\
+          \ AS floor_rating,\n  ROUND(\n    LN(SUM(popularity) + 1.0) * AVG(vote_average)\
+          \ / 10.0, 4\n  ) AS popularity_index\nFROM genre_expanded\nWHERE genre_name\
+          \ IS NOT NULL\n  AND decade IS NOT NULL\nGROUP BY genre_name, decade\nORDER\
+          \ BY decade DESC, popularity_index DESC\n"
       quality:
         completeness: 0.95
       destination: gold_genre_trends
       target:
         layer: gold
       depends_on:
-      - silver_genres
+      - bronze_tmdb_movie_details
       schedule: 0 5 * * *
     gold_director_stats:
       source: silver_directors
@@ -455,6 +527,268 @@ data:
       - silver_directors
       - gold_director_stats
       schedule: 0 5 * * *
+    gold_watch_provider_coverage:
+      source: silver_watch_providers_by_region
+      transforms:
+      - type: sql
+        sql: "SELECT\n  region,\n  provider_name,\n  COUNT(DISTINCT tmdb_id)     \
+          \     AS title_count,\n  COUNT(DISTINCT CONCAT(CAST(tmdb_id AS VARCHAR),\
+          \ '-', availability_type)) AS total_availabilities\nFROM _data\nGROUP BY\
+          \ region, provider_name\nORDER BY region, title_count DESC\n"
+      quality:
+        completeness: 0.85
+      destination: gold_watch_provider_coverage
+      target:
+        layer: gold
+      depends_on:
+      - silver_watch_providers_by_region
+      schedule: 0 5 * * *
+    gold_cross_source_match_confidence:
+      source: silver_entity_resolution
+      transforms:
+      - type: sql
+        sql: "SELECT\n  tconst,\n  tmdb_id,\n  match_confidence,\n  CASE\n    WHEN\
+          \ match_confidence >= 0.5 THEN 'HIGH'\n    WHEN match_confidence >= 0.3\
+          \ THEN 'MEDIUM'\n    ELSE 'LOW'\n  END AS confidence_tier\nFROM _data\n"
+      quality:
+        completeness: 0.9
+        custom_sql: SELECT AVG(match_confidence) >= 0.5 AND COUNT(*) >= 1000 FROM
+          _data
+      destination: gold_cross_source_match_confidence
+      target:
+        layer: gold
+      depends_on:
+      - silver_entity_resolution
+      schedule: 0 5 * * *
+    bronze_tmdb_movie_ids:
+      source: tmdb_discover_movies
+      transforms:
+      - type: filter
+        condition: id IS NOT NULL
+      - type: deduplicate
+        key:
+        - id
+      quality:
+        completeness: 0.95
+        uniqueness:
+        - id
+      destination: bronze_tmdb_movie_ids
+      target:
+        layer: bronze
+      schedule: 0 2 * * *
+    bronze_tmdb_movie_details:
+      source: tmdb_movie_details
+      depends_on:
+      - bronze_tmdb_movie_ids
+      transforms:
+      - type: filter
+        condition: id IS NOT NULL
+      quality:
+        completeness: 0.9
+        uniqueness:
+        - id
+      destination: bronze_tmdb_movie_details
+      target:
+        layer: bronze
+      schedule: 0 3 * * *
+    bronze_tmdb_movie_credits:
+      source: bronze_tmdb_movie_details
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.cast
+          alias: credit
+      quality:
+        completeness: 0.8
+      destination: bronze_tmdb_movie_credits
+      target:
+        layer: bronze
+      schedule: 0 4 * * *
+    bronze_tmdb_movie_watch_providers:
+      source: bronze_tmdb_movie_details
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: sql
+        sql: |
+          -- "watch/providers.results" is a per-region map (dynamic country-code
+          -- keys), not a fixed-path LIST, so it can't use the plain `explode`
+          -- transform (built for arrays like credits.cast). to_json + json_each
+          -- walks the region keys dynamically; a per-availability-type UNION
+          -- unpacks the flatrate/rent/buy provider lists under each region.
+          WITH regions AS (
+            SELECT
+              _data.id                                          AS tmdb_id,
+              je.key                                             AS region,
+              je.value                                           AS region_json
+            FROM _data,
+            LATERAL (SELECT * FROM json_each(to_json("watch/providers".results))) AS je
+            WHERE "watch/providers" IS NOT NULL
+              AND "watch/providers".results IS NOT NULL
+          ),
+          availability AS (
+            SELECT tmdb_id, region, 'flatrate' AS availability_type,
+                   unnest(json_transform(region_json -> 'flatrate', '["JSON"]')) AS p
+            FROM regions WHERE (region_json -> 'flatrate') IS NOT NULL
+            UNION ALL
+            SELECT tmdb_id, region, 'rent' AS availability_type,
+                   unnest(json_transform(region_json -> 'rent', '["JSON"]')) AS p
+            FROM regions WHERE (region_json -> 'rent') IS NOT NULL
+            UNION ALL
+            SELECT tmdb_id, region, 'buy' AS availability_type,
+                   unnest(json_transform(region_json -> 'buy', '["JSON"]')) AS p
+            FROM regions WHERE (region_json -> 'buy') IS NOT NULL
+          )
+          SELECT
+            tmdb_id,
+            region,
+            json_extract_string(p, '$.provider_name') AS provider_name,
+            availability_type
+          FROM availability
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_watch_providers
+      target:
+        layer: bronze
+      schedule: 15 4 * * *
+    bronze_tmdb_tv_ids:
+      source: tmdb_discover_tv
+      transforms:
+      - type: filter
+        condition: id IS NOT NULL
+      - type: deduplicate
+        key:
+        - id
+      quality:
+        completeness: 0.95
+        uniqueness:
+        - id
+      destination: bronze_tmdb_tv_ids
+      target:
+        layer: bronze
+      schedule: 30 2 * * *
+    bronze_tmdb_tv_details:
+      source: tmdb_tv_details
+      depends_on:
+      - bronze_tmdb_tv_ids
+      transforms:
+      - type: filter
+        condition: id IS NOT NULL
+      quality:
+        completeness: 0.9
+        uniqueness:
+        - id
+      destination: bronze_tmdb_tv_details
+      target:
+        layer: bronze
+      schedule: 30 3 * * *
+    bronze_tmdb_tv_credits:
+      source: bronze_tmdb_tv_details
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.cast
+          alias: credit
+      quality:
+        completeness: 0.8
+      destination: bronze_tmdb_tv_credits
+      target:
+        layer: bronze
+      schedule: 30 4 * * *
+    silver_entity_resolution:
+      source: bronze_titles
+      depends_on:
+      - bronze_titles
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: sql
+        sql: |
+          SELECT
+            t.tconst                                                  AS tconst,
+            d.id                                                      AS tmdb_id,
+            CASE
+              WHEN LOWER(TRIM(t.primaryTitle)) = LOWER(TRIM(d.title)) THEN 1.0
+              ELSE 0.5
+            END                                                       AS match_confidence
+          FROM _data t
+          INNER JOIN bronze_tmdb_movie_details d ON t.tconst = d.imdb_id
+          WHERE d.imdb_id IS NOT NULL
+      quality:
+        completeness: 0.9
+        uniqueness:
+        - tconst
+        custom_sql: SELECT AVG(match_confidence) >= 0.5 FROM _data
+      destination: silver_entity_resolution
+      target:
+        layer: silver
+      schedule: 0 4 * * *
+    silver_unified_cast_crew:
+      source: bronze_principals
+      depends_on:
+      - bronze_principals
+      - bronze_names
+      - bronze_tmdb_movie_credits
+      - silver_entity_resolution
+      transforms:
+      - type: sql
+        sql: |
+          -- Pragmatic union, not a fuzzy-name dedup: IMDB and TMDB cast rows
+          -- are kept side by side (source column) rather than merged into one
+          -- identity per person. Cross-source person matching (e.g. TMDB
+          -- person id <-> IMDB nconst) is out of scope here — known
+          -- limitation, revisit if a unified per-person view is needed.
+          SELECT
+            p.tconst                    AS resolved_title_id,
+            n.primaryName                AS person_name,
+            p.category                   AS role,
+            'imdb'                       AS source
+          FROM _data p
+          LEFT JOIN bronze_names n ON p.nconst = n.nconst
+          WHERE n.primaryName IS NOT NULL
+          UNION ALL
+          SELECT
+            er.tconst                   AS resolved_title_id,
+            c.credit.name                AS person_name,
+            c.credit.character            AS role,
+            'tmdb'                       AS source
+          FROM bronze_tmdb_movie_credits c
+          INNER JOIN silver_entity_resolution er ON c.id = er.tmdb_id
+          WHERE c.credit.name IS NOT NULL
+      quality:
+        completeness: 0.7
+      destination: silver_unified_cast_crew
+      target:
+        layer: silver
+      schedule: 30 4 * * *
+    silver_watch_providers_by_region:
+      source: bronze_tmdb_movie_watch_providers
+      depends_on:
+      - bronze_tmdb_movie_watch_providers
+      transforms:
+      - type: filter
+        condition: tmdb_id IS NOT NULL AND region IS NOT NULL AND provider_name IS
+          NOT NULL
+      - type: deduplicate
+        key:
+        - tmdb_id
+        - region
+        - provider_name
+        - availability_type
+      quality:
+        completeness: 0.9
+        uniqueness:
+        - tmdb_id
+        - region
+        - provider_name
+        - availability_type
+      destination: silver_watch_providers_by_region
+      target:
+        layer: silver
+      schedule: 45 4 * * *
 ml:
   tracker: builtin
   tracking:
@@ -531,6 +865,24 @@ ml:
         n_estimators: 200
         max_depth: 8
         random_state: 42
+    review_similarity_finetune:
+      # KNOWN GAP: bronze_tmdb_movie_reviews does not exist yet — TMDB review
+      # ingestion was not built as part of the 2026-07-06 data-intelligence
+      # re-architecture foundation work. This experiment is config-only until
+      # that bronze pipeline lands; do not run it before then.
+      model_type: sentence_transformer_finetune
+      target: ""
+      features: []
+      params:
+        base_model: all-MiniLM-L6-v2
+        loss_type: contrastive
+        dataset_table: bronze_tmdb_movie_reviews
+        text_a_column: review_text_a
+        text_b_column: review_text_b
+        label_column: similarity_label
+        epochs: 3
+        batch_size: 16
+        output_path: .dex/models/review_similarity/finetuned
   serving:
     engine: builtin
     endpoints:
@@ -612,6 +964,22 @@ ai:
     strategy: hybrid
     top_k: 10
     reranker: true
+    options:
+      # Lexical (BM25/keyword) backend, fused with the vector store below
+      # via reciprocal rank fusion when strategy is hybrid. If Elasticsearch
+      # is unreachable, retrieval silently degrades to vector-only results.
+      lexical:
+        backend: elasticsearch
+        hosts:
+          - http://elasticsearch:9200
+        timeout_seconds: 5.0
+        indices:
+          movies:
+            index_name: moviedex_movies
+          reviews:
+            index_name: moviedex_reviews
+          keywords:
+            index_name: moviedex_keywords
   vectorstore:
     backend: builtin
     embedding_model: all-MiniLM-L6-v2

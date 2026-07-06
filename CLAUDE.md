@@ -66,3 +66,13 @@ Standing rubric for judging pipeline/warehouse production-readiness. Apply when 
 - [ ] Stress/concurrency test — 50+ simultaneous analytical queries.
 - [ ] Downstream BI validation — dashboard numbers match legacy reports exactly.
 - [ ] Permissions/security audit — RBAC restricts PII correctly.
+
+## TMDB Data-Intelligence Re-Architecture (2026-07-06)
+
+Full design lives in the `dataenginex` repo: `dataenginex/docs/superpowers/specs/2026-07-06-tmdb-data-intelligence-rearchitecture-design.md` (single source of truth — don't duplicate it here).
+
+Relevant to this repo:
+- New `routers/content.py` + `templates/content/explorer.html` — the one new domain-facing page (recommendation compare, watch-provider table, cross-source match-confidence table). Everything else needed already exists (`templates/data/*`, `templates/intelligence/*`) — new pipelines/models register into those, no new generic UI infra required.
+- `auth.py` gets wired to Authentik OIDC once enabled in `infradex` — core dex-studio change, benefits any deployment, not moviedex-specific.
+- Delivery: one phase, no backward-compatibility shims.
+- Reliability requirements (spec §6) apply here too: any new external dependency call from a router must have a timeout + graceful fallback, never a hard block/crash on the request path.

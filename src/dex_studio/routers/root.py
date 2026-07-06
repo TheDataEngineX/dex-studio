@@ -1,4 +1,4 @@
-"""Root routes: /, /onboarding, /login, /logout."""
+"""Root routes: /, /onboarding, /login, /logout, /login/oidc, /auth/callback."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from dex_studio import oidc
 from dex_studio._engine import (
     USER_PROJECTS_DIR,
     copy_example_to_user_dir,
@@ -464,6 +465,7 @@ def login_page(request: Request) -> HTMLResponse | RedirectResponse:
         "project_name": "DEX Studio",
         "engine_ready": False,
         "error": request.session.pop("login_error", ""),
+        "oidc_enabled": oidc.oidc_enabled(),
     }
     return render(request, "root/login.html", ctx)
 
@@ -487,6 +489,35 @@ def login_submit(
     log.warning("login failed", ip=ip)
     request.session["login_error"] = "Invalid passphrase."
     return RedirectResponse("/login", status_code=303)
+
+
+@router.get("/login/oidc")
+def login_oidc(request: Request) -> RedirectResponse:
+    """Start the Authentik authorization-code flow (additional login path)."""
+    if not oidc.oidc_enabled():
+        request.session["login_error"] = "SSO login is not configured."
+        return RedirectResponse("/login", status_code=303)
+    redirect_uri = str(request.url_for("auth_callback"))
+    return oidc.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/auth/callback")
+def auth_callback(request: Request, code: str = "", state: str = "") -> RedirectResponse:
+    """Authentik redirects here with ?code=&state= after the user authenticates."""
+    if not oidc.oidc_enabled() or not code or not state:
+        request.session["login_error"] = "SSO login failed."
+        return RedirectResponse("/login", status_code=303)
+    redirect_uri = str(request.url_for("auth_callback"))
+    try:
+        claims = oidc.handle_callback(request, code=code, state=state, redirect_uri=redirect_uri)
+    except oidc.OIDCError as exc:
+        log.warning("oidc login failed", error=str(exc))
+        request.session["login_error"] = "SSO login failed."
+        return RedirectResponse("/login", status_code=303)
+    oidc.login_via_claims(request, claims)
+    _get_csrf_token(request)
+    log.info("oidc login successful", ip=get_client_ip(request))
+    return RedirectResponse("/", status_code=303)
 
 
 @router.post("/logout")
