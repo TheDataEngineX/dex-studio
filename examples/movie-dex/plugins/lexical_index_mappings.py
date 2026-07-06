@@ -22,6 +22,7 @@ Wiring (production)::
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import structlog
@@ -35,6 +36,7 @@ _KEYWORD_FIELD = {"type": "keyword"}
 
 MOVIES_MAPPING: dict[str, Any] = {
     "properties": {
+        "text": _TEXT_FIELD,
         "title": _TEXT_FIELD,
         "overview": _TEXT_FIELD,
         "tagline": _TEXT_FIELD,
@@ -47,6 +49,7 @@ MOVIES_MAPPING: dict[str, Any] = {
 
 REVIEWS_MAPPING: dict[str, Any] = {
     "properties": {
+        "text": _TEXT_FIELD,
         "movie_id": _KEYWORD_FIELD,
         "author": _KEYWORD_FIELD,
         "body": _TEXT_FIELD,
@@ -57,6 +60,7 @@ REVIEWS_MAPPING: dict[str, Any] = {
 
 KEYWORDS_MAPPING: dict[str, Any] = {
     "properties": {
+        "text": _TEXT_FIELD,
         "movie_id": _KEYWORD_FIELD,
         "keyword": _TEXT_FIELD,
     }
@@ -85,6 +89,29 @@ def ensure_indices(client: Any) -> None:
             logger.warning(
                 "elasticsearch index creation skipped", index=index_name, error=str(exc)
             )
+
+
+def configure_indices() -> None:
+    """Apply MovieDEX mappings at plugin load, with an outage-safe fast fallback."""
+    try:
+        from elasticsearch import Elasticsearch
+
+        username = os.environ.get("ELASTICSEARCH_USERNAME", "")
+        password = os.environ.get("ELASTICSEARCH_PASSWORD", "")
+        client = Elasticsearch(
+            [os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")],
+            basic_auth=(username, password) if username and password else None,
+            request_timeout=3,
+        )
+        if client.ping():
+            ensure_indices(client)
+        else:
+            logger.info("elasticsearch unavailable; index mapping setup deferred")
+    except Exception as exc:
+        logger.warning("elasticsearch mapping setup skipped", error=str(exc))
+
+
+configure_indices()
 
 
 if __name__ == "__main__":

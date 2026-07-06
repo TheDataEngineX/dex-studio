@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Content Explorer — DEX Studio{% endblock %}
+{% block page_title %}Content Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Movie intelligence</h1>
+    <p class="page-subtitle">Compare recommendation systems, providers, and cross-source identity.</p>
+  </div>
+</div>
+
+<form method="get" action="/content/explorer" class="card" style="margin-bottom:16px;padding:16px">
+  <label for="movie_id">Movie</label>
+  <select id="movie_id" name="movie_id" onchange="this.form.submit()">
+    {% for movie in movies %}
+    <option value="{{ movie.tmdb_id }}" {{ 'selected' if movie.tmdb_id == selected_id }}>
+      {{ movie.title }}{% if movie.release_year %} ({{ movie.release_year }}){% endif %}
+    </option>
+    {% endfor %}
+  </select>
+</form>
+
+<div class="grid-2" style="gap:16px">
+  <section class="card" style="padding:16px">
+    <h2>TMDB similar</h2>
+    <table>
+      <thead><tr><th>Title</th><th>TMDB score</th></tr></thead>
+      <tbody>
+      {% for row in tmdb_similar %}
+        <tr><td>{{ row.title }}</td><td>{{ row.score }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No TMDB similarity data loaded.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card" style="padding:16px">
+    <h2>DataEngineX KNN</h2>
+    <table>
+      <thead><tr><th>Title</th><th>Similarity</th></tr></thead>
+      <tbody>
+      {% for row in own_similar %}
+        <tr><td>{{ row.title }}</td><td>{{ row.score }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No feature-table recommendations loaded.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card" style="padding:16px;margin-top:16px">
+  <h2>Watch providers by region</h2>
+  <table>
+    <thead><tr><th>Region</th><th>Provider</th><th>Availability</th></tr></thead>
+    <tbody>
+    {% for row in providers %}
+      <tr><td>{{ row.region }}</td><td>{{ row.provider_name }}</td><td>{{ row.availability_type }}</td></tr>
+    {% else %}
+      <tr><td colspan="3">No provider data loaded.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card" style="padding:16px;margin-top:16px">
+  <h2>Cross-source match confidence</h2>
+  <table>
+    <thead><tr><th>IMDB</th><th>TMDB</th><th>Confidence</th><th>Match rate</th><th>Tier</th></tr></thead>
+    <tbody>
+    {% for row in confidence %}
+      <tr>
+        <td>{{ row.tconst }}</td><td>{{ row.tmdb_id }}</td>
+        <td>{{ row.match_confidence }}</td><td>{{ row.match_rate }}</td>
+        <td>{{ row.confidence_tier }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5">No cross-source match loaded.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

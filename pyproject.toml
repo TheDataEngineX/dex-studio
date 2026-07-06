@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "dataenginex>=0.4.6",
+    "dataenginex[delta]>=0.4.6",
     "fastapi[standard]>=0.115.0",
     "jinja2>=3.1.4",
     "itsdangerous>=2.2.0",
@@ -34,6 +34,7 @@ dependencies = [
     "tqdm>=4.66.0",
     "httpx>=0.28.0",
     "pyjwt[crypto]>=2.13.0",
+    "redis[hiredis]>=7.0.0",
 ]
 
 [project.optional-dependencies]

@@ -1819,7 +1819,7 @@ def schema_snapshot(request: Request, eng: WriteDep, pipeline: str) -> RedirectR
             result = mgr.snapshot_contract(pipeline)
         except SchemaReadError as exc:
             flash(request, f"Schema read failed for '{pipeline}': {exc}", "error")
-            return RedirectResponse("/data/schema", status_code=303)  # type: ignore[return-value]
+            return RedirectResponse("/data/schema", status_code=303)
         if result:
             flash(request, f"Schema contract recorded for '{pipeline}' ({len(result)} columns).")
         else:

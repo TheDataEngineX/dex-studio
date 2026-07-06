@@ -100,7 +100,11 @@ def register_builtins(registry: ToolRegistry) -> None:
             ToolParam("text_b_column", "str", True, description="Second sentence column"),
             ToolParam("label_column", "str", True, description="Similarity label column"),
             ToolParam(
-                "base_model", "str", False, "all-MiniLM-L6-v2", "Pretrained base model to start from"
+                "base_model",
+                "str",
+                False,
+                "all-MiniLM-L6-v2",
+                "Pretrained base model to start from",
             ),
             ToolParam("loss_type", "str", False, "contrastive", "contrastive or cosine"),
             ToolParam("model_name", "str", False, "", "Name to register model under"),
@@ -118,7 +122,7 @@ def _tool_query(sql: str) -> Any:
         return _dex.call("query", sql=sql)
     except Exception:
         pass
-    import duckdb  # type: ignore[import-untyped]
+    import duckdb
 
     with duckdb.connect(":memory:") as conn:
         return conn.execute(sql).fetchdf()

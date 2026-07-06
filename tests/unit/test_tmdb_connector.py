@@ -7,8 +7,11 @@ loads it in production, so the test exercises the real loading path.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
+import threading
+import tracemalloc
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +61,13 @@ class FakeClient:
         self._responses = responses
         self.calls: list[int] = []
 
-    def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
+    async def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
         tmdb_id = int(url.rstrip("/").split("/")[-1])
         self.calls.append(tmdb_id)
         queue = self._responses[tmdb_id]
         return queue.pop(0) if len(queue) > 1 else queue[0]
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         pass
 
 
@@ -78,7 +81,10 @@ def id_parquet(tmp_path: Path) -> Path:
 
 def test_fetches_one_bundled_request_per_id(id_parquet: Path) -> None:
     connector = TmdbConnector(
-        api_key="key", id_source_path=str(id_parquet), max_concurrency=2, requests_per_second=1000.0
+        api_key="key",
+        id_source_path=str(id_parquet),
+        max_concurrency=2,
+        requests_per_second=1000.0,
     )
     fake_client = FakeClient(
         {
@@ -97,7 +103,11 @@ def test_fetches_one_bundled_request_per_id(id_parquet: Path) -> None:
 
 
 def test_skips_404_without_raising(id_parquet: Path) -> None:
-    connector = TmdbConnector(api_key="key", id_source_path=str(id_parquet), requests_per_second=1000.0)
+    connector = TmdbConnector(
+        api_key="key",
+        id_source_path=str(id_parquet),
+        requests_per_second=1000.0,
+    )
     fake_client = FakeClient(
         {
             1: [FakeResponse(200, {"id": 1})],
@@ -113,7 +123,11 @@ def test_skips_404_without_raising(id_parquet: Path) -> None:
 
 
 def test_retries_on_429_then_succeeds(id_parquet: Path) -> None:
-    connector = TmdbConnector(api_key="key", id_source_path=str(id_parquet), requests_per_second=1000.0)
+    connector = TmdbConnector(
+        api_key="key",
+        id_source_path=str(id_parquet),
+        requests_per_second=1000.0,
+    )
     fake_client = FakeClient(
         {
             1: [FakeResponse(429, headers={"Retry-After": "0"}), FakeResponse(200, {"id": 1})],
@@ -129,13 +143,17 @@ def test_retries_on_429_then_succeeds(id_parquet: Path) -> None:
 
 
 def test_requests_bundle_append_to_response(id_parquet: Path) -> None:
-    connector = TmdbConnector(api_key="key", id_source_path=str(id_parquet), requests_per_second=1000.0)
+    connector = TmdbConnector(
+        api_key="key",
+        id_source_path=str(id_parquet),
+        requests_per_second=1000.0,
+    )
     seen_params: list[dict[str, Any]] = []
 
     class RecordingClient(FakeClient):
-        def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
+        async def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
             seen_params.append(params)
-            return super().get(url, params)
+            return await super().get(url, params)
 
     fake_client = RecordingClient(
         {
@@ -150,16 +168,16 @@ def test_requests_bundle_append_to_response(id_parquet: Path) -> None:
 
     assert all("append_to_response" in p for p in seen_params)
     assert seen_params[0]["append_to_response"] == (
-        "credits,images,keywords,reviews,similar,videos,watch/providers"
+        "credits,external_ids,images,keywords,reviews,similar,videos,watch/providers"
     )
 
 
 def test_respects_max_concurrency(id_parquet: Path) -> None:
-    import threading
-    import time
-
     connector = TmdbConnector(
-        api_key="key", id_source_path=str(id_parquet), max_concurrency=2, requests_per_second=1000.0
+        api_key="key",
+        id_source_path=str(id_parquet),
+        max_concurrency=2,
+        requests_per_second=1000.0,
     )
 
     lock = threading.Lock()
@@ -167,14 +185,14 @@ def test_respects_max_concurrency(id_parquet: Path) -> None:
     peak_in_flight = 0
 
     class ThrottledClient(FakeClient):
-        def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
+        async def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
             nonlocal in_flight, peak_in_flight
             with lock:
                 in_flight += 1
                 peak_in_flight = max(peak_in_flight, in_flight)
-            time.sleep(0.05)
+            await asyncio.sleep(0.05)
             try:
-                return super().get(url, params)
+                return await super().get(url, params)
             finally:
                 with lock:
                     in_flight -= 1
@@ -199,3 +217,52 @@ def test_missing_id_source_path_raises(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="id_source_path not found"):
         connector.read()
+
+
+def test_redis_limiter_coordinates_every_request(id_parquet: Path) -> None:
+    connector = TmdbConnector(
+        api_key="key",
+        id_source_path=str(id_parquet),
+        requests_per_second=1000.0,
+    )
+    connector._client = FakeClient(
+        {movie_id: [FakeResponse(200, {"id": movie_id})] for movie_id in (1, 2, 3)}
+    )
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def eval(self, *args: Any) -> int:
+            self.calls += 1
+            return 0
+
+    redis = FakeRedis()
+    connector._redis = redis
+
+    connector.read()
+
+    assert redis.calls == 3
+
+
+def test_large_fanout_keeps_memory_bounded(tmp_path: Path) -> None:
+    ids = list(range(200))
+    path = tmp_path / "many-ids.parquet"
+    pq.write_table(pa.table({"id": ids}), path)
+    connector = TmdbConnector(
+        api_key="key",
+        id_source_path=str(path),
+        max_concurrency=5,
+        requests_per_second=100_000.0,
+    )
+    connector._client = FakeClient(
+        {movie_id: [FakeResponse(200, {"id": movie_id, "title": "x"})] for movie_id in ids}
+    )
+
+    tracemalloc.start()
+    records = connector.read()
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert len(records) == 200
+    assert peak < 10 * 1024 * 1024

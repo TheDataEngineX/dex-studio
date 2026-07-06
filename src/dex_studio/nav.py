@@ -106,6 +106,18 @@ NAV_GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
+        "label": "Content",
+        "id": "content",
+        "items": [
+            _item(
+                "Explorer",
+                "/content/explorer",
+                "film",
+                "Recommendations, providers, and source matching",
+            ),
+        ],
+    },
+    {
         "label": "Platform",
         "id": "platform",
         "items": [
@@ -218,6 +230,27 @@ def cmd_palette_pages() -> list[dict[str, str]]:
 _D = _item  # alias for readability in this section
 
 NAV_DOMAINS: list[dict[str, Any]] = [
+    {
+        "id": "content",
+        "label": "Content",
+        "icon": "film",
+        "color": "#f59e0b",
+        "href": "/content/explorer",
+        "prefix": "/content/",
+        "page_groups": [
+            {
+                "label": "Explore",
+                "items": [
+                    _D(
+                        "Movie Explorer",
+                        "/content/explorer",
+                        "film",
+                        "Recommendations, providers, and source matching",
+                    ),
+                ],
+            },
+        ],
+    },
     {
         "id": "data",
         "label": "Data",

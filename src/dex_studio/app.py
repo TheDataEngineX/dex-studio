@@ -324,7 +324,7 @@ def _add_middlewares(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import api, data, intelligence, root, secops, system
+    from dex_studio.routers import api, content, data, intelligence, root, secops, system
 
     app = FastAPI(
         title="DEX Studio",
@@ -350,6 +350,7 @@ def create_app() -> FastAPI:
     app.include_router(root.router)
     app.include_router(data.router, prefix="/data")
     app.include_router(intelligence.router, prefix="/intelligence")
+    app.include_router(content.router, prefix="/content")
     app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
     app.include_router(api.router, prefix="/api")
