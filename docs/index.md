@@ -13,8 +13,9 @@
 
 - [Getting Started](getting-started.md) — Install and run DEX Studio
 - [Configuration](configuration.md) — Environment variables and CLI reference
-- [Design](design.md) — Architecture and design decisions
+- [Design](design.md) — Design document and development model
 - [Architecture Review](architecture-review.md) — Request lifecycle, auth, engine
+- [Observability](observability.md) — Metrics, logging, tracing
 
 ## Run in 60 seconds
 

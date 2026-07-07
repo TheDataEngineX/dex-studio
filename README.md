@@ -4,15 +4,62 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Open-source, self-hosted, local-first Data + ML + AI workbench for individuals and small teams. One Docker command. Your data never leaves your laptop.**
+> **The local-first Data + ML + AI workbench. One command, zero microservices, everything in one process.**
+
+Jupyter is great for notebooks. Airflow is great for orchestration. Streamlit is great for dashboards. This is **all of them in one app** — no stitching together half a dozen tools, no Python ↔ HTTP hops, no data leaving your laptop unless you choose to.
+
+```bash
+docker compose up
+open http://localhost:7860
+```
 
 [![DEX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
 
+> **After login →** head to [**Getting Started**](docs/getting-started.md) for your first project, first pipeline, and first AI agent.
+
 > 40-second highlight · [Full walkthrough →](docs/demo-full.mp4)
 
-______________________________________________________________________
+---
 
-## Run it in 60 seconds
+## What is this?
+
+A single-page web UI that gives you **ingestion, pipelines, warehouse, ML, AI agents, RAG, PII guardrails, scheduling, monitoring, and logs** — all backed by one Python library running in the same process.
+
+| Domain | What you can do |
+|--------|----------------|
+| **Data** | Connect sources (CSV, Postgres, Kafka, Spark, dbt, S3, GCS, …), define DAG pipelines, browse bronz/silver/gold warehouse, run SQL, profile quality, explore lineage |
+| **ML / AI** | Train models (sklearn, XGBoost, PyTorch), track experiments in MLflow, serve predictions, detect drift, run RAG pipelines, chat with agents, view traces |
+| **SecOps** | Scan for PII, configure masking strategies, review audit logs, set alert rules and policies |
+| **System** | View pipeline runs, scheduler status, live log tail (SSE), Prometheus metrics, compaction, components |
+
+Each Studio page maps to a [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) library call — no REST endpoints to version, no separate API to deploy.
+
+---
+
+## Who is this for?
+
+- **Data engineers** who want a local-first workspace for pipeline development before shipping to prod
+- **ML engineers** who want to train, track, and serve models without infrastructure overhead
+- **Solo devs / small teams** who want one reproducible environment per project, not a platform team
+- **Anyone tired of** stitching together Jupyter + Airflow + MLflow + Streamlit + Grafana just to get work done
+
+---
+
+## Why not just use X?
+
+| Tool | DEX Studio does that, plus… |
+|------|-----------------------------|
+| **Jupyter** | Persistent pipelines, scheduling, warehouse, auth, multi-project — all in one app |
+| **Airflow** | Local-first, no DB/redis dependencies, ML/AI, PII guardrails, instant startup |
+| **Streamlit** | Multi-page nav, auth, scheduling, persistent state, no `st.*` DSL |
+| **Metabase / Grafana** | Read-write pipelines, ML training, agent chat, SQL console, not just dashboards |
+| **MLflow UI** | Full data pipeline + warehouse + agent runtime alongside experiment tracking |
+
+---
+
+## Run it
+
+### Docker (recommended)
 
 ```bash
 git clone https://github.com/TheDataEngineX/dex-studio && cd dex-studio
@@ -20,73 +67,65 @@ docker compose up
 # open http://localhost:7860
 ```
 
-Or run locally without Docker:
+### Native
 
 ```bash
 uv sync
 uv run poe dev                          # http://localhost:7860 with hot-reload
 ```
 
-Point it at a specific config via env:
+### Point at a project
 
 ```bash
 export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 ```
 
-______________________________________________________________________
-
-## What you get
-
-Single page-of-glass UI for everything the [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) library does — no separate API server, no microservices.
-
-| Domain | Screenshots | Features |
-| --- | --- | --- |
-| **Data** | [![Pipelines](docs/screenshots/data-pipelines.png)](docs/screenshots/data-pipelines.png) | Sources (CSV, Parquet, Postgres, Spark, dbt), Pipelines, SQL console, Warehouse (bronze/silver/gold), Lineage graph, Quality checks, Catalog, Transforms, Streaming, Schema, Backfill |
-| **Intelligence** | [![Playground](docs/screenshots/intelligence-playground.png)](docs/screenshots/intelligence-playground.png) | Playground (SSE streaming chat), Models, Experiments, Dashboard, Agents, Traces, Drift, Embeddings, Features, Predictions, Tools, Finetune |
-| **SecOps** | [![Overview](docs/screenshots/secops-overview.png)](docs/screenshots/secops-overview.png) | PrivacyGuard overview, PII strategy config, Audit log, Alert rules, Policies |
-| **System** | [![Status](docs/screenshots/system-status.png)](docs/screenshots/system-status.png) | Status, Live log tail (SSE), Metrics, Runs feed, Scheduler, Compaction, Alerting, Costs, Components |
-
-______________________________________________________________________
+---
 
 ## Local-first by default
 
-- DuckDB is embedded — no Postgres / Redis required for the base install
-- LLM defaults to [Ollama](https://ollama.com) running locally; OpenAI / Anthropic are opt-in
-- Optional integrations gated behind `dataenginex` extras (`[postgres]`, `[qdrant]`, `[cloud]`, …)
-- Every outbound network call is logged; PII guardrails mask sensitive fields before any external request
-- All data lives in `.dex/` next to your project — copy the folder, move machines, you're done
+- **DuckDB** embedded — no Postgres / Redis for the base install
+- **Ollama** for LLMs — no API keys required; OpenAI / Anthropic are opt-in
+- **No microservices** — FastAPI imports `dataenginex` directly; same process, no HTTP hop
+- **Portable** — all project data lives in `.dex/` next to your config; copy the folder, move machines
+- **Privacy** — every outbound call is logged; PII guardrails mask before any external request
+- **Optional scale-out** — swap SQLite → PostgreSQL, add Qdrant, add S3, add Kafka — when you need it
 
-______________________________________________________________________
-
-## Configuration
-
-```bash
-# Password set via /setup page on first boot — saved to ~/.dex-studio/auth.hash
-export DEX_STUDIO_HOST=0.0.0.0           # default
-export DEX_STUDIO_PORT=7860              # default
-```
-
-Projects registry: `~/.dex-studio/projects.yaml` — switch between projects via the sidebar dropdown.
-
-______________________________________________________________________
+---
 
 ## Tech stack
 
 | Component | Technology |
-| --- | --- |
+|-----------|-----------|
 | Server | FastAPI + Uvicorn |
 | Templates | Jinja2 (server-rendered HTML) |
-| Interactivity | HTMX + Alpine.js |
+| Interactivity | HTMX + Alpine.js (no JS build step) |
 | Styling | Custom CSS + Radix UI design tokens |
-| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) — direct import, no HTTP hop |
-| Config | PyYAML + Pydantic |
+| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) — direct import, no HTTP |
+| Persistence | DuckDB (embedded) + optional PostgreSQL / Qdrant / S3 |
+| LLM | Ollama (default) + optional OpenAI / Anthropic / LiteLLM |
+| Streaming | Kafka / Redpanda (optional) |
+| ML Tracking | MLflow (optional) |
 | Build | Hatchling + uv |
-| Testing | pytest + httpx TestClient |
-| Linting / Types | Ruff + mypy strict |
+| Quality | Ruff + mypy strict + pytest |
 
-The frontend stack is frozen for 12 months (no React/Vue/Svelte) — see [ADR-0007](https://github.com/TheDataEngineX/docs/blob/main/adr/0007-local-first-scope-reset.md).
+---
 
-______________________________________________________________________
+## Screenshots
+
+| Data pipelines | SQL console | Warehouse lineage |
+|---|---|---|
+| [![Pipelines](docs/screenshots/data-pipelines.png)](docs/screenshots/data-pipelines.png) | [![SQL](docs/screenshots/data-sql.png)](docs/screenshots/data-sql.png) | [![Lineage](docs/screenshots/data-lineage.png)](docs/screenshots/data-lineage.png) |
+
+| ML models | Agent playground | PII guardrails |
+|---|---|---|
+| [![Models](docs/screenshots/intelligence-models.png)](docs/screenshots/intelligence-models.png) | [![Playground](docs/screenshots/intelligence-playground.png)](docs/screenshots/intelligence-playground.png) | [![SecOps](docs/screenshots/secops-overview.png)](docs/screenshots/secops-overview.png) |
+
+| System status | Live logs | Scheduler |
+|---|---|---|
+| [![Status](docs/screenshots/system-status.png)](docs/screenshots/system-status.png) | [![Logs](docs/screenshots/system-logs.png)](docs/screenshots/system-logs.png) | [![Scheduler](docs/screenshots/system-scheduler.png)](docs/screenshots/system-scheduler.png) |
+
+---
 
 ## Development
 
@@ -101,22 +140,24 @@ uv run poe dev               # uvicorn dev server (port 7860, hot-reload)
 
 Design tokens: `src/dex_studio/static/studio.css`.
 
-______________________________________________________________________
+---
 
 ## Ecosystem
 
-| Repo | Purpose |
-| --- | --- |
-| [dataenginex](https://github.com/TheDataEngineX/dataenginex) | The Python library (PyPI) — engine, config, all backends |
+| Repo | Description |
+|------|-------------|
+| [dataenginex](https://github.com/TheDataEngineX/dataenginex) | The Python library — engine, config, all backends |
 | [dex-studio](https://github.com/TheDataEngineX/dex-studio) | This repo — web UI |
-| [docs](https://github.com/TheDataEngineX/docs) | Documentation site — ADRs + 10-week roadmap |
+| [infradex](https://github.com/TheDataEngineX/infradex) | Kubernetes deployment via ArgoCD |
 
-______________________________________________________________________
+---
 
 ## Status
 
-Pre-1.0 · v0.5.0 brings the unified Intelligence domain, two-rail navigation, and expanded Data/System dashboards. See [CHANGELOG](CHANGELOG.md) for the full diff.
+**Pre-1.0.** Active development. All core phases delivered through 0.5.x. See [CHANGELOG](CHANGELOG.md).
 
-______________________________________________________________________
+**Contributions welcome** — open an issue or PR. The architecture is small enough to hold in your head (one FastAPI app, ~30 source files).
+
+---
 
 **License:** MIT • **Python:** 3.13+ • **Port:** 7860

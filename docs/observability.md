@@ -15,6 +15,7 @@ DEX Studio uses `structlog` for structured logging. All log output is written to
 ### Structured Fields
 
 Every log entry includes:
+
 - `ts` — ISO-8601 timestamp
 - `level` — `debug` / `info` / `warning` / `error`
 - `event` — short human-readable message
