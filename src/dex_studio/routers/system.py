@@ -17,6 +17,7 @@ from dex_studio._engine import init_engine
 from dex_studio.logstore import log_store
 from dex_studio.routers._deps import JsonReadDep, ReadDep, WriteDep, base_ctx, flash, render
 from dex_studio.studio_db import get_studio_db
+from dex_studio.utils import fmt_ts_iso
 
 router = APIRouter()
 
@@ -131,10 +132,23 @@ def system_status(request: Request, eng: ReadDep) -> HTMLResponse:
                 "status": "ok" if available else "offline",
             }
         )
+    scheduler_overview: dict[str, Any] | None = None
+    with contextlib.suppress(Exception):
+        from dex_studio.scheduler import get_scheduler_status
+
+        sched_raw = get_scheduler_status(eng, request.app)
+        scheduler_overview = {
+            "enabled": sched_raw.get("enabled", False),
+            "paused": sched_raw.get("paused", False),
+            "pipeline_count": len(sched_raw.get("pipelines", [])),
+            "dead_letter_count": len(sched_raw.get("dead_letter", [])),
+        }
+
     ctx = base_ctx(request) | {
         "health": health,
         "components": components,
         "is_healthy": health.get("status") in ("ok", "healthy"),
+        "scheduler_overview": scheduler_overview,
         **_sys_metrics(),
     }
     return render(request, "system/status.html", ctx)
@@ -254,7 +268,7 @@ def system_runs(
         for r in reversed(eng.store.get_pipeline_runs()[-200:]):
             dur_ms = r.duration_ms
             dur_str = f"{dur_ms / 1000:.1f}s" if dur_ms >= 1000 else f"{int(dur_ms)}ms"
-            ts = str(r.timestamp)[:19].replace("T", " ")
+            ts = fmt_ts_iso(r.timestamp)
             runs.append(
                 {
                     "type": "pipeline",
@@ -387,7 +401,7 @@ def system_activity(request: Request, eng: ReadDep) -> HTMLResponse:
         for ev in getattr(audit, "events", [])[-100:]:
             events.append(
                 {
-                    "ts": str(getattr(ev, "occurred_at", ""))[:19],
+                    "ts": fmt_ts_iso(getattr(ev, "occurred_at", "")),
                     "action": getattr(ev, "operation", ""),
                     "dataset": getattr(ev, "dataset_name", ""),
                     "actor": getattr(ev, "actor", ""),
@@ -395,7 +409,7 @@ def system_activity(request: Request, eng: ReadDep) -> HTMLResponse:
             )
     if not events:
         for r in reversed(getattr(eng.store, "get_pipeline_runs", lambda: [])()[-50:]):
-            ts = str(getattr(r, "timestamp", ""))[:19].replace("T", " ")
+            ts = fmt_ts_iso(getattr(r, "timestamp", ""))
             events.append(
                 {
                     "ts": ts,

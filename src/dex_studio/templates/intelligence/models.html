@@ -124,6 +124,7 @@
       <button class="tab active" onclick="switchModelTab('info',this)">Info</button>
       <button class="tab" onclick="switchModelTab('params',this)">Parameters</button>
       <button class="tab" onclick="switchModelTab('metrics',this)">Metrics</button>
+      <button class="tab" onclick="switchModelTab('versions',this)">Versions</button>
     </div>
 
     {# Tab: Info #}
@@ -155,6 +156,14 @@
       <table class="dex-table" style="font-size:12px" id="metrics-table">
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>
         <tbody id="metrics-body"></tbody>
+      </table>
+    </div>
+
+    {# Tab: Versions #}
+    <div id="model-tab-versions" style="display:none;flex:1;overflow-y:auto">
+      <table class="dex-table" style="font-size:12px" id="versions-table">
+        <thead><tr><th>Version</th><th>Stage</th><th>Created</th><th>Promoted</th></tr></thead>
+        <tbody id="versions-body"></tbody>
       </table>
     </div>
   </div>
@@ -279,6 +288,23 @@
     ).join('');
   }
 
+  function renderVersions(name) {
+    const d = MODEL_DATA[name] || {};
+    const versions = d.versions || [];
+    const tbody = document.getElementById('versions-body');
+    if (!tbody) return;
+    if (!versions.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:24px">No version history</td></tr>';
+      return;
+    }
+    tbody.innerHTML = versions.map(v =>
+      '<tr><td class="mono" style="font-size:11px">' + esc(v.version) + '</td>' +
+      '<td><span class="pill ' + stagePillClass(v.stage) + '" style="height:14px;font-size:9px">' + esc(v.stage) + '</span></td>' +
+      '<td class="mono muted" style="font-size:11px">' + esc(v.created_at) + '</td>' +
+      '<td class="mono muted" style="font-size:11px">' + esc(v.promoted_at) + '</td></tr>'
+    ).join('');
+  }
+
   globalThis.selectModel = function (el) {
     document.querySelectorAll('.pipe-item').forEach(function (i) {
       i.classList.remove('active');
@@ -336,6 +362,7 @@
 
     renderParams(name);
     renderMetrics(name);
+    renderVersions(name);
   };
 
   // Tab switching
@@ -363,6 +390,7 @@
   if (firstModel) {
     renderParams(firstModel.dataset.name);
     renderMetrics(firstModel.dataset.name);
+    renderVersions(firstModel.dataset.name);
   }
 
   function quickPredict() {

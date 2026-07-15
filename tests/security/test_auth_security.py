@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -51,16 +51,6 @@ def _make_engine_mock() -> MagicMock:
     return eng
 
 
-def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
-    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
-    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
-    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
-
-
 def _reset_rate_limiter() -> None:
     """Clear the module-level rate-limiter singleton between tests.
 
@@ -76,11 +66,13 @@ def _reset_rate_limiter() -> None:
 
 
 @pytest.fixture
-def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def unauthed_client(
+    monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+) -> Generator[TestClient]:
     """Client with API key set but no session — every request is unauthenticated."""
     _reset_rate_limiter()
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+    patch_db(return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -91,11 +83,13 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def authed_client(
+    monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     _reset_rate_limiter()
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+    patch_db(return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -438,9 +432,11 @@ class TestSQLInjection:
 class TestXSSEscaping:
     """Jinja2 autoescapes by default — injected script tags must not appear raw in HTML."""
 
-    def test_xss_pipeline_name_escaped_in_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_xss_pipeline_name_escaped_in_response(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+        patch_db(return_hash=_hash_password(_API_KEY))
 
         xss_name = "<script>alert(1)</script>"
         mock_eng = _make_engine_mock()
@@ -466,9 +462,11 @@ class TestXSSEscaping:
                 "XSS payload was not escaped by the template engine in HTML body"
             )
 
-    def test_xss_source_name_escaped_in_catalog(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_xss_source_name_escaped_in_catalog(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+        patch_db(return_hash=_hash_password(_API_KEY))
 
         xss_name = '<img src=x onerror=alert("xss")>'
         mock_eng = _make_engine_mock()

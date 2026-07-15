@@ -33,13 +33,13 @@
     {# ── Watermark board cards ── #}
     <div style="display:flex;flex-direction:column;gap:0">
       {% for w in watermarks %}
-      {% set ts = w.updated_at[:19] | replace('T', ' ') if w.updated_at else '' %}
+      {% set ts = w.updated_at | fmt_ts_iso %}
       {# Compute staleness: compare updated_at to now — simplified color logic #}
       {% set stale_color = 'var(--state-ok)' %}
       {% set stale_label = 'Fresh' %}
       {% set stale_pct = 20 %}
       {# We can't do real datetime math in Jinja2 easily, so use hash_count as proxy for activity #}
-      {% if not ts %}
+      {% if not w.updated_at %}
         {% set stale_color = 'var(--state-error)' %}
         {% set stale_label = 'Unknown' %}
         {% set stale_pct = 100 %}
@@ -56,7 +56,7 @@
         <div style="flex:1;min-width:0">
           <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-4);margin-bottom:3px">Watermark</div>
           <div class="mono" style="font-size:12px;color:var(--accent-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            {{ w.watermark[:19] | replace('T', ' ') if w.watermark else '—' }}
+            {{ w.watermark | fmt_ts_iso }}
           </div>
         </div>
 

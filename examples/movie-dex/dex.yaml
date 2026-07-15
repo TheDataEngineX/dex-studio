@@ -1,13 +1,31 @@
 project:
   name: moviedex
   version: 1.0.0
-  description: 'MovieDEX — end-to-end movie intelligence platform powered by the IMDB
-    Non-Commercial Dataset (~10 M titles). Covers the full data engineering flow:
-    ingest from IMDB TSV files → medallion lakehouse (bronze / silver / gold) → ML
-    rating prediction + content-based recommendation → AI agents for movie discovery,
-    trend analysis, and casting research.
-
-    '
+  description: "MovieDEX \u2014 end-to-end movie intelligence platform powered by\
+    \ the IMDB Non-Commercial Dataset (~10 M titles). Covers the full data engineering\
+    \ flow: ingest from IMDB TSV files \u2192 medallion lakehouse (bronze / silver\
+    \ / gold) \u2192 ML rating prediction + content-based recommendation \u2192 AI\
+    \ agents for movie discovery, trend analysis, and casting research.\n"
+scheduler:
+  enabled: true
+  timezone: UTC
+  max_concurrent_pipelines: 1  # ponytail: 1 at a time — TMDB pipelines OOM at 3 concurrent
+  retry:
+    max_attempts: 3
+    backoff_seconds: 120
+  on_pipeline_complete:
+    gold_top_movies:
+      trigger_ml_retrain: true
+      ml_experiment: rating_predictor
+      trigger_ai_index_refresh: true
+    gold_tmdb_enriched_movies:
+      trigger_ml_retrain: true
+      ml_experiment: content_recommender
+    gold_movie_features:
+      trigger_ml_retrain: true
+      ml_experiment: rating_predictor
+    silver_entity_resolution:
+      trigger_ai_index_refresh: true
 data:
   engine: duckdb
   sources:
@@ -62,7 +80,7 @@ data:
       url: https://api.themoviedb.org/3/trending/movie/day
       connection:
         params:
-          api_key: "${TMDB_API_KEY:-}"
+          api_key: ${TMDB_API_KEY:-}
           language: en-US
       options:
         records_key: results
@@ -71,7 +89,7 @@ data:
       url: https://api.themoviedb.org/3/discover/movie
       connection:
         params:
-          api_key: "${TMDB_API_KEY:-}"
+          api_key: ${TMDB_API_KEY:-}
           language: en-US
           sort_by: popularity.desc
           vote_count.gte: 100
@@ -83,20 +101,20 @@ data:
     tmdb_movie_details:
       type: tmdb
       connection:
-        api_key: "${TMDB_API_KEY:-}"
+        api_key: ${TMDB_API_KEY:-}
         id_source_path: .dex/lakehouse/bronze/bronze_tmdb_movie_ids
         id_column: id
         media_type: movie
         max_concurrency: 10
         requests_per_second: 40.0
-        redis_url: "${REDIS_URL:-}"
-        redis_password: "${REDIS_PASSWORD:-}"
+        redis_url: ${REDIS_URL:-}
+        redis_password: ${REDIS_PASSWORD:-}
     tmdb_discover_tv:
       type: rest
       url: https://api.themoviedb.org/3/discover/tv
       connection:
         params:
-          api_key: "${TMDB_API_KEY:-}"
+          api_key: ${TMDB_API_KEY:-}
           language: en-US
           sort_by: popularity.desc
           vote_count.gte: 100
@@ -108,14 +126,14 @@ data:
     tmdb_tv_details:
       type: tmdb
       connection:
-        api_key: "${TMDB_API_KEY:-}"
+        api_key: ${TMDB_API_KEY:-}
         id_source_path: .dex/lakehouse/bronze/bronze_tmdb_tv_ids
         id_column: id
         media_type: tv
         max_concurrency: 10
         requests_per_second: 40.0
-        redis_url: "${REDIS_URL:-}"
-        redis_password: "${REDIS_PASSWORD:-}"
+        redis_url: ${REDIS_URL:-}
+        redis_password: ${REDIS_PASSWORD:-}
     spark_tmdb_gold:
       type: spark
       connection:
@@ -128,7 +146,7 @@ data:
       url: https://api.themoviedb.org/3/movie/changes
       connection:
         params:
-          api_key: "${TMDB_API_KEY:-}"
+          api_key: ${TMDB_API_KEY:-}
       options:
         records_key: results
         timeout: 30
@@ -137,46 +155,46 @@ data:
     kafka_tmdb_changes_producer:
       type: kafka
       connection:
-        bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
         topic: moviedex.tmdb.movie-changes.v1
         mode: produce
-        security_protocol: "${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}"
-        username: "${KAFKA_USERNAME:-}"
-        password: "${KAFKA_PASSWORD:-}"
+        security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+        username: ${KAFKA_USERNAME:-}
+        password: ${KAFKA_PASSWORD:-}
         timeout_seconds: 3
         spool_path: .dex/spool/kafka-tmdb-changes.jsonl
     kafka_tmdb_changes_consumer:
       type: kafka
       connection:
-        bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
         topic: moviedex.tmdb.movie-changes.v1
         mode: consume
         group_id: moviedex-lakehouse
-        security_protocol: "${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}"
-        username: "${KAFKA_USERNAME:-}"
-        password: "${KAFKA_PASSWORD:-}"
+        security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+        username: ${KAFKA_USERNAME:-}
+        password: ${KAFKA_PASSWORD:-}
         timeout_seconds: 3
     kafka_wiki_edits_producer:
       type: kafka
       connection:
-        bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
         topic: moviedex.wikipedia.movie-edits.v1
         mode: produce
-        security_protocol: "${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}"
-        username: "${KAFKA_USERNAME:-}"
-        password: "${KAFKA_PASSWORD:-}"
+        security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+        username: ${KAFKA_USERNAME:-}
+        password: ${KAFKA_PASSWORD:-}
         timeout_seconds: 3
         spool_path: .dex/spool/kafka-wiki-edits.jsonl
     kafka_wiki_edits_consumer:
       type: kafka
       connection:
-        bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
         topic: moviedex.wikipedia.movie-edits.v1
         mode: consume
         group_id: moviedex-lakehouse
-        security_protocol: "${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}"
-        username: "${KAFKA_USERNAME:-}"
-        password: "${KAFKA_PASSWORD:-}"
+        security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+        username: ${KAFKA_USERNAME:-}
+        password: ${KAFKA_PASSWORD:-}
         timeout_seconds: 3
   pipelines:
     bronze_titles:
@@ -186,11 +204,11 @@ data:
         condition: tconst IS NOT NULL AND primaryTitle IS NOT NULL
       - type: fill_null
         defaults:
-          originalTitle: ""
-          startYear: "0"
-          endYear: "0"
-          runtimeMinutes: "0"
-          genres: "Unknown"
+          originalTitle: ''
+          startYear: '0'
+          endYear: '0'
+          runtimeMinutes: '0'
+          genres: Unknown
       - type: derive
         expression: isAdult = '1'
         name: is_adult
@@ -223,6 +241,7 @@ data:
       target:
         layer: bronze
         format: delta
+        scd_type: '2'
       schedule: 0 3 * * *
     bronze_crew:
       source: imdb_crew
@@ -231,8 +250,8 @@ data:
         condition: tconst IS NOT NULL
       - type: fill_null
         defaults:
-          directors: ""
-          writers: ""
+          directors: ''
+          writers: ''
       quality:
         completeness: 0.6
       destination: bronze_crew
@@ -250,10 +269,10 @@ data:
         - nconst
       - type: fill_null
         defaults:
-          birthYear: "0"
-          deathYear: "0"
-          primaryProfession: "Unknown"
-          knownForTitles: ""
+          birthYear: '0'
+          deathYear: '0'
+          primaryProfession: Unknown
+          knownForTitles: ''
       quality:
         completeness: 0.6
         uniqueness:
@@ -270,8 +289,8 @@ data:
         condition: tconst IS NOT NULL AND nconst IS NOT NULL
       - type: fill_null
         defaults:
-          job: ""
-          characters: ""
+          job: ''
+          characters: ''
       quality:
         completeness: 0.55
       destination: bronze_principals
@@ -286,9 +305,9 @@ data:
         condition: title IS NOT NULL AND server_name = 'en.wikipedia.org'
       - type: fill_null
         defaults:
-          comment: ""
-          user: "anonymous"
-          bot: "false"
+          comment: ''
+          user: anonymous
+          bot: 'false'
       - type: derive
         expression: bot = true
         name: is_bot_edit
@@ -322,10 +341,10 @@ data:
         condition: id IS NOT NULL AND title IS NOT NULL
       - type: fill_null
         defaults:
-          overview: ""
-          poster_path: ""
-          backdrop_path: ""
-          release_date: ""
+          overview: ''
+          poster_path: ''
+          backdrop_path: ''
+          release_date: ''
       - type: derive
         expression: "CASE\n  WHEN TRY_CAST(popularity AS DOUBLE) >= 1000 THEN 'viral'\n\
           \  WHEN TRY_CAST(popularity AS DOUBLE) >= 100  THEN 'trending'\n  WHEN TRY_CAST(popularity\
@@ -366,7 +385,6 @@ data:
       depends_on:
       - bronze_titles
       - bronze_ratings
-      schedule: 0 4 * * *
     silver_tv:
       source: bronze_titles
       transforms:
@@ -389,7 +407,6 @@ data:
       depends_on:
       - bronze_titles
       - bronze_ratings
-      schedule: 0 4 * * *
     silver_directors:
       source: bronze_crew
       transforms:
@@ -411,7 +428,6 @@ data:
       - bronze_crew
       - bronze_names
       - silver_movies
-      schedule: 0 4 * * *
     silver_cast:
       source: bronze_principals
       transforms:
@@ -433,7 +449,6 @@ data:
       - bronze_principals
       - bronze_names
       - silver_movies
-      schedule: 0 4 * * *
     silver_genres:
       source: silver_movies
       transforms:
@@ -449,21 +464,20 @@ data:
         layer: silver
       depends_on:
       - silver_movies
-      schedule: 0 4 * * *
     gold_top_movies:
       source: silver_movies
       transforms:
       - type: sql
         sql: "-- Bayesian weighted rating (IMDB Top-250 formula)\n-- WR = (v/(v+m))*R\
-          \ + (m/(v+m))*C   (m=25000, C≈6.9)\nWITH scored AS (\n  SELECT\n    m.movie_id,\n\
-          \    m.title,\n    m.original_title,\n    m.release_year,\n    m.runtime_min,\n\
-          \    m.genres,\n    m.imdb_rating,\n    m.vote_count,\n    m.decade,\n \
-          \   ROUND(\n      (m.vote_count / (m.vote_count + 25000.0)) * m.imdb_rating\n\
-          \      + (25000.0   / (m.vote_count + 25000.0)) * 6.9, 4\n    )        \
-          \                AS weighted_rating,\n    d.director_name,\n    d.director_id\n\
-          \  FROM silver_movies m\n  LEFT JOIN (\n    SELECT movie_id, director_name,\
-          \ director_id\n    FROM silver_directors\n    QUALIFY ROW_NUMBER() OVER\
-          \ (PARTITION BY movie_id ORDER BY director_id) = 1\n  ) d ON m.movie_id\
+          \ + (m/(v+m))*C   (m=25000, C\u22486.9)\nWITH scored AS (\n  SELECT\n  \
+          \  m.movie_id,\n    m.title,\n    m.original_title,\n    m.release_year,\n\
+          \    m.runtime_min,\n    m.genres,\n    m.imdb_rating,\n    m.vote_count,\n\
+          \    m.decade,\n    ROUND(\n      (m.vote_count / (m.vote_count + 25000.0))\
+          \ * m.imdb_rating\n      + (25000.0   / (m.vote_count + 25000.0)) * 6.9,\
+          \ 4\n    )                        AS weighted_rating,\n    d.director_name,\n\
+          \    d.director_id\n  FROM silver_movies m\n  LEFT JOIN (\n    SELECT movie_id,\
+          \ director_name, director_id\n    FROM silver_directors\n    QUALIFY ROW_NUMBER()\
+          \ OVER (PARTITION BY movie_id ORDER BY director_id) = 1\n  ) d ON m.movie_id\
           \ = d.movie_id\n  WHERE m.imdb_rating IS NOT NULL AND m.vote_count >= 1000\n\
           )\nSELECT\n  *,\n  RANK() OVER (ORDER BY weighted_rating DESC)         \
           \                   AS global_rank,\n  RANK() OVER (PARTITION BY decade\
@@ -478,7 +492,6 @@ data:
       depends_on:
       - silver_movies
       - silver_directors
-      schedule: 0 5 * * *
     gold_tmdb_enriched_movies:
       source: silver_movies
       transforms:
@@ -501,7 +514,6 @@ data:
       - silver_movies
       - silver_entity_resolution
       - bronze_tmdb_movie_details
-      schedule: 0 5 * * *
     gold_genre_trends:
       source: bronze_tmdb_movie_details
       transforms:
@@ -509,11 +521,11 @@ data:
         sql: "WITH genre_expanded AS (\n  SELECT\n    (CAST(SUBSTR(CAST(d.release_date\
           \ AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10 AS decade,\n    json_extract_string(g,\
           \ '$.name') AS genre_name,\n    CAST(d.popularity AS DOUBLE) AS popularity,\n\
-          \    CAST(d.vote_average AS DOUBLE) AS vote_average\n  FROM _data d,\n  LATERAL\
-          \ (SELECT * FROM json_each(to_json(d.genres)) AS gen(g))\n  WHERE d.genres\
-          \ IS NOT NULL\n)\nSELECT\n  genre_name,\n  decade,\n  COUNT(*) AS movie_count,\n\
-          \  ROUND(AVG(vote_average), 3) AS avg_rating,\n  ROUND(AVG(popularity), 2)\
-          \ AS avg_popularity,\n  MAX(vote_average) AS peak_rating,\n  MIN(vote_average)\
+          \    CAST(d.vote_average AS DOUBLE) AS vote_average\n  FROM _data d,\n \
+          \ LATERAL (SELECT * FROM json_each(to_json(d.genres)) AS gen(g))\n  WHERE\
+          \ d.genres IS NOT NULL\n)\nSELECT\n  genre_name,\n  decade,\n  COUNT(*)\
+          \ AS movie_count,\n  ROUND(AVG(vote_average), 3) AS avg_rating,\n  ROUND(AVG(popularity),\
+          \ 2) AS avg_popularity,\n  MAX(vote_average) AS peak_rating,\n  MIN(vote_average)\
           \ AS floor_rating,\n  ROUND(\n    LN(SUM(popularity) + 1.0) * AVG(vote_average)\
           \ / 10.0, 4\n  ) AS popularity_index\nFROM genre_expanded\nWHERE genre_name\
           \ IS NOT NULL\n  AND decade IS NOT NULL\nGROUP BY genre_name, decade\nORDER\
@@ -525,7 +537,6 @@ data:
         layer: gold
       depends_on:
       - bronze_tmdb_movie_details
-      schedule: 0 5 * * *
     gold_director_stats:
       source: silver_directors
       transforms:
@@ -549,7 +560,6 @@ data:
       depends_on:
       - silver_directors
       - silver_movies
-      schedule: 0 5 * * *
     gold_actor_network:
       source: silver_cast
       transforms:
@@ -571,7 +581,6 @@ data:
       depends_on:
       - silver_cast
       - silver_movies
-      schedule: 0 5 * * *
     gold_movie_features:
       source: silver_movies
       transforms:
@@ -614,15 +623,15 @@ data:
       - silver_movies
       - silver_directors
       - gold_director_stats
-      schedule: 0 5 * * *
     gold_watch_provider_coverage:
       source: silver_watch_providers_by_region
       transforms:
       - type: sql
-        sql: "SELECT\n  media_type,\n  region,\n  provider_name,\n  COUNT(DISTINCT tmdb_id)     \
-          \     AS title_count,\n  COUNT(DISTINCT CONCAT(CAST(tmdb_id AS VARCHAR),\
-          \ '-', availability_type)) AS total_availabilities\nFROM _data\nGROUP BY\
-          \ media_type, region, provider_name\nORDER BY media_type, region, title_count DESC\n"
+        sql: "SELECT\n  media_type,\n  region,\n  provider_name,\n  COUNT(DISTINCT\
+          \ tmdb_id)          AS title_count,\n  COUNT(DISTINCT CONCAT(CAST(tmdb_id\
+          \ AS VARCHAR), '-', availability_type)) AS total_availabilities\nFROM _data\n\
+          GROUP BY media_type, region, provider_name\nORDER BY media_type, region,\
+          \ title_count DESC\n"
       quality:
         completeness: 0.85
       destination: gold_watch_provider_coverage
@@ -630,24 +639,21 @@ data:
         layer: gold
       depends_on:
       - silver_watch_providers_by_region
-      schedule: 0 5 * * *
     gold_cross_source_match_confidence:
       source: silver_entity_resolution
       transforms:
       - type: sql
-        sql: "SELECT\n  tconst,\n  tmdb_id,\n  match_confidence,\n  match_rate,\n  CASE\n    WHEN\
-          \ match_confidence >= 0.5 THEN 'HIGH'\n    WHEN match_confidence >= 0.3\
-          \ THEN 'MEDIUM'\n    ELSE 'LOW'\n  END AS confidence_tier\nFROM _data\n"
+        sql: "SELECT\n  tconst,\n  tmdb_id,\n  match_confidence,\n  match_rate,\n\
+          \  CASE\n    WHEN match_confidence >= 0.5 THEN 'HIGH'\n    WHEN match_confidence\
+          \ >= 0.3 THEN 'MEDIUM'\n    ELSE 'LOW'\n  END AS confidence_tier\nFROM _data\n"
       quality:
         completeness: 0.9
-        custom_sql: SELECT MIN(match_rate) >= 0.80 AND COUNT(*) >= 1000 FROM
-          _data
+        custom_sql: SELECT MIN(match_rate) >= 0.80 AND COUNT(*) >= 1000 FROM _data
       destination: gold_cross_source_match_confidence
       target:
         layer: gold
       depends_on:
       - silver_entity_resolution
-      schedule: 0 5 * * *
     gold_keyword_trends:
       source: bronze_tmdb_movie_keywords
       depends_on:
@@ -655,24 +661,18 @@ data:
       - bronze_tmdb_movie_details
       transforms:
       - type: sql
-        sql: |
-          SELECT
-            keyword.name AS keyword,
-            (CAST(SUBSTR(CAST(d.release_date AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10
-              AS decade,
-            COUNT(DISTINCT k.id) AS title_count,
-            ROUND(AVG(CAST(d.popularity AS DOUBLE)), 3) AS avg_popularity
-          FROM _data k
-          INNER JOIN bronze_tmdb_movie_details d ON k.id = d.id
-          WHERE keyword.name IS NOT NULL AND d.release_date IS NOT NULL
-          GROUP BY keyword.name, decade
-          ORDER BY title_count DESC, avg_popularity DESC
+        sql: "SELECT\n  keyword.name AS keyword,\n  (CAST(SUBSTR(CAST(d.release_date\
+          \ AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10\n    AS decade,\n  COUNT(DISTINCT\
+          \ k.id) AS title_count,\n  ROUND(AVG(CAST(d.popularity AS DOUBLE)), 3) AS\
+          \ avg_popularity\nFROM _data k\nINNER JOIN bronze_tmdb_movie_details d ON\
+          \ k.id = d.id\nWHERE keyword.name IS NOT NULL AND d.release_date IS NOT\
+          \ NULL\nGROUP BY keyword.name, decade\nORDER BY title_count DESC, avg_popularity\
+          \ DESC\n"
       quality:
         completeness: 0.8
       destination: gold_keyword_trends
       target:
         layer: gold
-      schedule: 2 5 * * *
     gold_tmdb_tv_catalog:
       source: bronze_tmdb_tv_details
       depends_on:
@@ -680,21 +680,11 @@ data:
       - silver_tv_entity_resolution
       transforms:
       - type: sql
-        sql: |
-          SELECT
-            er.tconst AS imdb_id,
-            d.id AS tmdb_id,
-            d.name,
-            d.original_name,
-            d.first_air_date,
-            d.overview,
-            d.genres,
-            CAST(d.popularity AS DOUBLE) AS popularity,
-            CAST(d.vote_average AS DOUBLE) AS vote_average,
-            er.match_confidence,
-            er.match_rate
-          FROM _data d
-          INNER JOIN silver_tv_entity_resolution er ON d.id = er.tmdb_id
+        sql: "SELECT\n  er.tconst AS imdb_id,\n  d.id AS tmdb_id,\n  d.name,\n  d.original_name,\n\
+          \  d.first_air_date,\n  d.overview,\n  d.genres,\n  CAST(d.popularity AS\
+          \ DOUBLE) AS popularity,\n  CAST(d.vote_average AS DOUBLE) AS vote_average,\n\
+          \  er.match_confidence,\n  er.match_rate\nFROM _data d\nINNER JOIN silver_tv_entity_resolution\
+          \ er ON d.id = er.tmdb_id\n"
       quality:
         completeness: 0.8
         uniqueness:
@@ -703,7 +693,6 @@ data:
       destination: gold_tmdb_tv_catalog
       target:
         layer: gold
-      schedule: 4 5 * * *
     bronze_tmdb_movie_ids:
       source: tmdb_discover_movies
       transforms:
@@ -891,41 +880,27 @@ data:
       - bronze_tmdb_movie_details
       transforms:
       - type: sql
-        sql: |
-          -- "watch/providers.results" is a per-region map (dynamic country-code
-          -- keys), not a fixed-path LIST, so it can't use the plain `explode`
-          -- transform (built for arrays like credits.cast). to_json + json_each
-          -- walks the region keys dynamically; a per-availability-type UNION
-          -- unpacks the flatrate/rent/buy provider lists under each region.
-          WITH regions AS (
-            SELECT
-              _data.id                                          AS tmdb_id,
-              je.key                                             AS region,
-              je.value                                           AS region_json
-            FROM _data,
-            LATERAL (SELECT * FROM json_each(to_json("watch/providers".results))) AS je
-            WHERE "watch/providers" IS NOT NULL
-              AND "watch/providers".results IS NOT NULL
-          ),
-          availability AS (
-            SELECT tmdb_id, region, 'flatrate' AS availability_type,
-                   unnest(json_transform(region_json -> 'flatrate', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'flatrate') IS NOT NULL
-            UNION ALL
-            SELECT tmdb_id, region, 'rent' AS availability_type,
-                   unnest(json_transform(region_json -> 'rent', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'rent') IS NOT NULL
-            UNION ALL
-            SELECT tmdb_id, region, 'buy' AS availability_type,
-                   unnest(json_transform(region_json -> 'buy', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'buy') IS NOT NULL
-          )
-          SELECT
-            tmdb_id,
-            region,
-            json_extract_string(p, '$.provider_name') AS provider_name,
-            availability_type
-          FROM availability
+        sql: "-- \"watch/providers.results\" is a per-region map (dynamic country-code\n\
+          -- keys), not a fixed-path LIST, so it can't use the plain `explode`\n--\
+          \ transform (built for arrays like credits.cast). to_json + json_each\n\
+          -- walks the region keys dynamically; a per-availability-type UNION\n--\
+          \ unpacks the flatrate/rent/buy provider lists under each region.\nWITH\
+          \ regions AS (\n  SELECT\n    _data.id                                 \
+          \         AS tmdb_id,\n    je.key                                      \
+          \       AS region,\n    je.value                                       \
+          \    AS region_json\n  FROM _data,\n  LATERAL (SELECT * FROM json_each(to_json(\"\
+          watch/providers\".results))) AS je\n  WHERE \"watch/providers\" IS NOT NULL\n\
+          \    AND \"watch/providers\".results IS NOT NULL\n),\navailability AS (\n\
+          \  SELECT tmdb_id, region, 'flatrate' AS availability_type,\n         unnest(json_transform(region_json\
+          \ -> 'flatrate', '[\"JSON\"]')) AS p\n  FROM regions WHERE (region_json\
+          \ -> 'flatrate') IS NOT NULL\n  UNION ALL\n  SELECT tmdb_id, region, 'rent'\
+          \ AS availability_type,\n         unnest(json_transform(region_json -> 'rent',\
+          \ '[\"JSON\"]')) AS p\n  FROM regions WHERE (region_json -> 'rent') IS NOT\
+          \ NULL\n  UNION ALL\n  SELECT tmdb_id, region, 'buy' AS availability_type,\n\
+          \         unnest(json_transform(region_json -> 'buy', '[\"JSON\"]')) AS\
+          \ p\n  FROM regions WHERE (region_json -> 'buy') IS NOT NULL\n)\nSELECT\n\
+          \  tmdb_id,\n  region,\n  json_extract_string(p, '$.provider_name') AS provider_name,\n\
+          \  availability_type\nFROM availability\n"
       quality:
         completeness: 0.5
       destination: bronze_tmdb_movie_watch_providers
@@ -1084,36 +1059,20 @@ data:
       - bronze_tmdb_tv_details
       transforms:
       - type: sql
-        sql: |
-          WITH regions AS (
-            SELECT
-              _data.id AS tmdb_id,
-              je.key AS region,
-              je.value AS region_json
-            FROM _data,
-            LATERAL (SELECT * FROM json_each(to_json("watch/providers".results))) AS je
-            WHERE "watch/providers" IS NOT NULL
-              AND "watch/providers".results IS NOT NULL
-          ),
-          availability AS (
-            SELECT tmdb_id, region, 'flatrate' AS availability_type,
-                   unnest(json_transform(region_json -> 'flatrate', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'flatrate') IS NOT NULL
-            UNION ALL
-            SELECT tmdb_id, region, 'rent' AS availability_type,
-                   unnest(json_transform(region_json -> 'rent', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'rent') IS NOT NULL
-            UNION ALL
-            SELECT tmdb_id, region, 'buy' AS availability_type,
-                   unnest(json_transform(region_json -> 'buy', '["JSON"]')) AS p
-            FROM regions WHERE (region_json -> 'buy') IS NOT NULL
-          )
-          SELECT
-            tmdb_id,
-            region,
-            json_extract_string(p, '$.provider_name') AS provider_name,
-            availability_type
-          FROM availability
+        sql: "WITH regions AS (\n  SELECT\n    _data.id AS tmdb_id,\n    je.key AS\
+          \ region,\n    je.value AS region_json\n  FROM _data,\n  LATERAL (SELECT\
+          \ * FROM json_each(to_json(\"watch/providers\".results))) AS je\n  WHERE\
+          \ \"watch/providers\" IS NOT NULL\n    AND \"watch/providers\".results IS\
+          \ NOT NULL\n),\navailability AS (\n  SELECT tmdb_id, region, 'flatrate'\
+          \ AS availability_type,\n         unnest(json_transform(region_json -> 'flatrate',\
+          \ '[\"JSON\"]')) AS p\n  FROM regions WHERE (region_json -> 'flatrate')\
+          \ IS NOT NULL\n  UNION ALL\n  SELECT tmdb_id, region, 'rent' AS availability_type,\n\
+          \         unnest(json_transform(region_json -> 'rent', '[\"JSON\"]')) AS\
+          \ p\n  FROM regions WHERE (region_json -> 'rent') IS NOT NULL\n  UNION ALL\n\
+          \  SELECT tmdb_id, region, 'buy' AS availability_type,\n         unnest(json_transform(region_json\
+          \ -> 'buy', '[\"JSON\"]')) AS p\n  FROM regions WHERE (region_json -> 'buy')\
+          \ IS NOT NULL\n)\nSELECT\n  tmdb_id,\n  region,\n  json_extract_string(p,\
+          \ '$.provider_name') AS provider_name,\n  availability_type\nFROM availability\n"
       quality:
         completeness: 0.5
       destination: bronze_tmdb_tv_watch_providers
@@ -1129,31 +1088,15 @@ data:
       - bronze_tmdb_movie_ids
       transforms:
       - type: sql
-        sql: |
-          WITH matches AS (
-            SELECT
-              t.tconst AS tconst,
-              d.id AS tmdb_id,
-              CASE
-                WHEN LOWER(TRIM(t.primaryTitle)) = LOWER(TRIM(d.title)) THEN 1.0
-                ELSE 0.5
-              END AS match_confidence
-            FROM _data t
-            INNER JOIN bronze_tmdb_movie_details d
-              ON t.tconst = d.external_ids.imdb_id
-            WHERE d.external_ids.imdb_id IS NOT NULL
-          ),
-          totals AS (
-            SELECT COUNT(*) AS curated_count FROM bronze_tmdb_movie_ids
-          )
-          SELECT
-            matches.*,
-            CASE
-              WHEN totals.curated_count = 0 THEN 0.0
-              ELSE COUNT(*) OVER ()::DOUBLE / totals.curated_count
-            END AS match_rate
-          FROM matches
-          CROSS JOIN totals
+        sql: "WITH matches AS (\n  SELECT\n    t.tconst AS tconst,\n    d.id AS tmdb_id,\n\
+          \    CASE\n      WHEN LOWER(TRIM(t.primaryTitle)) = LOWER(TRIM(d.title))\
+          \ THEN 1.0\n      ELSE 0.5\n    END AS match_confidence\n  FROM _data t\n\
+          \  INNER JOIN bronze_tmdb_movie_details d\n    ON t.tconst = d.external_ids.imdb_id\n\
+          \  WHERE d.external_ids.imdb_id IS NOT NULL\n),\ntotals AS (\n  SELECT COUNT(*)\
+          \ AS curated_count FROM bronze_tmdb_movie_ids\n)\nSELECT\n  matches.*,\n\
+          \  CASE\n    WHEN totals.curated_count = 0 THEN 0.0\n    ELSE COUNT(*) OVER\
+          \ ()::DOUBLE / totals.curated_count\n  END AS match_rate\nFROM matches\n\
+          CROSS JOIN totals\n"
       quality:
         completeness: 0.9
         uniqueness:
@@ -1167,7 +1110,6 @@ data:
         confidence: match_confidence
       target:
         layer: silver
-      schedule: 0 4 * * *
     silver_unified_cast_crew:
       source: bronze_principals
       depends_on:
@@ -1178,44 +1120,29 @@ data:
       - silver_entity_resolution
       transforms:
       - type: sql
-        sql: |
-          -- Pragmatic union, not a fuzzy-name dedup: IMDB and TMDB cast rows
-          -- are kept side by side (source column) rather than merged into one
-          -- identity per person. Cross-source person matching (e.g. TMDB
-          -- person id <-> IMDB nconst) is out of scope here — known
-          -- limitation, revisit if a unified per-person view is needed.
-          SELECT
-            p.tconst                    AS resolved_title_id,
-            n.primaryName                AS person_name,
-            p.category                   AS role,
-            'imdb'                       AS source
-          FROM _data p
-          LEFT JOIN bronze_names n ON p.nconst = n.nconst
-          WHERE n.primaryName IS NOT NULL
-          UNION ALL
-          SELECT
-            er.tconst                   AS resolved_title_id,
-            c.credit.name                AS person_name,
-            c.credit.character            AS role,
-            'tmdb'                       AS source
-          FROM bronze_tmdb_movie_credits c
-          INNER JOIN silver_entity_resolution er ON c.id = er.tmdb_id
-          WHERE c.credit.name IS NOT NULL
-          UNION ALL
-          SELECT
-            er.tconst                   AS resolved_title_id,
-            c.credit.name               AS person_name,
-            c.credit.job                AS role,
-            'tmdb'                      AS source
-          FROM bronze_tmdb_movie_crew c
-          INNER JOIN silver_entity_resolution er ON c.id = er.tmdb_id
-          WHERE c.credit.name IS NOT NULL
+        sql: "-- Pragmatic union, not a fuzzy-name dedup: IMDB and TMDB cast rows\n\
+          -- are kept side by side (source column) rather than merged into one\n--\
+          \ identity per person. Cross-source person matching (e.g. TMDB\n-- person\
+          \ id <-> IMDB nconst) is out of scope here \u2014 known\n-- limitation,\
+          \ revisit if a unified per-person view is needed.\nSELECT\n  p.tconst  \
+          \                  AS resolved_title_id,\n  n.primaryName              \
+          \  AS person_name,\n  p.category                   AS role,\n  'imdb'  \
+          \                     AS source\nFROM _data p\nLEFT JOIN bronze_names n\
+          \ ON p.nconst = n.nconst\nWHERE n.primaryName IS NOT NULL\nUNION ALL\nSELECT\n\
+          \  er.tconst                   AS resolved_title_id,\n  c.credit.name  \
+          \              AS person_name,\n  c.credit.character            AS role,\n\
+          \  'tmdb'                       AS source\nFROM bronze_tmdb_movie_credits\
+          \ c\nINNER JOIN silver_entity_resolution er ON c.id = er.tmdb_id\nWHERE\
+          \ c.credit.name IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst            \
+          \       AS resolved_title_id,\n  c.credit.name               AS person_name,\n\
+          \  c.credit.job                AS role,\n  'tmdb'                      AS\
+          \ source\nFROM bronze_tmdb_movie_crew c\nINNER JOIN silver_entity_resolution\
+          \ er ON c.id = er.tmdb_id\nWHERE c.credit.name IS NOT NULL\n"
       quality:
         completeness: 0.7
       destination: silver_unified_cast_crew
       target:
         layer: silver
-      schedule: 30 4 * * *
     silver_watch_providers_by_region:
       source: bronze_tmdb_movie_watch_providers
       depends_on:
@@ -1223,14 +1150,23 @@ data:
       - bronze_tmdb_tv_watch_providers
       transforms:
       - type: sql
-        sql: |
-          SELECT *, 'movie' AS media_type
+        sql: 'SELECT *, ''movie'' AS media_type
+
           FROM _data
-          WHERE tmdb_id IS NOT NULL AND region IS NOT NULL AND provider_name IS NOT NULL
+
+          WHERE tmdb_id IS NOT NULL AND region IS NOT NULL AND provider_name IS NOT
+          NULL
+
           UNION ALL
-          SELECT *, 'tv' AS media_type
+
+          SELECT *, ''tv'' AS media_type
+
           FROM bronze_tmdb_tv_watch_providers
-          WHERE tmdb_id IS NOT NULL AND region IS NOT NULL AND provider_name IS NOT NULL
+
+          WHERE tmdb_id IS NOT NULL AND region IS NOT NULL AND provider_name IS NOT
+          NULL
+
+          '
       - type: deduplicate
         key:
         - tmdb_id
@@ -1249,7 +1185,6 @@ data:
       destination: silver_watch_providers_by_region
       target:
         layer: silver
-      schedule: 45 4 * * *
     silver_tv_entity_resolution:
       source: bronze_titles
       depends_on:
@@ -1258,31 +1193,15 @@ data:
       - bronze_tmdb_tv_ids
       transforms:
       - type: sql
-        sql: |
-          WITH matches AS (
-            SELECT
-              t.tconst,
-              d.id AS tmdb_id,
-              CASE
-                WHEN LOWER(TRIM(t.primaryTitle)) = LOWER(TRIM(d.name)) THEN 1.0
-                ELSE 0.5
-              END AS match_confidence
-            FROM _data t
-            INNER JOIN bronze_tmdb_tv_details d
-              ON t.tconst = d.external_ids.imdb_id
-            WHERE d.external_ids.imdb_id IS NOT NULL
-          ),
-          totals AS (
-            SELECT COUNT(*) AS curated_count FROM bronze_tmdb_tv_ids
-          )
-          SELECT
-            matches.*,
-            CASE
-              WHEN totals.curated_count = 0 THEN 0.0
-              ELSE COUNT(*) OVER ()::DOUBLE / totals.curated_count
-            END AS match_rate
-          FROM matches
-          CROSS JOIN totals
+        sql: "WITH matches AS (\n  SELECT\n    t.tconst,\n    d.id AS tmdb_id,\n \
+          \   CASE\n      WHEN LOWER(TRIM(t.primaryTitle)) = LOWER(TRIM(d.name)) THEN\
+          \ 1.0\n      ELSE 0.5\n    END AS match_confidence\n  FROM _data t\n  INNER\
+          \ JOIN bronze_tmdb_tv_details d\n    ON t.tconst = d.external_ids.imdb_id\n\
+          \  WHERE d.external_ids.imdb_id IS NOT NULL\n),\ntotals AS (\n  SELECT COUNT(*)\
+          \ AS curated_count FROM bronze_tmdb_tv_ids\n)\nSELECT\n  matches.*,\n  CASE\n\
+          \    WHEN totals.curated_count = 0 THEN 0.0\n    ELSE COUNT(*) OVER ()::DOUBLE\
+          \ / totals.curated_count\n  END AS match_rate\nFROM matches\nCROSS JOIN\
+          \ totals\n"
       quality:
         completeness: 0.8
         uniqueness:
@@ -1296,7 +1215,6 @@ data:
         confidence: match_confidence
       target:
         layer: silver
-      schedule: 46 4 * * *
     silver_tv_unified_cast_crew:
       source: bronze_tmdb_tv_credits
       depends_on:
@@ -1305,75 +1223,40 @@ data:
       - silver_tv_entity_resolution
       transforms:
       - type: sql
-        sql: |
-          SELECT
-            er.tconst AS resolved_title_id,
-            c.credit.name AS person_name,
-            c.credit.character AS role,
-            'cast' AS credit_type
-          FROM _data c
-          INNER JOIN silver_tv_entity_resolution er ON c.id = er.tmdb_id
-          WHERE c.credit.name IS NOT NULL
-          UNION ALL
-          SELECT
-            er.tconst AS resolved_title_id,
-            c.credit.name AS person_name,
-            c.credit.job AS role,
-            'crew' AS credit_type
-          FROM bronze_tmdb_tv_crew c
-          INNER JOIN silver_tv_entity_resolution er ON c.id = er.tmdb_id
-          WHERE c.credit.name IS NOT NULL
+        sql: "SELECT\n  er.tconst AS resolved_title_id,\n  c.credit.name AS person_name,\n\
+          \  c.credit.character AS role,\n  'cast' AS credit_type\nFROM _data c\n\
+          INNER JOIN silver_tv_entity_resolution er ON c.id = er.tmdb_id\nWHERE c.credit.name\
+          \ IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst AS resolved_title_id,\n  c.credit.name\
+          \ AS person_name,\n  c.credit.job AS role,\n  'crew' AS credit_type\nFROM\
+          \ bronze_tmdb_tv_crew c\nINNER JOIN silver_tv_entity_resolution er ON c.id\
+          \ = er.tmdb_id\nWHERE c.credit.name IS NOT NULL\n"
       quality:
         completeness: 0.7
       destination: silver_tv_unified_cast_crew
       target:
         layer: silver
-      schedule: 47 4 * * *
     silver_tmdb_review_similarity_pairs:
       source: bronze_tmdb_movie_reviews
       depends_on:
       - bronze_tmdb_movie_reviews
       transforms:
       - type: sql
-        sql: |
-          WITH reviews AS (
-            SELECT
-              id AS tmdb_id,
-              review.id AS review_id,
-              review.content AS content
-            FROM _data
-            WHERE review.content IS NOT NULL
-              AND LENGTH(review.content) >= 40
-          ),
-          positive_pairs AS (
-            SELECT
-              a.content AS review_text_a,
-              b.content AS review_text_b,
-              1.0::DOUBLE AS similarity_label
-            FROM reviews a
-            INNER JOIN reviews b
-              ON a.tmdb_id = b.tmdb_id AND a.review_id < b.review_id
-          ),
-          negative_pairs AS (
-            SELECT
-              a.content AS review_text_a,
-              b.content AS review_text_b,
-              0.0::DOUBLE AS similarity_label
-            FROM reviews a
-            INNER JOIN reviews b
-              ON a.tmdb_id < b.tmdb_id
-             AND ABS(HASH(a.review_id, b.review_id)) % 25 = 0
-          )
-          SELECT * FROM positive_pairs
-          UNION ALL
-          SELECT * FROM negative_pairs
+        sql: "WITH reviews AS (\n  SELECT\n    id AS tmdb_id,\n    review.id AS review_id,\n\
+          \    review.content AS content\n  FROM _data\n  WHERE review.content IS\
+          \ NOT NULL\n    AND LENGTH(review.content) >= 40\n),\npositive_pairs AS\
+          \ (\n  SELECT\n    a.content AS review_text_a,\n    b.content AS review_text_b,\n\
+          \    1.0::DOUBLE AS similarity_label\n  FROM reviews a\n  INNER JOIN reviews\
+          \ b\n    ON a.tmdb_id = b.tmdb_id AND a.review_id < b.review_id\n),\nnegative_pairs\
+          \ AS (\n  SELECT\n    a.content AS review_text_a,\n    b.content AS review_text_b,\n\
+          \    0.0::DOUBLE AS similarity_label\n  FROM reviews a\n  INNER JOIN reviews\
+          \ b\n    ON a.tmdb_id < b.tmdb_id\n   AND ABS(HASH(a.review_id, b.review_id))\
+          \ % 25 = 0\n)\nSELECT * FROM positive_pairs\nUNION ALL\nSELECT * FROM negative_pairs\n"
       quality:
         completeness: 0.95
         custom_sql: SELECT COUNT(*) >= 10 FROM _data
       destination: silver_tmdb_review_similarity_pairs
       target:
         layer: silver
-      schedule: 50 4 * * *
     silver_spark_tmdb_snapshot:
       source: spark_tmdb_gold
       depends_on:
@@ -1466,7 +1349,7 @@ ml:
         random_state: 42
     review_similarity_finetune:
       model_type: sentence_transformer_finetune
-      target: ""
+      target: ''
       features: []
       params:
         base_model: all-MiniLM-L6-v2
@@ -1560,15 +1443,12 @@ ai:
     top_k: 10
     reranker: true
     options:
-      # Lexical (BM25/keyword) backend, fused with the vector store below
-      # via reciprocal rank fusion when strategy is hybrid. If Elasticsearch
-      # is unreachable, retrieval silently degrades to vector-only results.
       lexical:
         backend: elasticsearch
         hosts:
-          - "${ELASTICSEARCH_URL:-http://localhost:9200}"
-        username: "${ELASTICSEARCH_USERNAME:-}"
-        password: "${ELASTICSEARCH_PASSWORD:-}"
+        - ${ELASTICSEARCH_URL:-http://localhost:9200}
+        username: ${ELASTICSEARCH_USERNAME:-}
+        password: ${ELASTICSEARCH_PASSWORD:-}
         timeout_seconds: 5.0
         indices:
           movies:
@@ -1592,19 +1472,19 @@ ai:
   agents:
     movie_recommender:
       runtime: builtin
-      system_prompt: "You are MovieDEX Recommender — an expert movie AI backed by\
-        \ the full IMDB dataset (10 M+ titles).\n\nYou have ONE tool: query\nUsage\
+      system_prompt: "You are MovieDEX Recommender \u2014 an expert movie AI backed\
+        \ by the full IMDB dataset (10 M+ titles).\n\nYou have ONE tool: query\nUsage\
         \ (EXACT format required):\n  TOOL: query\n  ARGS: {\"sql\": \"SELECT title,\
         \ release_year, imdb_rating, vote_count FROM gold_top_movies ORDER BY global_rank\
-        \ LIMIT 5\"}\n\nKey tables:\n  gold_top_movies  — columns: title, release_year,\
+        \ LIMIT 5\"}\n\nKey tables:\n  gold_top_movies  \u2014 columns: title, release_year,\
         \ imdb_rating, vote_count, weighted_rating, global_rank, decade_rank, director_name,\
-        \ genres, decade\n  silver_movies    — columns: movie_id, title, release_year,\
+        \ genres, decade\n  silver_movies    \u2014 columns: movie_id, title, release_year,\
         \ imdb_rating, vote_count, genres, runtime_min\n\nFor 2025 movies: WHERE release_year\
         \ = 2025\nFor top-rated: ORDER BY weighted_rating DESC\nFor recent: ORDER\
         \ BY release_year DESC\n\nAlways call the query tool first to get real data,\
         \ then summarise with title, year, IMDB rating, and vote count.\nKeep recommendations\
         \ to 3-5 films with a one-sentence justification each.\nNever call list_tools\
-        \ — use query directly.\n"
+        \ \u2014 use query directly.\n"
       tools:
       - query
       - rag_search
@@ -1613,16 +1493,17 @@ ai:
       memory: short_term
     data_analyst:
       runtime: builtin
-      system_prompt: "You are MovieDEX Data Analyst — you answer questions about the\
-        \ movie\nindustry by running SQL over the IMDB-powered gold layer.\n\nAvailable\
-        \ tables:\n  gold_top_movies     — ranked movies, weighted_rating, global_rank,\
-        \ decade_rank\n  gold_genre_trends   — genre × decade: count, avg_rating,\
-        \ popularity_index\n  gold_director_stats — director career: avg_rating, movies_directed,\
-        \ career_span\n  gold_actor_network  — actor career: movies, avg_movie_rating,\
-        \ debut/last year\n  gold_movie_features — ML features with one-hot genre\
-        \ flags\n\nRules:\n- Show exact numbers (ratings to 2 d.p., counts with commas)\n\
-        - Format multi-row results as a markdown table\n- Group by decade for time-series\
-        \ questions\n- Show the SQL you ran so the user can extend it\n"
+      system_prompt: "You are MovieDEX Data Analyst \u2014 you answer questions about\
+        \ the movie\nindustry by running SQL over the IMDB-powered gold layer.\n\n\
+        Available tables:\n  gold_top_movies     \u2014 ranked movies, weighted_rating,\
+        \ global_rank, decade_rank\n  gold_genre_trends   \u2014 genre \xD7 decade:\
+        \ count, avg_rating, popularity_index\n  gold_director_stats \u2014 director\
+        \ career: avg_rating, movies_directed, career_span\n  gold_actor_network \
+        \ \u2014 actor career: movies, avg_movie_rating, debut/last year\n  gold_movie_features\
+        \ \u2014 ML features with one-hot genre flags\n\nRules:\n- Show exact numbers\
+        \ (ratings to 2 d.p., counts with commas)\n- Format multi-row results as a\
+        \ markdown table\n- Group by decade for time-series questions\n- Show the\
+        \ SQL you ran so the user can extend it\n"
       tools:
       - query
       model: qwen3:8b
@@ -1630,29 +1511,14 @@ ai:
       memory: short_term
     casting_expert:
       runtime: builtin
-      system_prompt: 'You are MovieDEX Casting Expert — you find people and connections
-
-        across the full IMDB principal and crew data.
-
-
-        You can:
-
-        - Find every movie two actors appeared in together
-
-        - List a director''s complete filmography with ratings
-
-        - Identify actors who most frequently work with a given director
-
-        - Rank actors by average film quality (gold_actor_network)
-
-        - Spot genre pivots (actor who crossed from comedy to drama)
-
-
-        Cross-reference silver_cast → silver_movies for rated context.
-
-        Always use movie title + year to disambiguate people with the same name.
-
-        '
+      system_prompt: "You are MovieDEX Casting Expert \u2014 you find people and connections\n\
+        across the full IMDB principal and crew data.\n\nYou can:\n- Find every movie\
+        \ two actors appeared in together\n- List a director's complete filmography\
+        \ with ratings\n- Identify actors who most frequently work with a given director\n\
+        - Rank actors by average film quality (gold_actor_network)\n- Spot genre pivots\
+        \ (actor who crossed from comedy to drama)\n\nCross-reference silver_cast\
+        \ \u2192 silver_movies for rated context.\nAlways use movie title + year to\
+        \ disambiguate people with the same name.\n"
       tools:
       - query
       - rag_search

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, status_badge, empty_state, filter_empty_state %}
+{% from "components/macros.html" import metric_card, status_badge, empty_state, filter_empty_state, list_toolbar %}
 
 {% block title %}Sources — DEX Studio{% endblock %}
 {% block page_title %}Sources{% endblock %}
@@ -21,18 +21,15 @@
   {# ── Left col: source list ──────────────────────────────────────────────── #}
   <div class="card bare">
     <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
-      <div class="input-icon">
-        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
-        <input class="input" id="src-search" placeholder="Filter sources…" style="font-size:12px;height:26px"
-               oninput="srcFilter(this.value)">
-      </div>
+      {{ list_toolbar("Search sources...") }}
     </div>
     <div id="src-list">
       {% for s in sources %}
-      <div class="pipe-item {{ 'active' if loop.first }}"
+      <div class="list-row pipe-item {{ 'active' if loop.first }}"
            role="button" tabindex="0"
            data-name="{{ s.name }}"
            data-connector="{{ s.connector_type | default('http') }}"
+           data-search="{{ s.name }} {{ s.connector_type | default('http') }}"
            onclick="selectSource(this)"
            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectSource(this)}"
            style="border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:10px 14px 10px 11px;cursor:pointer;display:flex;gap:10px;align-items:center;background:{{ 'color-mix(in oklch,var(--accent-9) 10%,transparent)' if loop.first else 'none' }}">
@@ -279,7 +276,7 @@
   }
 
   globalThis.selectSource = function (el) {
-    document.querySelectorAll('.pipe-item').forEach(function (i) {
+    document.querySelectorAll('.list-row').forEach(function (i) {
       i.classList.remove('active');
       i.style.borderLeftColor = 'transparent';
       i.style.background = 'none';
@@ -364,20 +361,13 @@
     if (pane) pane.style.display = '';
   };
 
-  globalThis.srcFilter = function (q) {
-    const lq = q.toLowerCase();
-    document.querySelectorAll('.pipe-item').forEach(function (item) {
-      item.style.display = !lq || item.dataset.name.toLowerCase().includes(lq) ? '' : 'none';
-    });
-  };
-
   globalThis.testConnection = function () {
     const name = document.getElementById('src-name');
     if (name) alert('Testing connection for: ' + name.textContent + '\n(Connection test would run here)');
   };
 
   // Init with first source
-  const first = document.querySelector('.pipe-item');
+  const first = document.querySelector('.list-row');
   if (first) selectSource(first);
 })();
 </script>

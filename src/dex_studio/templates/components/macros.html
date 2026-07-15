@@ -155,3 +155,21 @@
 </span>
 {% endif %}
 {% endmacro %}
+
+{# list_toolbar — client-side search box filtering rows by data-search attribute #}
+{% macro list_toolbar(placeholder="Search...") %}
+<div x-data="{ q: '' }" style="margin-bottom:14px">
+  <div style="position:relative;max-width:320px">
+    <i data-lucide="search" style="width:13px;height:13px;position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-4)"></i>
+    <input type="text" x-model="q" placeholder="{{ placeholder }}" class="input"
+           style="padding-left:30px;width:100%"
+           @input="
+             const q = $event.target.value.toLowerCase();
+             document.querySelectorAll('.list-row').forEach(row => {
+               const hay = (row.dataset.search || '').toLowerCase();
+               row.style.display = hay.includes(q) ? '' : 'none';
+             });
+           ">
+  </div>
+</div>
+{% endmacro %}

@@ -26,9 +26,7 @@ def _record(*, media_type: str = "movie") -> dict[str, Any]:
             "crew": [{"id": 2, "name": "Director", "job": "Director"}],
         },
         "keywords": {
-            "keywords" if media_type == "movie" else "results": [
-                {"id": 3, "name": "mystery"}
-            ]
+            "keywords" if media_type == "movie" else "results": [{"id": 3, "name": "mystery"}]
         },
         "reviews": {
             "results": [

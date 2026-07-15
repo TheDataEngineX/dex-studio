@@ -164,3 +164,91 @@ class TestBuildPipelineRowsStatusOverride:
 
         assert len(rows) == 1
         assert rows[0]["status"] == "failed"
+
+
+# ── run_pipeline_bg cross-pod lock timing ──────────────────────────────────
+#
+# The in-process _running set (tested above) only fixes the race on the pod
+# that received the trigger. On another pod, only the DB lock is visible.
+# Before this fix, that lock was acquired inside the background worker
+# thread — after a queueing gap — so other pods kept showing the pipeline's
+# last terminal status ("failed") until the worker actually started.
+
+
+class TestRunPipelineBgLockTiming:
+    def _cleanup(self, name: str) -> None:
+        from dex_studio.jobs import _lock, _running, _started_at
+
+        with _lock:
+            _running.discard(name)
+            _started_at.pop(name, None)
+
+    def test_acquires_db_lock_before_submitting_job(self) -> None:
+        import dex_studio.jobs as jobs_mod
+
+        name = "__test_lock_timing_free__"
+        sdb = MagicMock()
+        sdb.acquire_lock.return_value = True
+        eng = MagicMock()
+
+        try:
+            with (
+                patch.object(jobs_mod, "_available_mb", return_value=999_999),
+                patch("dex_studio._engine.get_engine", return_value=eng),
+                patch("dex_studio.studio_db.get_studio_db", return_value=sdb),
+                patch.object(jobs_mod._EXECUTOR, "submit") as mock_submit,
+            ):
+                result = jobs_mod.run_pipeline_bg(name)
+
+            sdb.acquire_lock.assert_called_once_with(name)
+            mock_submit.assert_called_once_with(jobs_mod._run, name, True, "manual")
+            assert result == "started"
+        finally:
+            self._cleanup(name)
+
+    def test_returns_running_without_submitting_when_locked_elsewhere(self) -> None:
+        """Another pod (or the scheduler) already holds the lock — don't double-run."""
+        import dex_studio.jobs as jobs_mod
+
+        name = "__test_lock_timing_held__"
+        sdb = MagicMock()
+        sdb.acquire_lock.return_value = False
+        eng = MagicMock()
+
+        try:
+            with (
+                patch.object(jobs_mod, "_available_mb", return_value=999_999),
+                patch("dex_studio._engine.get_engine", return_value=eng),
+                patch("dex_studio.studio_db.get_studio_db", return_value=sdb),
+                patch.object(jobs_mod._EXECUTOR, "submit") as mock_submit,
+            ):
+                result = jobs_mod.run_pipeline_bg(name)
+
+            mock_submit.assert_not_called()
+            assert result == "running"
+            assert name not in jobs_mod._running, (
+                "pipeline left in _running after failing to acquire the DB lock"
+            )
+        finally:
+            self._cleanup(name)
+
+    def test_worker_does_not_reacquire_already_held_lock(self) -> None:
+        """_run(name, lock_held=True) must not call sdb.acquire_lock again."""
+        import dex_studio.jobs as jobs_mod
+
+        name = "__test_no_double_acquire__"
+        sdb = MagicMock()
+        sdb.start_run.return_value = 1
+        eng = MagicMock()
+        eng.run_pipeline.return_value = None
+
+        with (
+            patch("dex_studio._engine.get_engine", return_value=eng),
+            patch("dex_studio.studio_db.get_studio_db", return_value=sdb),
+            patch.object(jobs_mod, "_run_pipeline_with_timeout", return_value=None),
+            patch.object(jobs_mod, "_finalize_run"),
+        ):
+            jobs_mod._run(name, lock_held=True)
+
+        sdb.acquire_lock.assert_not_called()
+        sdb.start_run.assert_called_once_with(name, triggered_by="manual")

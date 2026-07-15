@@ -93,9 +93,7 @@ def register_builtins(registry: ToolRegistry) -> None:
         "similarity data from a lakehouse table.",
         _tool_finetune_embeddings,
         [
-            ToolParam(
-                "dataset_table", "str", True, description="Table with pair + label columns"
-            ),
+            ToolParam("dataset_table", "str", True, description="Table with pair + label columns"),
             ToolParam("text_a_column", "str", True, description="First sentence column"),
             ToolParam("text_b_column", "str", True, description="Second sentence column"),
             ToolParam("label_column", "str", True, description="Similarity label column"),
@@ -446,9 +444,7 @@ def _tool_finetune_embeddings(  # noqa: C901
         if len(df) < 10:
             return {"error": "Not enough rows for training (need at least 10)"}
 
-        pairs = list(
-            zip(df[text_a_column].astype(str), df[text_b_column].astype(str), strict=True)
-        )
+        pairs = list(zip(df[text_a_column].astype(str), df[text_b_column].astype(str), strict=True))
         labels = df[label_column].astype(float).tolist()
 
         reg_name = model_name or f"{dataset_table}_embedding_model"

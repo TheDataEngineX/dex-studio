@@ -109,6 +109,33 @@
 
 </div>
 
+{# ── Quality ──────────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:16px;margin-top:16px">
+  <div style="font-size:12px;font-weight:600;margin-bottom:10px">Quality checks</div>
+  {% if table_quality %}
+  <table class="dex-table" style="font-size:12px;width:100%">
+    <thead><tr><th>Check</th><th>Score</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for c in table_quality %}
+      <tr>
+        <td>{{ c.get("table", "") }}</td>
+        <td class="mono">{{ c.get("score", "—") }}</td>
+        <td>
+          {% if c.get("passed") %}
+          <span class="pill success" style="font-size:10px">passed</span>
+          {% else %}
+          <span class="pill error" style="font-size:10px">failed</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <span class="muted" style="font-size:12px">No quality checks recorded for this table yet.</span>
+  {% endif %}
+</div>
+
 {# ── Preview ───────────────────────────────────────────────────────────────── #}
 {% if preview_cols %}
 <div class="card bare" style="margin-top:16px;overflow:hidden">

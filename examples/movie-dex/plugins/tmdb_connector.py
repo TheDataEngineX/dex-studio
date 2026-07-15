@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 import threading
 from collections.abc import Coroutine
 from pathlib import Path
@@ -20,6 +21,12 @@ from dataenginex.lakehouse.storage import DeltaStorage
 logger = structlog.get_logger()
 
 _DEFAULT_APPEND = "credits,external_ids,images,keywords,reviews,similar,videos,watch/providers"
+
+# Circuit breaker state — ponytail: module-level, not per-instance
+_cb_failures = 0
+_cb_open_until = 0.0
+_CB_THRESHOLD = 3  # consecutive failures to open
+_CB_COOLDOWN_S = 60.0  # seconds to stay open
 _RATE_LIMIT_LUA = """
 local now_parts = redis.call('TIME')
 local now_ms = (tonumber(now_parts[1]) * 1000) + math.floor(tonumber(now_parts[2]) / 1000)
@@ -94,16 +101,32 @@ class TmdbConnector(BaseConnector):
         self._max_concurrency = max_concurrency
         self._rps = requests_per_second
         self._timeout = timeout
-        self._redis_url = redis_url.strip()
+        self._redis_url = (redis_url or "").strip()
         self._redis_password = redis_password
         self._redis_rate_key = redis_rate_key
-        self._client: httpx.AsyncClient | None = None
+        self._connected = False
         self._redis: Any = None
         self._local_rate_lock: asyncio.Lock | None = None
         self._next_allowed_at = 0.0
 
     def connect(self) -> None:
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        if not self._api_key:
+            msg = (
+                "TmdbConnector: no api_key configured (TMDB_API_KEY is unset/empty). "
+                "Every request would be rejected one-by-one, silently yielding 0 rows — "
+                "failing here instead so the pipeline surfaces the real cause. "
+                "Set TMDB_API_KEY to a valid key from themoviedb.org."
+            )
+            raise RuntimeError(msg)
+        # httpx.AsyncClient is intentionally NOT created here: this method is
+        # sync and runs outside any event loop, but each read()/fetch_one()
+        # call gets its own asyncio.run() (see _run_sync). A client's
+        # internal connection pool binds to whichever loop is running on its
+        # first request — reusing one client across separate asyncio.run()
+        # calls means the second call fails with "Event loop is closed" as
+        # soon as the first loop exits. Each async entrypoint below opens
+        # its own client, scoped to its own asyncio.run() call instead.
+        self._connected = True
         if self._redis_url:
             try:
                 from redis import asyncio as redis_async
@@ -120,16 +143,14 @@ class TmdbConnector(BaseConnector):
                 self._redis = None
 
     def disconnect(self) -> None:
-        async def _close() -> None:
-            if self._client is not None:
-                await self._client.aclose()
-            if self._redis is not None:
-                await self._redis.aclose()
-
-        if self._client is not None or self._redis is not None:
-            _run_sync(_close())
-        self._client = None
+        """Close Redis connection if it was created."""
+        # Don't try to close Redis in a sync context - it requires an event loop
+        # that may already be closed. The connection will be cleaned up when
+        # the process exits. This avoids "Event loop is closed" errors.
+        if self._redis is not None:
+            logger.debug("Skipping Redis close in sync context to avoid event loop issues")
         self._redis = None
+        self._connected = False
 
     def _load_ids(self) -> list[int]:
         if not self._id_source_path.exists():
@@ -173,19 +194,27 @@ class TmdbConnector(BaseConnector):
                 logger.warning("tmdb redis limiter failed; using local limiter", error=str(exc))
         await self._wait_for_local_rate_slot()
 
-    async def _fetch_one(self, tmdb_id: int) -> dict[str, Any] | None:
-        if self._client is None:
-            raise RuntimeError("TmdbConnector not connected — call connect() first")
+    async def _fetch_one(self, client: httpx.AsyncClient, tmdb_id: int) -> dict[str, Any] | None:
+        global _cb_failures, _cb_open_until
+
+        # Circuit breaker — skip requests if open
+        if time.monotonic() < _cb_open_until:
+            return None
+
         url = f"{self._base_url}/{self._media_type}/{tmdb_id}"
         params = {"api_key": self._api_key, "append_to_response": self._append}
 
         for attempt in range(3):
             await self._wait_for_rate_slot()
             try:
-                resp = await self._client.get(url, params=params)
+                resp = await client.get(url, params=params)
             except Exception as exc:  # noqa: BLE001
                 if attempt == 2:
                     logger.error("tmdb request failed — skipped", id=tmdb_id, error=str(exc))
+                    _cb_failures += 1
+                    if _cb_failures >= _CB_THRESHOLD:
+                        _cb_open_until = time.monotonic() + _CB_COOLDOWN_S
+                        logger.warning("tmdb circuit breaker opened", failures=_cb_failures)
                     return None
                 await asyncio.sleep(2**attempt)
                 continue
@@ -200,7 +229,13 @@ class TmdbConnector(BaseConnector):
                 resp.raise_for_status()
             except Exception as exc:  # noqa: BLE001
                 logger.error("tmdb error response — skipped", id=tmdb_id, error=str(exc))
+                _cb_failures += 1
+                if _cb_failures >= _CB_THRESHOLD:
+                    _cb_open_until = time.monotonic() + _CB_COOLDOWN_S
+                    logger.warning("tmdb circuit breaker opened", failures=_cb_failures)
                 return None
+            # Success — reset circuit breaker
+            _cb_failures = 0
             return dict(resp.json())
 
         logger.error("tmdb retries exhausted — skipped", id=tmdb_id)
@@ -208,19 +243,32 @@ class TmdbConnector(BaseConnector):
 
     async def _read_async(self) -> list[dict[str, Any]]:
         semaphore = asyncio.Semaphore(self._max_concurrency)
+        batch_size = 500  # ponytail: process in batches to avoid OOM on 10M+ IDs
 
-        async def _bounded(tmdb_id: int) -> dict[str, Any] | None:
-            async with semaphore:
-                return await self._fetch_one(tmdb_id)
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
 
-        records = await asyncio.gather(*(_bounded(tmdb_id) for tmdb_id in self._load_ids()))
-        return [record for record in records if record is not None]
+            async def _bounded(tmdb_id: int) -> dict[str, Any] | None:
+                async with semaphore:
+                    return await self._fetch_one(client, tmdb_id)
+
+            all_ids = self._load_ids()
+            records: list[dict[str, Any]] = []
+            for i in range(0, len(all_ids), batch_size):
+                batch = all_ids[i : i + batch_size]
+                results = await asyncio.gather(*(_bounded(tid) for tid in batch))
+                records.extend(r for r in results if r is not None)
+                logger.info("tmdb batch done", batch_start=i, fetched=len(records))
+        return records
+
+    async def _fetch_one_standalone(self, tmdb_id: int) -> dict[str, Any] | None:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            return await self._fetch_one(client, tmdb_id)
 
     def fetch_one(self, tmdb_id: int) -> dict[str, Any] | None:
-        return _run_sync(self._fetch_one(tmdb_id))
+        return _run_sync(self._fetch_one_standalone(tmdb_id))
 
     def read(self, *, table: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
-        if self._client is None:
+        if not self._connected:
             raise RuntimeError("TmdbConnector not connected — call connect() first")
         records = _run_sync(self._read_async())
         logger.info("tmdb connector fan-out complete", fetched=len(records))

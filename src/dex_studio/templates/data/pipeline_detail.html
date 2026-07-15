@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import empty_state %}
 
 {% block title %}{{ pipeline_name }} — Pipelines — DEX Studio{% endblock %}
 {% block content_class %}full-bleed{% endblock %}
@@ -82,6 +83,8 @@
   {# ── Tabs ────────────────────────────────────────────────────────────────── #}
   <div x-data="{ tab: '{{ request.query_params.get('tab', 'overview') }}' }">
     <div class="domain-tabs">
+      <a href="#" class="domain-tab" :class="tab==='builder' ? 'active' : ''"
+         @click.prevent="tab='builder'">Builder</a>
       <a href="#" class="domain-tab" :class="tab==='overview' ? 'active' : ''"
          @click.prevent="tab='overview'">Overview</a>
       <a href="#" class="domain-tab" :class="tab==='runs' ? 'active' : ''"
@@ -97,6 +100,173 @@
          @click.prevent="tab='config'">Config</a>
       <a href="#" class="domain-tab" :class="tab==='quality' ? 'active' : ''"
          @click.prevent="tab='quality'">Quality</a>
+      <a href="#" class="domain-tab" :class="tab==='lineage' ? 'active' : ''"
+         @click.prevent="tab='lineage'">Lineage</a>
+    </div>
+
+    {# ── Builder tab (DAG canvas) ─────────────────────────────────────────── #}
+    <div x-show="tab==='builder'" style="padding:16px 20px;flex:1;overflow-y:auto">
+      {% if not graph.nodes %}
+        {{ empty_state("workflow", "No pipeline structure to show", "This pipeline has no steps configured yet.") }}
+      {% else %}
+        {% if not graph.migrated %}
+        <div style="padding:8px 12px;margin-bottom:12px;background:var(--amber-3);border:1px solid var(--amber-7);
+                    border-radius:var(--r-2);font-size:11.5px;color:var(--amber-11);display:flex;align-items:center;gap:6px">
+          <i data-lucide="info" style="width:12px;height:12px;flex-shrink:0"></i>
+          Showing structure from dex.yaml — this pipeline hasn't been imported into the DB definition model yet.
+        </div>
+        {% endif %}
+        <div class="card" style="padding:24px;overflow-x:auto">
+          {% set node_w = 160 %}
+          {% set node_h = 56 %}
+          {% set gap_x = 80 %}
+          {% set svg_w = graph.nodes|length * (node_w + gap_x) %}
+          {% set svg_h = node_h + 40 %}
+          <svg width="{{ svg_w }}" height="{{ svg_h }}" style="display:block">
+            {% for edge in graph.edges %}
+              {% set from_idx = graph.nodes | map(attribute='id') | list %}
+              {% set fi = from_idx.index(edge['from']) %}
+              {% set ti = from_idx.index(edge['to']) %}
+              {% set x1 = fi * (node_w + gap_x) + node_w %}
+              {% set x2 = ti * (node_w + gap_x) %}
+              {% set y = svg_h / 2 %}
+              <line x1="{{ x1 }}" y1="{{ y }}" x2="{{ x2 }}" y2="{{ y }}"
+                    stroke="var(--shell-border)" stroke-width="2" marker-end="url(#arrow)" />
+            {% endfor %}
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill="var(--shell-border)" />
+              </marker>
+            </defs>
+            {% for node in graph.nodes %}
+              {% set nx = loop.index0 * (node_w + gap_x) %}
+              {% set ny = 20 %}
+              {% set kind_color = {"source": "blue", "transform": "violet", "sink": "green"}.get(node.kind, "gray") %}
+              <g transform="translate({{ nx }},{{ ny }})">
+                <rect width="{{ node_w }}" height="{{ node_h }}" rx="8"
+                      fill="var(--{{ kind_color }}-3)" stroke="var(--{{ kind_color }}-7)" stroke-width="1.5" />
+                <text x="12" y="22" font-size="10" fill="var(--{{ kind_color }}-11)"
+                      style="text-transform:uppercase;letter-spacing:.04em;font-weight:600">{{ node.kind }}</text>
+                <text x="12" y="40" font-size="13" fill="var(--text)" style="font-weight:600">{{ node.label }}</text>
+              </g>
+            {% endfor %}
+          </svg>
+        </div>
+      {% endif %}
+
+      {# ── Editable step list ────────────────────────────────────────────── #}
+      <div class="card" style="margin-top:16px;overflow:hidden">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--shell-border);font-size:12px;font-weight:600;color:var(--text-2)">
+          Steps
+        </div>
+        <table class="dex-table" style="font-size:12px">
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>Step</th>
+              <th style="width:100px">Kind</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono dim">src</td>
+              <td class="mono">{{ source }}</td>
+              <td><span class="pill" style="height:16px;font-size:9.5px">source</span></td>
+              <td></td>
+            </tr>
+            {% for s in steps_editable %}
+            <tr>
+              <td class="mono dim">{{ loop.index }}</td>
+              <td class="mono" style="font-size:11px">{{ s.label }}</td>
+              <td><span class="pill" style="height:14px;font-size:9px">{{ s.type }}</span></td>
+              <td>
+                <form method="post" action="/data/transforms/{{ pipeline_name }}/delete/{{ loop.index0 }}"
+                      onsubmit="return confirm('Remove step {{ loop.index }} ({{ s.type }})?')">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="btn sm ghost" style="padding:0 4px;height:20px;color:var(--text-4)">×</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            <tr>
+              <td class="mono dim">dst</td>
+              <td class="mono">{{ destination }}</td>
+              <td><span class="pill" style="height:16px;font-size:9.5px">output</span></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+
+        {# Add step form — all 10 transform types #}
+        <div style="padding:12px 14px;border-top:1px solid var(--shell-border)" x-data="{ t: 'filter' }">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">+ Add step</div>
+          <form method="post" action="/data/transforms/{{ pipeline_name }}/add" style="display:flex;flex-direction:column;gap:8px">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <div class="row" style="gap:8px;align-items:start">
+              <select name="type" x-model="t" class="input" style="height:30px;width:140px;flex-shrink:0">
+                <option value="filter">filter</option>
+                <option value="derive">derive</option>
+                <option value="fill_null">fill_null</option>
+                <option value="cast">cast</option>
+                <option value="deduplicate">deduplicate</option>
+                <option value="rename">rename</option>
+                <option value="drop_columns">drop_columns</option>
+                <option value="aggregate">aggregate</option>
+                <option value="window">window</option>
+                <option value="sql">sql</option>
+              </select>
+              <button type="submit" class="btn sm primary" style="flex-shrink:0;height:30px">
+                <i data-lucide="plus" style="width:11px;height:11px"></i> Add
+              </button>
+            </div>
+            <div x-show="t==='filter'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="condition" class="input" style="height:30px;font-size:12px" placeholder="condition — e.g. rating > 5.0 AND year IS NOT NULL">
+              <span class="muted" style="font-size:10px">Keeps only rows where the condition is true.</span>
+            </div>
+            <div x-show="t==='derive'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="name" class="input" style="height:30px;font-size:12px" placeholder="new column name — e.g. rating_pct">
+              <input name="expression" class="input" style="height:30px;font-size:12px;font-family:var(--font-mono)" placeholder="SQL expression — e.g. rating / 10.0 * 100">
+            </div>
+            <div x-show="t==='fill_null'" style="display:flex;flex-direction:column;gap:4px">
+              <textarea name="fill_null_defaults" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                        placeholder="col: default (one per line)&#10;genres: Unknown&#10;runtime: 0"></textarea>
+              <span class="muted" style="font-size:10px">Replaces NULL with the given default per column.</span>
+            </div>
+            <div x-show="t==='cast'" style="display:flex;flex-direction:column;gap:4px">
+              <textarea name="cast_columns" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                        placeholder="col: TYPE (one per line)&#10;release_year: INTEGER&#10;rating: DOUBLE"></textarea>
+              <span class="muted" style="font-size:10px">Casts each column to the specified DuckDB type.</span>
+            </div>
+            <div x-show="t==='deduplicate'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="key" class="input" style="height:30px;font-size:12px" placeholder="key columns comma-separated — e.g. movie_id">
+            </div>
+            <div x-show="t==='rename'" style="display:flex;flex-direction:column;gap:4px">
+              <textarea name="rename_mapping" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                        placeholder="old_name: new_name (one per line)&#10;tconst: movie_id&#10;primaryTitle: title"></textarea>
+            </div>
+            <div x-show="t==='drop_columns'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="columns" class="input" style="height:30px;font-size:12px" placeholder="columns to drop comma-separated — e.g. _dex_layer, _dex_source">
+            </div>
+            <div x-show="t==='aggregate'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="group_by" class="input" style="height:30px;font-size:12px" placeholder="group by columns comma-separated — e.g. genre, decade">
+              <textarea name="agg_exprs" rows="3" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                        placeholder="output_col: expr (one per line)&#10;count: COUNT(*)&#10;avg_rating: AVG(imdb_rating)"></textarea>
+            </div>
+            <div x-show="t==='window'" style="display:flex;flex-direction:column;gap:4px">
+              <input name="name" class="input" style="height:30px;font-size:12px" placeholder="output column name — e.g. rank_in_decade">
+              <input name="expression" class="input" style="height:30px;font-size:12px;font-family:var(--font-mono)" placeholder="window fn — e.g. RANK()">
+              <input name="partition_by" class="input" style="height:30px;font-size:12px" placeholder="partition by columns comma-separated (optional)">
+              <input name="order_by" class="input" style="height:30px;font-size:12px" placeholder="order by — e.g. weighted_rating DESC">
+            </div>
+            <div x-show="t==='sql'" style="display:flex;flex-direction:column;gap:4px">
+              <textarea name="sql" rows="4" class="input" style="font-size:11px;font-family:var(--font-mono);padding:6px 8px"
+                        placeholder="SELECT * FROM _data WHERE ..."></textarea>
+              <span class="muted" style="font-size:10px">Use <code>_data</code> to reference the current table.</span>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
 
     {# ── Overview tab ─────────────────────────────────────────────────────── #}
@@ -166,18 +336,44 @@
           {# Run steps timeline #}
           <div class="card" style="padding:12px 14px">
             <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px">Current run steps</div>
-            {% set steps_timeline = [('extract','link','Extract'),('validate','shield-check','Validate'),('load','database','Load'),('watermark','droplets','Watermark')] %}
-            {% for step_id, step_icon, step_label in steps_timeline %}
             <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
               <div style="width:20px;height:20px;border-radius:50%;
                            background:color-mix(in oklch,var(--state-ok) 15%,transparent);
                            border:1px solid color-mix(in oklch,var(--state-ok) 30%,transparent);
                            display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                <i data-lucide="{{ step_icon }}" style="width:10px;height:10px;color:var(--state-ok)"></i>
+                <i data-lucide="link" style="width:10px;height:10px;color:var(--state-ok)"></i>
               </div>
-              <span style="font-size:12px;color:var(--text-2)">{{ step_label }}</span>
+              <span style="font-size:12px;color:var(--text-2)">Extract</span>
+            </div>
+            {% for s in steps_editable %}
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <div style="width:20px;height:20px;border-radius:50%;
+                           background:color-mix(in oklch,var(--state-ok) 15%,transparent);
+                           border:1px solid color-mix(in oklch,var(--state-ok) 30%,transparent);
+                           display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="settings" style="width:10px;height:10px;color:var(--state-ok)"></i>
+              </div>
+              <span style="font-size:12px;color:var(--text-2)">{{ s.label }}</span>
             </div>
             {% endfor %}
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <div style="width:20px;height:20px;border-radius:50%;
+                           background:color-mix(in oklch,var(--state-ok) 15%,transparent);
+                           border:1px solid color-mix(in oklch,var(--state-ok) 30%,transparent);
+                           display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="shield-check" style="width:10px;height:10px;color:var(--state-ok)"></i>
+              </div>
+              <span style="font-size:12px;color:var(--text-2)">Quality gate</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <div style="width:20px;height:20px;border-radius:50%;
+                           background:color-mix(in oklch,var(--state-ok) 15%,transparent);
+                           border:1px solid color-mix(in oklch,var(--state-ok) 30%,transparent);
+                           display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i data-lucide="database" style="width:10px;height:10px;color:var(--state-ok)"></i>
+              </div>
+              <span style="font-size:12px;color:var(--text-2)">Load</span>
+            </div>
           </div>
 
           {# Source panel #}
@@ -327,6 +523,40 @@
          hx-swap="innerHTML">
       <div style="padding:40px 20px;text-align:center;color:var(--text-4)">
         <i data-lucide="loader-2" style="width:20px;height:20px;animation:spin 1s linear infinite"></i>
+      </div>
+    </div>
+
+    {# ── Lineage tab ──────────────────────────────────────────────────────── #}
+    <div x-show="tab==='lineage'" style="padding:16px 20px;flex:1;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card" style="padding:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <i data-lucide="arrow-up-left" style="width:13px;height:13px"></i> Upstream (depends on)
+          </div>
+          {% if lineage.upstream %}
+            {% for up in lineage.upstream %}
+            <a href="/data/pipelines/{{ up }}" class="stat-chip" style="display:inline-flex;margin:0 6px 6px 0;text-decoration:none">
+              <i data-lucide="workflow" style="width:10px;height:10px"></i> {{ up }}
+            </a>
+            {% endfor %}
+          {% else %}
+            <p style="font-size:12px;color:var(--text-4)">No upstream dependencies — this is a root pipeline.</p>
+          {% endif %}
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <i data-lucide="arrow-down-right" style="width:13px;height:13px"></i> Downstream (depended on by)
+          </div>
+          {% if lineage.downstream %}
+            {% for down in lineage.downstream %}
+            <a href="/data/pipelines/{{ down }}" class="stat-chip" style="display:inline-flex;margin:0 6px 6px 0;text-decoration:none">
+              <i data-lucide="workflow" style="width:10px;height:10px"></i> {{ down }}
+            </a>
+            {% endfor %}
+          {% else %}
+            <p style="font-size:12px;color:var(--text-4)">No other pipelines depend on this one.</p>
+          {% endif %}
+        </div>
       </div>
     </div>
 

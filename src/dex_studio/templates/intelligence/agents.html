@@ -83,6 +83,12 @@
               <span class="pill warn" style="height:15px;font-size:9px">recovering</span>
             {% endif %}
           </div>
+          {% if a.system_prompt %}
+          <div class="muted mono" title="{{ a.system_prompt }}"
+               style="font-size:10.5px;margin-top:2px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{ a.system_prompt }}
+          </div>
+          {% endif %}
         </td>
         <td>
           <span class="type-pill">{{ a.type or 'builtin' }}</span>
@@ -110,6 +116,10 @@
         </td>
         <td>
           <div class="row" style="gap:6px;justify-content:flex-end">
+            <a href="/intelligence/traces?agent={{ a.name | urlencode }}"
+               class="btn sm ghost" style="text-decoration:none" title="View traces">
+              <i data-lucide="git-branch" style="width:11px;height:11px"></i>
+            </a>
             <a href="/intelligence/playground?agent={{ a.name | urlencode }}"
                class="btn sm ghost" style="text-decoration:none" title="Test in playground">
               <i data-lucide="message-square" style="width:11px;height:11px"></i>

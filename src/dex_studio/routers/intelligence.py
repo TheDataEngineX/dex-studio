@@ -273,6 +273,25 @@ def _model_rows(eng: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _model_versions(eng: Any, name: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        for version in eng.model_registry.list_versions(name):
+            art = eng.model_registry.get(name, version)
+            if art is None:
+                continue
+            rows.append(
+                {
+                    "version": str(art.version),
+                    "stage": str(art.stage.value),
+                    "created_at": fmt_ts(art.created_at),
+                    "promoted_at": fmt_ts(art.promoted_at) if art.promoted_at else "—",
+                }
+            )
+    rows.sort(key=lambda r: r["created_at"], reverse=True)
+    return rows
+
+
 def _model_data_json(eng: Any) -> str:
     data: dict[str, Any] = {}
     for name in eng.model_registry.list_models():
@@ -286,6 +305,8 @@ def _model_data_json(eng: Any) -> str:
                 "stage": str(latest.stage.value),
                 "framework": str(params.get("framework", "—")),
                 "parameters": {k: v for k, v in params.items() if k != "framework"},
+                "metrics": dict(latest.metrics) if latest.metrics else {},
+                "versions": _model_versions(eng, name),
             }
     return _json.dumps(data)
 
@@ -477,7 +498,7 @@ def intelligence_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:  # n
     tool_count = len(registry.list_tools())
 
     # Run stats from studio DB
-    run_stats: dict[str, Any] = {}
+    run_stats: dict[str, Any] = {"total_runs": 0, "error_count": 0, "avg_latency_ms": 0, "total_tool_calls": 0}
     recent_runs: list[dict[str, Any]] = []
     with contextlib.suppress(Exception):
         from dex_studio.studio_db import get_studio_db

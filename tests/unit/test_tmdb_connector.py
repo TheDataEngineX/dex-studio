@@ -24,16 +24,17 @@ _CONNECTOR_PATH = (
 )
 
 
-def _load_tmdb_connector_class() -> type:
+def _load_tmdb_connector_module() -> Any:
     spec = importlib.util.spec_from_file_location("_test_tmdb_connector", _CONNECTOR_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module.TmdbConnector
+    return module
 
 
-TmdbConnector = _load_tmdb_connector_class()
+_tmdb_module = _load_tmdb_connector_module()
+TmdbConnector = _tmdb_module.TmdbConnector
 
 
 class FakeResponse:
@@ -70,6 +71,22 @@ class FakeClient:
     async def aclose(self) -> None:
         pass
 
+    async def __aenter__(self) -> FakeClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+
+def _use_fake_client(connector: Any, fake_client: FakeClient) -> None:
+    """Wire *fake_client* into *connector* for the new per-call scoped-client
+    architecture: connector.connect() is bypassed (no real API key check
+    matters here), and the module's httpx.AsyncClient constructor is
+    replaced so ``async with httpx.AsyncClient(...) as client`` yields
+    *fake_client* instead of a real client."""
+    connector._connected = True
+    _tmdb_module.httpx.AsyncClient = lambda **_kw: fake_client
+
 
 @pytest.fixture
 def id_parquet(tmp_path: Path) -> Path:
@@ -93,7 +110,7 @@ def test_fetches_one_bundled_request_per_id(id_parquet: Path) -> None:
             3: [FakeResponse(200, {"id": 3, "title": "Movie Three"})],
         }
     )
-    connector._client = fake_client  # type: ignore[assignment]
+    _use_fake_client(connector, fake_client)
 
     records = connector.read()
 
@@ -115,7 +132,7 @@ def test_skips_404_without_raising(id_parquet: Path) -> None:
             3: [FakeResponse(200, {"id": 3})],
         }
     )
-    connector._client = fake_client  # type: ignore[assignment]
+    _use_fake_client(connector, fake_client)
 
     records = connector.read()
 
@@ -135,7 +152,7 @@ def test_retries_on_429_then_succeeds(id_parquet: Path) -> None:
             3: [FakeResponse(200, {"id": 3})],
         }
     )
-    connector._client = fake_client  # type: ignore[assignment]
+    _use_fake_client(connector, fake_client)
 
     records = connector.read()
 
@@ -162,7 +179,7 @@ def test_requests_bundle_append_to_response(id_parquet: Path) -> None:
             3: [FakeResponse(200, {"id": 3})],
         }
     )
-    connector._client = fake_client  # type: ignore[assignment]
+    _use_fake_client(connector, fake_client)
 
     connector.read()
 
@@ -204,7 +221,7 @@ def test_respects_max_concurrency(id_parquet: Path) -> None:
             3: [FakeResponse(200, {"id": 3})],
         }
     )
-    connector._client = fake_client  # type: ignore[assignment]
+    _use_fake_client(connector, fake_client)
 
     connector.read()
 
@@ -213,7 +230,7 @@ def test_respects_max_concurrency(id_parquet: Path) -> None:
 
 def test_missing_id_source_path_raises(tmp_path: Path) -> None:
     connector = TmdbConnector(api_key="key", id_source_path=str(tmp_path / "missing.parquet"))
-    connector._client = FakeClient({})  # type: ignore[assignment]
+    connector._connected = True
 
     with pytest.raises(RuntimeError, match="id_source_path not found"):
         connector.read()
@@ -225,8 +242,9 @@ def test_redis_limiter_coordinates_every_request(id_parquet: Path) -> None:
         id_source_path=str(id_parquet),
         requests_per_second=1000.0,
     )
-    connector._client = FakeClient(
-        {movie_id: [FakeResponse(200, {"id": movie_id})] for movie_id in (1, 2, 3)}
+    _use_fake_client(
+        connector,
+        FakeClient({movie_id: [FakeResponse(200, {"id": movie_id})] for movie_id in (1, 2, 3)}),
     )
 
     class FakeRedis:
@@ -255,8 +273,11 @@ def test_large_fanout_keeps_memory_bounded(tmp_path: Path) -> None:
         max_concurrency=5,
         requests_per_second=100_000.0,
     )
-    connector._client = FakeClient(
-        {movie_id: [FakeResponse(200, {"id": movie_id, "title": "x"})] for movie_id in ids}
+    _use_fake_client(
+        connector,
+        FakeClient(
+            {movie_id: [FakeResponse(200, {"id": movie_id, "title": "x"})] for movie_id in ids}
+        ),
     )
 
     tracemalloc.start()

@@ -45,7 +45,7 @@
             {{ c.columns | length if c.has_contract else '—' }}
           </td>
           <td class="muted" style="font-size:12px">
-            {{ c.recorded_at[:19] | replace('T', ' ') if c.recorded_at else '—' }}
+            {{ c.recorded_at | fmt_ts_iso }}
           </td>
           <td style="text-align:right">
             <form method="post" action="/data/schema/{{ c.pipeline }}/snapshot" style="display:inline">
@@ -101,7 +101,7 @@
         {% for ev in drift_events %}
         <tr {% if ev.accepted %}style="opacity:0.55"{% endif %}>
           <td class="mono" style="font-size:12px;font-weight:500">{{ ev.pipeline }}</td>
-          <td class="muted" style="font-size:12px">{{ ev.detected_at[:19] | replace('T', ' ') }}</td>
+          <td class="muted" style="font-size:12px">{{ ev.detected_at | fmt_ts_iso }}</td>
           <td>
             <div style="display:flex;flex-wrap:wrap;gap:3px">
               {% for ch in ev.drift %}

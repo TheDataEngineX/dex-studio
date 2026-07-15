@@ -206,6 +206,36 @@ def api_pipeline_run(eng: WriteDep, name: str) -> dict[str, str]:
         return {"status": "error", "pipeline": name, "error": "An error occurred"}
 
 
+@router.post("/pipelines/run-all", summary="Queue all pipelines with dependencies")
+def api_pipeline_run_all(eng: WriteDep) -> dict[str, Any]:
+    from dex_studio.jobs import queue_all_pipelines_bg
+
+    status = queue_all_pipelines_bg()
+    return {"status": status}
+
+
+@router.get("/pipelines/run-all/status", summary="Get run-all session status")
+def api_pipeline_run_all_status(eng: ReadDep) -> dict[str, Any]:
+    from dex_studio.jobs import get_run_all_status
+
+    return get_run_all_status()
+
+
+@router.post("/pipelines/{name}/cancel", summary="Cancel a running/queued pipeline")
+def api_pipeline_cancel(eng: WriteDep, name: str) -> dict[str, Any]:
+    from dex_studio.jobs import cancel_pipeline, is_pipeline_queued, is_pipeline_running
+
+    result = cancel_pipeline(name)
+    was_running = is_pipeline_running(name)
+    was_queued = is_pipeline_queued(name)
+    return {
+        "pipeline": name,
+        "result": result,
+        "was_running": was_running,
+        "was_queued": was_queued,
+    }
+
+
 @router.post("/pipelines/{name}/backfill", summary="Trigger pipeline backfill")
 def api_pipeline_backfill(eng: WriteDep, name: str) -> dict[str, Any]:
     import contextlib

@@ -177,7 +177,7 @@
             <td class="mono" style="font-size:11px;color:var(--red-9);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ dl.error }}">
               {{ dl.error[:80] }}
             </td>
-            <td class="dim" style="font-size:11px">{{ dl.recorded_at[:19].replace('T', ' ') if dl.recorded_at else '—' }}</td>
+            <td class="dim" style="font-size:11px">{{ dl.recorded_at | fmt_ts_iso }}</td>
             <td style="text-align:right;white-space:nowrap">
               <form method="post" action="/api/scheduler/dead-letter/{{ dl.pipeline }}/clear" style="display:inline">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -217,7 +217,7 @@
             <td class="mono" style="font-size:12px">{{ p.name }}</td>
             <td class="mono dim" style="font-size:11px">{{ p.schedule or '—' }}</td>
             <td class="dim mono" style="font-size:11px">{{ p.depends_on | join(', ') if p.depends_on else '—' }}</td>
-            <td class="dim" style="font-size:11px">{{ p.last_run_at[:19].replace('T', ' ') if p.last_run_at else '—' }}</td>
+            <td class="dim" style="font-size:11px">{{ p.last_run_at | fmt_ts_iso }}</td>
             <td>
               {% if p.next_run_at %}
               <span data-ts="{{ p.next_run_at }}" style="font-size:11px;color:var(--text-3)">—</span>

@@ -14,6 +14,9 @@
     })();
   </script>
   <script defer src="/static/vendor/alpine.min.js"></script>
+  {% if csrf_token is defined %}
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  {% endif %}
 </head>
 <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--gray-2)"
       x-data="{
@@ -143,5 +146,20 @@
   </div>
 
   <!-- icons are inline SVG; no lucide runtime needed -->
+  <script>
+    (function () {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      var token = meta ? meta.getAttribute('content') : '';
+      if (!token) return;
+      document.querySelectorAll('form[method="post"],form[method="POST"]').forEach(function (form) {
+        form.addEventListener('submit', function () {
+          var action = form.action || '';
+          if (!action.includes('_csrf=')) {
+            form.action = action + (action.includes('?') ? '&' : '?') + '_csrf=' + encodeURIComponent(token);
+          }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

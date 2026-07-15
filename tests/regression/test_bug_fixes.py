@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -48,16 +49,6 @@ def _mock_engine_with_temp_dir(pipelines: dict | None = None) -> MagicMock:
 
 _API_KEY = "regression-test-key"  # gitleaks:allow
 _SESSION_SECRET = "r" * 32
-
-
-def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
-    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
-    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
-    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
 
 
 class _PipeCfg:
@@ -104,10 +95,10 @@ def _make_engine_mock() -> MagicMock:
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def authed_client(monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]) -> TestClient:
     """Authenticated TestClient with a mocked engine — no real dex.yaml needed."""
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-    _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+    patch_db(return_hash=_hash_password(_API_KEY))
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -249,11 +240,22 @@ class TestBug2DeadLetterRetry:
         spawning a thread. get_store is imported lazily inside _run(), not at
         module level, so we patch the dex_studio.store module directly.
         """
+        from dex_studio import jobs as jobs_mod
+
+        # Clean up any leftover state from other tests
+        with jobs_mod._lock:
+            jobs_mod._running.clear()
+            jobs_mod._queued.clear()
+            jobs_mod._started_at.clear()
+            jobs_mod._queued_at.clear()
+            jobs_mod._queued_details.clear()
+
         eng = MagicMock()
         eng.config_path = None
 
         with (
-            patch("dex_studio.scheduler._get_or_create_studio_db", return_value=None),
+            patch("dex_studio._engine.get_engine", return_value=None),
+            patch("dex_studio.studio_db.get_studio_db", return_value=None),
             patch("dex_studio.jobs._available_mb", return_value=99_999),
             patch("dex_studio.jobs._EXECUTOR.submit"),
             patch("dex_studio.store.get_store", MagicMock()),
@@ -336,11 +338,11 @@ class TestBug3SecopsRoutes404:
         assert resp.status_code == 200
 
     def test_unauthenticated_privacy_redirects_to_login(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         """New routes must be auth-protected — not public pages."""
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+        patch_db(return_hash=_hash_password(_API_KEY))
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
             from importlib import import_module
@@ -357,10 +359,10 @@ class TestBug3SecopsRoutes404:
         assert "/login" in resp.headers.get("location", "")
 
     def test_unauthenticated_policies_redirects_to_login(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=_hash_password(_API_KEY))
+        patch_db(return_hash=_hash_password(_API_KEY))
         mock_eng = _make_engine_mock()
         with patch("dex_studio._engine.get_engine", return_value=mock_eng):
             from importlib import import_module

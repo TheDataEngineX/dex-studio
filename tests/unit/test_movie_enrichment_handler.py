@@ -11,11 +11,7 @@ from dataenginex.lakehouse.storage import DeltaStorage
 from dataenginex.orm import JobState, get_session
 
 PLUGIN = (
-    Path(__file__).parents[2]
-    / "examples"
-    / "movie-dex"
-    / "plugins"
-    / "movie_enrichment_handler.py"
+    Path(__file__).parents[2] / "examples" / "movie-dex" / "plugins" / "movie_enrichment_handler.py"
 )
 
 

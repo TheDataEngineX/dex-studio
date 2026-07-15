@@ -794,7 +794,6 @@ document.addEventListener('htmx:afterRequest', (e) => {
   globalThis.dexAiAgentChange = function (val) { _agent = val; };
 
   globalThis.dexAiToggle = function () { _open ? dexAiClose() : dexAiOpen(); };
-  globalThis.aiSidebarToggle = dexAiToggle; // legacy alias
 
   globalThis.dexAiOpen = function () {
     if (_open) return;

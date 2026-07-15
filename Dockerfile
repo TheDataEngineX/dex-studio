@@ -4,14 +4,15 @@ FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV UV_PYTHON_PREFERENCE=only-system
 
-WORKDIR /workspace/dex-studio
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+WORKDIR /workspace
+COPY dataenginex/ dataenginex/
 
-COPY README.md poe_tasks.toml ./
-COPY src/ src/
-COPY examples/ examples/
-RUN uv sync --frozen --no-dev
+WORKDIR /workspace/dex-studio
+COPY dex-studio/pyproject.toml dex-studio/uv.lock ./
+RUN uv sync --no-dev --no-install-project
+
+COPY dex-studio/ .
+RUN uv sync --no-dev
 
 
 FROM python:3.13-slim
@@ -19,7 +20,7 @@ ARG PORT
 
 RUN useradd -m -u 1000 dex
 
-COPY --from=builder /workspace/dex-studio /workspace/dex-studio
+COPY --from=builder /workspace /workspace
 RUN chown -R 1000:1000 /workspace
 
 WORKDIR /workspace/dex-studio
@@ -34,4 +35,6 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-7860}/health')" || exit 1
 
 USER 1000
+# Ensure .dex directory exists for database files
+RUN mkdir -p /home/dex/.dex
 CMD ["dex-studio"]

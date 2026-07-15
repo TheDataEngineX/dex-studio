@@ -244,7 +244,7 @@ def hub(request: Request, eng: ReadDep) -> HTMLResponse:
         "source_count": source_count,
         "model_count": len(eng.model_registry.list_models()),
         "agent_count": len(eng.agents),
-        "table_count": source_count + extra_tables,
+        "table_count": extra_tables,
         "health_status": health.get("status", "unknown"),
         "layer_stats": layer_stats,
         "components": components,

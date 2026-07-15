@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
@@ -10,16 +10,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dex_studio.auth import _hash_password
-
-
-def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
-    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
-    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
-    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
 
 
 def _make_app():
@@ -57,18 +47,22 @@ class TestAuthFlow:
             assert r.status_code == 303, f"Setup failed: {r.status_code} {r.text[:200]}"
             assert "auth.hash" in stored
 
-    def test_login_with_wrong_password_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_login_with_wrong_password_fails(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", "t" * 32)
-        _patch_db(monkeypatch, return_hash=_hash_password("test-pass"))
+        patch_db(return_hash=_hash_password("test-pass"))
         app = _make_app()
         with TestClient(app, raise_server_exceptions=False, follow_redirects=False) as tc:
             r = tc.post("/login", data={"passphrase": "wrong-password"})
             assert r.status_code == 303
             assert "/login" in r.headers.get("location", "")
 
-    def test_login_with_correct_password_succeeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_login_with_correct_password_succeeds(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", "t" * 32)
-        _patch_db(monkeypatch, return_hash=_hash_password("test-pass"))
+        patch_db(return_hash=_hash_password("test-pass"))
         app = _make_app()
         with TestClient(app, raise_server_exceptions=False, follow_redirects=False) as tc:
             r = tc.post("/login", data={"passphrase": "test-pass"})
@@ -76,19 +70,21 @@ class TestAuthFlow:
             assert r.headers.get("location", "") == "/"
 
     def test_logged_in_session_can_access_protected_page(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", "t" * 32)
-        _patch_db(monkeypatch, return_hash=_hash_password("test-pass"))
+        patch_db(return_hash=_hash_password("test-pass"))
         app = _make_app()
         with TestClient(app, raise_server_exceptions=False, follow_redirects=False) as tc:
             tc.post("/login", data={"passphrase": "test-pass"})
             r = tc.get("/")
             assert r.status_code in (200, 303)
 
-    def test_logout_clears_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_logout_clears_session(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", "t" * 32)
-        _patch_db(monkeypatch, return_hash=_hash_password("test-pass"))
+        patch_db(return_hash=_hash_password("test-pass"))
         app = _make_app()
         with TestClient(app, raise_server_exceptions=False, follow_redirects=False) as tc:
             tc.post("/login", data={"passphrase": "test-pass"})

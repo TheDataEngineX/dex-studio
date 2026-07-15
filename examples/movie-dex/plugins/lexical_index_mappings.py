@@ -86,9 +86,7 @@ def ensure_indices(client: Any) -> None:
                 client.indices.create(index=index_name, mappings=mapping)
                 logger.info("elasticsearch index created", index=index_name)
         except Exception as exc:
-            logger.warning(
-                "elasticsearch index creation skipped", index=index_name, error=str(exc)
-            )
+            logger.warning("elasticsearch index creation skipped", index=index_name, error=str(exc))
 
 
 def configure_indices() -> None:
@@ -98,15 +96,20 @@ def configure_indices() -> None:
 
         username = os.environ.get("ELASTICSEARCH_USERNAME", "")
         password = os.environ.get("ELASTICSEARCH_PASSWORD", "")
+        # ES 9.x python client 9.x sends Accept header with version 9 which ES 9.x rejects.
+        # Override to use compatible-with=8 which works with both 8.x and 9.x clusters.
         client = Elasticsearch(
             [os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")],
             basic_auth=(username, password) if username and password else None,
             request_timeout=3,
+            headers={"Accept": "application/vnd.elasticsearch+json; compatible-with=8"},
         )
-        if client.ping():
+        # Use proper health check endpoint instead of ping (HEAD / returns 400 in ES 8.x/9.x)
+        health = client.cluster.health(wait_for_status="yellow", timeout="3s")
+        if health["status"] in ("yellow", "green"):
             ensure_indices(client)
         else:
-            logger.info("elasticsearch unavailable; index mapping setup deferred")
+            logger.info("elasticsearch unavailable; index mapping setup deferred", status=health["status"])
     except Exception as exc:
         logger.warning("elasticsearch mapping setup skipped", error=str(exc))
 

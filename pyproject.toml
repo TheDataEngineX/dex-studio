@@ -41,9 +41,6 @@ dependencies = [
 # Resume PDF export
 pdf = ["weasyprint>=68.1"]
 
-[tool.uv.sources]
-dataenginex = { path = "../dataenginex", editable = true }
-
 [project.scripts]
 dex-studio = "dex_studio.cli:main"
 
@@ -55,6 +52,9 @@ Issues = "https://github.com/TheDataEngineX/dex-studio/issues"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv.sources]
+dataenginex = { path = "../dataenginex", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]

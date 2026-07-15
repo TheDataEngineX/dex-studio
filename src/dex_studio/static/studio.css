@@ -118,12 +118,6 @@
   --d-normal:  200ms;
   --d-slow:    320ms;
 
-  /* legacy aliases for existing templates */
-  --duration-instant: 0ms;
-  --duration-fast:    var(--d-fast);
-  --duration-normal:  var(--d-normal);
-  --duration-slow:    var(--d-slow);
-
   /* ---- shadows (dark) ---- */
   --shadow-sm: 0 1px 0 rgba(255,255,255,.02), 0 1px 2px rgba(0,0,0,.4);
   --shadow-md: 0 1px 0 rgba(255,255,255,.03) inset, 0 6px 14px -4px rgba(0,0,0,.45), 0 2px 4px rgba(0,0,0,.3);
@@ -134,21 +128,6 @@
   /* sidebar width */
   --sidebar-w: 224px;
   --topbar-h: 48px;
-
-  /* ---- backward-compat color aliases ---- */
-  /* indigo → accent (h=264) */
-  --indigo-1:  var(--accent-1);
-  --indigo-2:  var(--accent-2);
-  --indigo-3:  var(--accent-3);
-  --indigo-4:  var(--accent-4);
-  --indigo-5:  var(--accent-5);
-  --indigo-6:  var(--accent-6);
-  --indigo-7:  var(--accent-7);
-  --indigo-8:  var(--accent-8);
-  --indigo-9:  var(--accent-9);
-  --indigo-10: var(--accent-10);
-  --indigo-11: var(--accent-11);
-  --indigo-12: var(--accent-12);
 
   /* violet (h=305) */
   --violet-1:  oklch(0.18 0.05 305);
@@ -249,13 +228,6 @@
   --blue-11: oklch(0.80 0.11 230);
   --blue-12: oklch(0.92 0.05 230);
 
-  /* yellow (legacy — mapped to amber hue) */
-  --yellow-3: oklch(0.28 0.09 85);
-  --yellow-7: oklch(0.52 0.17 85);
-  --yellow-8: oklch(0.60 0.18 85);
-  --yellow-9: oklch(0.78 0.17 85);
-  --yellow-11: oklch(0.86 0.14 85);
-
   /* surface alias */
   --color-background: var(--bg);
 }
@@ -350,6 +322,8 @@ code, pre, .mono { font-family: var(--font-mono); }
 .pill.error::before { background: var(--red-9); }
 .pill.warn    { color: var(--amber-9); background: color-mix(in oklch, var(--amber-9) 12%, transparent); border-color: color-mix(in oklch, var(--amber-9) 24%, transparent); }
 .pill.warn::before { background: var(--amber-9); }
+.pill.warning { color: var(--amber-11); background: color-mix(in oklch, var(--amber-9) 14%, transparent); border-color: color-mix(in oklch, var(--amber-9) 28%, transparent); }
+.pill.warning::before { background: var(--amber-9); animation: pulse 1.4s ease-in-out infinite; }
 .pill.info    { color: var(--blue-9);  background: color-mix(in oklch, var(--blue-9) 12%, transparent);  border-color: color-mix(in oklch, var(--blue-9) 24%, transparent); }
 .pill.info::before { background: var(--blue-9); }
 .pill.running { color: var(--accent-11); background: color-mix(in oklch, var(--accent-9) 14%, transparent); border-color: color-mix(in oklch, var(--accent-9) 28%, transparent); }

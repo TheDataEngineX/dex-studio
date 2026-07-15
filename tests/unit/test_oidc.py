@@ -71,9 +71,7 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_app() -> FastAPI:
     app = FastAPI()
-    app.add_middleware(
-        SessionMiddleware, secret_key=_SESSION_SECRET, session_cookie="dex_session"
-    )
+    app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET, session_cookie="dex_session")
 
     @app.get("/start")
     def start(request: Request) -> Any:
@@ -205,16 +203,12 @@ class TestAdminDep:
 
     def test_valid_token_without_admin_group_403(self) -> None:
         token = _sign(_base_claims(groups=["some-other-group"]))
-        resp = TestClient(self._app()).get(
-            "/admin", headers={"Authorization": f"Bearer {token}"}
-        )
+        resp = TestClient(self._app()).get("/admin", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 403
 
     def test_valid_admin_token_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DEX_STUDIO_OIDC_ADMIN_GROUP", "dex-studio-admins")
         token = _sign(_base_claims(groups=["dex-studio-admins"]))
-        resp = TestClient(self._app()).get(
-            "/admin", headers={"Authorization": f"Bearer {token}"}
-        )
+        resp = TestClient(self._app()).get("/admin", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
         assert resp.json()["sub"] == "user-123"

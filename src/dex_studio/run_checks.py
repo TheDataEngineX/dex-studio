@@ -23,20 +23,43 @@ _QUALITY_SCORE_THRESHOLD = 1.0  # anything less than a perfect score is flagged
 _ROWS_DROP_RATIO_THRESHOLD = 0.5  # >50% row loss looks like a broken transform
 
 
-def run_quality_check(eng: Any, db: StudioDb | PgStudioDb, pipeline: str) -> None:
-    """Run quality checks after a pipeline run; alert on crash or low score.
+def _pipeline_table_name(eng: Any, pipeline: str) -> str:
+    """Resolve *pipeline*'s own output table as ``{layer}.{destination}``."""
+    cfg = (eng.config.data.pipelines or {}).get(pipeline)
+    target = getattr(cfg, "target", None) or {}
+    layer = target.get("layer") if isinstance(target, dict) else None
+    if not layer:
+        if pipeline.startswith("bronze_"):
+            layer = "bronze"
+        elif pipeline.startswith("silver_"):
+            layer = "silver"
+        else:
+            layer = "gold"
+    dest = str(getattr(cfg, "destination", None) or pipeline)
+    return f"{layer}.{dest}"
 
-    - If `quality_check_all_tables()` raises, records a `quality_check_error` alert
-      (in addition to the caller's own log line).
-    - If it succeeds but this pipeline's destination table scores below
-      `_QUALITY_SCORE_THRESHOLD`, records a `quality_check_failed` alert.
+
+def run_quality_check(eng: Any, db: StudioDb | PgStudioDb, pipeline: str) -> None:
+    """Run a quality check after a pipeline run; alert on crash or low score.
+
+    Scoped to *pipeline*'s own output table via ``quality_check_table()`` —
+    the older ``quality_check_all_tables()`` re-scans every catalog table
+    (including tens-of-millions-of-row bronze sources) on every single
+    pipeline success, which is both wasteful and, for large sources, was
+    crashing the container outright.
+
+    - If the check raises, records a `quality_check_error` alert (in
+      addition to the caller's own log line).
+    - If it succeeds but the table scores below `_QUALITY_SCORE_THRESHOLD`,
+      records a `quality_check_failed` alert.
 
     Does not raise — failures to check or to record an alert are logged and
     swallowed, matching the "never let a quality check break a run" behavior
     this replaces.
     """
+    table_name = _pipeline_table_name(eng, pipeline)
     try:
-        quality_results = eng.quality_check_all_tables() or {}
+        res = eng.quality_check_table(table_name)
     except Exception as exc:
         log.warning("quality check failed after pipeline run", pipeline=pipeline, error=str(exc))
         try:
@@ -45,15 +68,23 @@ def run_quality_check(eng: Any, db: StudioDb | PgStudioDb, pipeline: str) -> Non
             log.exception("failed to record quality_check_error alert", pipeline=pipeline)
         return
 
-    for tbl, res in quality_results.items():
-        if res and tbl.endswith(f".{pipeline}"):
-            score = res.get("score", 0)
-            if score < _QUALITY_SCORE_THRESHOLD:
-                try:
-                    db.record_alert("quality_check_failed", pipeline, f"quality score {score}")
-                except Exception:
-                    log.exception("failed to record quality_check_failed alert", pipeline=pipeline)
-            break
+    if res:
+        score = res.get("score", 0)
+        try:
+            from dex_studio.metrics import record_quality_score
+            record_quality_score(pipeline, score)
+        except Exception:
+            pass
+        if score < _QUALITY_SCORE_THRESHOLD:
+            try:
+                db.record_alert("quality_check_failed", pipeline, f"quality score {score}")
+            except Exception:
+                log.exception("failed to record quality_check_failed alert", pipeline=pipeline)
+            try:
+                from dex_studio.metrics import record_quality_failure
+                record_quality_failure(pipeline)
+            except Exception:
+                pass
 
 
 def check_row_reconciliation(
@@ -85,3 +116,8 @@ def check_row_reconciliation(
             )
         except Exception:
             log.exception("failed to record reconciliation_mismatch alert", pipeline=pipeline)
+        try:
+            from dex_studio.metrics import record_reconciliation_mismatch
+            record_reconciliation_mismatch(pipeline)
+        except Exception:
+            pass
