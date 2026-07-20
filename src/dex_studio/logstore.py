@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections import deque
 from collections.abc import Mapping, MutableMapping
@@ -17,6 +18,8 @@ __all__ = [
     "structlog_capture_processor",
     "install_stdlib_handler",
 ]
+
+_LOG_BUFFER_SIZE = int(os.getenv("DEX_LOG_BUFFER_SIZE", "2000"))
 
 
 class LogRecord:
@@ -39,7 +42,7 @@ class LogStore:
         self._seq = 0
 
     def add(self, level: str, logger: str, msg: str) -> None:
-        ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         with self._lock:
             self._seq += 1
             rec = LogRecord(seq=self._seq, ts=ts, level=level.upper(), logger=logger, msg=msg)
@@ -63,7 +66,7 @@ class LogStore:
             return self._seq
 
 
-log_store = LogStore()
+log_store = LogStore(maxlen=_LOG_BUFFER_SIZE)
 
 
 class LogStoreHandler(logging.Handler):

@@ -1,199 +1,119 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block title %}System Status — {{ project_name }} — DEX Studio{% endblock %}
-{% block content_class %}full-bleed{% endblock %}
+{% block title %}System Status — DEX Studio{% endblock %}
 
-{% block full_bleed %}
-<div style="--domain-color: var(--domain-system)">
+{% block page_title %}System Status{% endblock %}
+{% block page_sub %}{{ project_name }} · v{{ app_version }} · {{ components | selectattr('available') | list | length }}/{{ components | length }} components{% endblock %}
 
-{# ── Health banner ─────────────────────────────────────────────────────────── #}
-<div style="border-bottom:1px solid var(--border);padding:16px 24px;background:color-mix(in oklch,var(--domain-system) 6%,var(--bg-elev))">
-  <div style="display:flex;align-items:center;gap:16px">
-    <div class="sdot {{ health_class }}" style="width:16px;height:16px"></div>
+{% block content %}
+<div class="animate-fade-in">
+
+<div style="border-bottom:1px solid var(--border);padding:var(--space-4);background:color-mix(in oklch,var(--domain-system) 6%,var(--bg-elev));margin-bottom:var(--space-6);border-radius:var(--r-3) var(--r-3) 0 0">
+  <div class="row" style="align-items:center;gap:var(--space-3)">
+    <div class="sdot {{ 'ok' if is_healthy else ('warn' if health.status == 'degraded' else 'error') }}" style="width:16px;height:16px"></div>
     <div>
-      <div style="font-size:18px;font-weight:700">{{ health_label }}</div>
-      <div class="muted" style="font-size:12px">{{ project_name }} · v{{ app_version }} · up {{ uptime_str | default('—') }}</div>
+      <div style="font-size:var(--text-lg);font-weight:700">{{ 'All Systems Operational' if is_healthy else ('System Degraded' if health.status == 'degraded' else 'System Error') }}</div>
+      <div class="muted" style="font-size:var(--text-sm)">{{ project_name }} · v{{ app_version }} · up {{ uptime_str or '—' }}</div>
     </div>
     <span style="flex:1"></span>
-    <a href="/system/logs" class="btn sm ghost"><i data-lucide="terminal" style="width:11px;height:11px"></i> Logs</a>
-    <a href="/system/metrics" class="btn sm ghost"><i data-lucide="gauge" style="width:11px;height:11px"></i> Metrics</a>
-    <a href="/system/runs" class="btn sm ghost"><i data-lucide="calendar-clock" style="width:11px;height:11px"></i> Runs</a>
+    <a href="/system/logs" class="btn ghost sm"><i data-lucide="terminal" style="width:11px;height:11px"></i> Logs</a>
+    <a href="/system/metrics" class="btn ghost sm"><i data-lucide="gauge" style="width:11px;height:11px"></i> Metrics</a>
+    <a href="/system/runs" class="btn ghost sm"><i data-lucide="calendar-clock" style="width:11px;height:11px"></i> Runs</a>
   </div>
 </div>
 
-<div class="content-inner" id="status-live"
-     hx-get="/system/status" hx-trigger="every 15s" hx-select="#status-live" hx-target="#status-live" hx-swap="outerHTML">
+<div id="status-live" hx-get="/system/status" hx-trigger="every 15s" hx-select="#status-live" hx-target="#status-live" hx-swap="outerHTML">
 
-{# ── Metric strip ──────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:24px">
-  {{ metric_card("CPU", (cpu_pct | default(0)) ~ "%", "cpu", "indigo" if (cpu_pct | default(0)) < 80 else "red", "utilization") }}
-  {{ metric_card("Memory", (mem_used_gb | default("—")) ~ " GB", "memory-stick", "blue", "of " ~ (mem_total_gb | default("?")) ~ " GB · " ~ (mem_pct | default(0)) ~ "%") }}
-  {{ metric_card("Uptime", uptime_str | default("—"), "clock", "green", "engine process") }}
-  {{ metric_card("Version", "v" ~ app_version, "tag", "violet", project_name) }}
+<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+  <div class="stat"><div class="lbl"><i data-lucide="cpu" style="width:14px;height:14px;color:var(--domain-system)"></i> CPU</div><div class="val">{{ cpu_pct }}%<span class="unit">{{ 'Warning' if cpu_pct > 80 else 'Normal' }}</span></div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="memory-stick" style="width:14px;height:14px;color:var(--info-9)"></i> Memory</div><div class="val">{{ mem_used_gb }} GB<span class="unit">of {{ mem_total_gb }} GB · {{ mem_pct }}%</span></div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="clock" style="width:14px;height:14px;color:var(--success-9)"></i> Uptime</div><div class="val">{{ uptime_str }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="tag" style="width:14px;height:14px;color:var(--warning-9)"></i> Version</div><div class="val mono">v{{ app_version }}</div></div>
 </div>
 
-{# ── Component health grid ─────────────────────────────────────────────────── #}
-<div class="section-h" style="margin-bottom:12px">
-  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Components</span>
+<div class="section-h" style="margin-bottom:var(--space-3)">
+  <span style="font-size:var(--text-xs);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Components</span>
   {% set ok_ct = components | selectattr('available') | list | length %}
-  <span class="chip {{ 'active' if ok_ct == components | length else '' }}" style="margin-left:4px">
-    {{ ok_ct }}/{{ components | length }} online
-  </span>
+  <span class="chip {{ 'active' if ok_ct == components | length else '' }}" style="margin-left:8px;font-size:var(--text-xs)">{{ ok_ct }}/{{ components | length }} online</span>
 </div>
 
 {% if components %}
-<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px">
+<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-3);margin-bottom:var(--space-6)">
   {% for c in components %}
   {% set is_ok = c.available %}
   {% set is_uncfg = not c.available and c.get('message','') == 'Not initialized' %}
-  <div class="card" style="padding:14px 16px;
-    background:{{ 'transparent' if (is_ok or is_uncfg) else 'color-mix(in oklch,var(--state-error) 6%,transparent)' }};
-    border-left:3px solid {{ 'var(--state-ok)' if is_ok else ('var(--border)' if is_uncfg else 'var(--state-error)') }}">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+  <div class="card" style="padding:var(--space-3);background:{{ 'transparent' if (is_ok or is_uncfg) else 'color-mix(in oklch,var(--error-9) 6%,transparent)' }};border-left:3px solid {{ 'var(--success-9)' if is_ok else ('var(--border)' if is_uncfg else 'var(--error-9)') }};transition:transform var(--d-fast),box-shadow var(--d-fast)" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'" onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+    <div class="row" style="align-items:center;gap:var(--space-2);margin-bottom:6px">
       <span class="sdot {{ 'ok' if is_ok else ('idle' if is_uncfg else 'error') }}"></span>
-      <span style="font-weight:600;font-size:13px;flex:1">{{ c.name }}</span>
-      <span class="pill {{ 'success' if is_ok else ('warn' if is_uncfg else 'error') }}" style="font-size:10px">
-        {{ 'online' if is_ok else ('not cfg' if is_uncfg else 'offline') }}
-      </span>
+      <span style="font-weight:600;font-size:var(--text-sm);flex:1">{{ c.name }}</span>
+      <span class="pill {{ 'success' if is_ok else ('warning' if is_uncfg else 'error') }}" style="font-size:var(--text-xs);height:18px">{{ 'Online' if is_ok else ('Not Config' if is_uncfg else 'Offline') }}</span>
     </div>
-    <div class="muted" style="font-size:11px">{{ c.get('message','') or ('Running' if is_ok else 'Not initialized') }}</div>
+    <div class="muted" style="font-size:var(--text-xs)">{{ c.get('message','') or ('Running' if is_ok else 'Not initialized') }}</div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-{{ empty_state("cpu", "No components detected", "Engine may still be initializing.") }}
+<div class="empty-state" style="padding:var(--space-12)"><i data-lucide="cpu" class="icon"></i><div class="title">No components</div><div class="desc">Engine may still be initializing.</div></div>
 {% endif %}
 
-{# ── Hub grid ──────────────────────────────────────────────────────────────── #}
-<div class="hub-grid" style="margin-bottom:24px">
-
-  {# Panel 1: Recent runs #}
+<div class="hub-grid" style="margin-bottom:var(--space-6)">
   <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Recent runs</span>
-      <a href="/system/runs" class="hub-panel-link">All runs →</a>
-    </div>
+    <div class="hub-panel-head"><span class="hub-panel-title">Recent Runs</span><a href="/system/runs" class="hub-panel-link">All →</a></div>
     {% if recent_runs_list %}
-      {% for r in recent_runs_list[:5] %}
-      <a href="/system/runs" class="hub-row">
-        <span class="sdot {{ r.status_class }}"></span>
-        <span class="hub-row-name mono">{{ r.name }}</span>
-        <span class="hub-row-meta">{{ r.duration }}</span>
-        <span class="hub-row-meta">{{ r.started }}</span>
-      </a>
-      {% endfor %}
+    {% for r in recent_runs_list[:5] %}
+    <a href="/system/runs" class="hub-row"><span class="sdot {{ r.status_class }}"></span><span class="hub-row-name mono">{{ r.name }}</span><span class="hub-row-meta">{{ r.duration }}</span><span class="hub-row-meta">{{ r.started }}</span></a>
+    {% endfor %}
     {% else %}
-      <div class="hub-row muted" style="font-style:italic">No runs yet</div>
+    <div class="hub-row muted" style="font-style:italic">No runs yet</div>
     {% endif %}
   </div>
-
-  {# Panel 2: Scheduler #}
   <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Scheduler</span>
-      <a href="/system/runs" class="hub-panel-link">View →</a>
-    </div>
+    <div class="hub-panel-head"><span class="hub-panel-title">Scheduler</span><a href="/system/runs" class="hub-panel-link">View →</a></div>
     {% if scheduler_overview %}
-    <div class="hub-row">
-      <span class="sdot {{ 'ok' if (scheduler_overview.enabled and not scheduler_overview.paused) else ('warn' if scheduler_overview.paused else 'idle') }}"></span>
-      <span class="hub-row-name">Status</span>
-      <span class="hub-row-meta">
-        {{ 'Paused' if scheduler_overview.paused else ('Active' if scheduler_overview.enabled else 'Disabled') }}
-      </span>
-    </div>
-    <div class="hub-row">
-      <span class="hub-row-name muted">Pipelines</span>
-      <span class="hub-row-meta">{{ scheduler_overview.pipeline_count }}</span>
-    </div>
-    <div class="hub-row">
-      <span class="hub-row-name muted">Dead letter</span>
-      <span class="hub-row-meta" style="{{ 'color:var(--state-error)' if scheduler_overview.dead_letter_count > 0 else '' }}">
-        {{ scheduler_overview.dead_letter_count }}
-      </span>
-    </div>
+    <div class="hub-row"><span class="sdot {{ 'ok' if (scheduler_overview.enabled and not scheduler_overview.paused) else ('warning' if scheduler_overview.paused else 'idle') }}"></span><span class="hub-row-name">Status</span><span class="hub-row-meta">{{ 'Paused' if scheduler_overview.paused else ('Active' if scheduler_overview.enabled else 'Disabled') }}</span></div>
+    <div class="hub-row"><span class="hub-row-name muted">Pipelines</span><span class="hub-row-meta">{{ scheduler_overview.pipeline_count }}</span></div>
+    <div class="hub-row"><span class="hub-row-name muted">Dead Letter</span><span class="hub-row-meta" style="{{ 'color:var(--error-9)' if scheduler_overview.dead_letter_count > 0 else '' }}">{{ scheduler_overview.dead_letter_count }}</span></div>
     <div class="hub-row" style="padding-top:8px;border-top:1px solid var(--border)">
       {% if scheduler_overview.paused %}
-      <form method="post" action="/api/scheduler/resume" style="display:block;width:100%">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button class="btn sm primary" style="width:100%"><i data-lucide="play" style="width:11px;height:11px"></i> Resume</button>
-      </form>
+      <form method="post" action="/api/scheduler/resume" style="display:block;width:100%"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="btn sm primary" style="width:100%"><i data-lucide="play" style="width:11px;height:11px"></i> Resume</button></form>
       {% elif scheduler_overview.enabled %}
-      <form method="post" action="/api/scheduler/pause" style="display:block;width:100%">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button class="btn sm ghost" style="width:100%"><i data-lucide="pause" style="width:11px;height:11px"></i> Pause</button>
-      </form>
+      <form method="post" action="/api/scheduler/pause" style="display:block;width:100%"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="btn sm ghost" style="width:100%"><i data-lucide="pause" style="width:11px;height:11px"></i> Pause</button></form>
       {% else %}
-      <span class="muted" style="font-size:11px">Enable scheduler in dex.yaml</span>
+      <span class="muted" style="font-size:var(--text-xs)">Enable scheduler in dex.yaml</span>
       {% endif %}
     </div>
     {% else %}
     <div class="hub-row muted" style="font-style:italic">Scheduler unavailable</div>
     {% endif %}
   </div>
-
-  {# Panel 3: Storage #}
   <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Storage</span>
-      <a href="/system/compaction" class="hub-panel-link">Compaction →</a>
-    </div>
+    <div class="hub-panel-head"><span class="hub-panel-title">Storage</span><a href="/system/compaction" class="hub-panel-link">Compaction →</a></div>
     {% if mem_total_gb is defined %}
-    <div class="hub-row">
-      <span class="hub-row-name muted">Host memory</span>
-      <span class="hub-row-meta mono">{{ mem_used_gb }} / {{ mem_total_gb }} GB</span>
-    </div>
+    <div class="hub-row"><span class="hub-row-name muted">Host Memory</span><span class="hub-row-meta mono">{{ mem_used_gb }} / {{ mem_total_gb }} GB</span></div>
     {% endif %}
-    <div class="hub-row">
-      <span class="hub-row-name muted">Log entries</span>
-      <span class="hub-row-meta mono">{{ log_entry_count | default(0) }}</span>
-    </div>
-    <div class="hub-row">
-      <span class="hub-row-name muted">Components</span>
-      <span class="hub-row-meta mono">{{ components | length }} total</span>
-    </div>
-    <div class="hub-row">
-      <span class="hub-row-name muted">Pipelines</span>
-      <span class="hub-row-meta mono">{{ scheduler_overview.pipeline_count if scheduler_overview else '—' }}</span>
-    </div>
+    <div class="hub-row"><span class="hub-row-name muted">Components</span><span class="hub-row-meta mono">{{ components | length }}</span></div>
+    <div class="hub-row"><span class="hub-row-name muted">Pipelines</span><span class="hub-row-meta mono">{{ scheduler_overview.pipeline_count if scheduler_overview else '—' }}</span></div>
   </div>
-
 </div>
 
-{# ── Activity feed ─────────────────────────────────────────────────────────── #}
-{% if recent_runs_list %}
 <div class="hub-feed">
-  <div class="hub-feed-head">
-    <span class="hub-feed-title">System activity</span>
-    <a href="/system/runs" style="font-size:10.5px;color:var(--text-4);text-decoration:none">Full history →</a>
-  </div>
+  <div class="hub-feed-head"><span class="hub-feed-title">System Activity</span><a href="/system/runs" style="font-size:var(--text-xs);color:var(--text-4);text-decoration:none">Full history →</a></div>
+  {% if recent_runs_list %}
   {% for r in recent_runs_list[:10] %}
   <a href="/system/runs" class="feed-row" style="text-decoration:none">
-    <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-system) 10%,transparent);color:var(--domain-system)">
-      <i data-lucide="workflow" style="width:12px;height:12px"></i>
-    </div>
-    <div class="feed-body">
-      <div class="feed-desc">{{ r.name }}</div>
-      <div class="feed-sub">pipeline · {{ r.duration }}</div>
-    </div>
-    <div class="feed-right">
-      <span class="feed-badge {{ 'success' if r.status_class == 'ok' else ('error' if r.status_class == 'error' else '') }}">{{ r.status }}</span>
-      <span class="feed-time">{{ r.started }}</span>
-    </div>
+    <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-system) 10%,transparent);color:var(--domain-system)"><i data-lucide="workflow" style="width:12px;height:12px"></i></div>
+    <div class="feed-body"><div class="feed-desc">{{ r.name }}</div><div class="feed-sub">pipeline · {{ r.duration }}</div></div>
+    <div class="feed-right"><span class="feed-badge {{ 'success' if r.status_class == 'ok' else ('error' if r.status_class == 'error' else '') }}">{{ r.status }}</span><span class="feed-time">{{ r.started }}</span></div>
   </a>
   {% endfor %}
+  {% else %}
+  <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">No recent pipeline runs. Execute a pipeline to see activity here.</div>
+  {% endif %}
 </div>
-{% else %}
-<div class="hub-feed">
-  <div class="hub-feed-head">
-    <span class="hub-feed-title">System activity</span>
-  </div>
-  <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
-    No recent pipeline runs. Execute a pipeline to see activity here.
-  </div>
-</div>
-{% endif %}
 
-</div>{# /content-inner #}
-</div>{# /domain wrapper #}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

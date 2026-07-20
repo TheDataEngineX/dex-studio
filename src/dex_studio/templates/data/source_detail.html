@@ -42,7 +42,7 @@
           {% for col in schema %}
           <tr>
             <td class="mono" style="font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
-            <td><span class="pill" style="background:var(--blue-3);color:var(--blue-11)">{{ col.get("column_type","") }}</span></td>
+            <td><span class="pill" style="background:var(--info-3);color:var(--info-9)">{{ col.get("column_type","") }}</span></td>
             <td style="font-size:12px;color:var(--text-3)">{{ "yes" if col.get("nullable") else "no" }}</td>
           </tr>
           {% endfor %}

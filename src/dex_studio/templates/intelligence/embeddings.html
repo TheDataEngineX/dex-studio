@@ -1,115 +1,66 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state, status_badge %}
 
-{% block title %}Embeddings — Intelligence — DEX Studio{% endblock %}
+{% block title %}Embeddings — DEX Studio{% endblock %}
+
 {% block page_title %}Embeddings{% endblock %}
-{% block page_sub %}{{ built_count }} / {{ collections | length }} collection{{ 's' if collections | length != 1 else '' }} built{% endblock %}
+{% block page_sub %}{{ embedding_count }} collection{{ 's' if embedding_count != 1 else '' }} · {{ built_collection_count }} built · {{ total_vectors | intword }} vectors{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-intelligence)">
+<div class="animate-fade-in">
 
-{# ── Metric strip ── #}
-<div class="row" style="gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
-  {{ metric_card("Configured",    collections | length, "layers",        "violet") }}
-  {{ metric_card("Built",         built_count,          "check-circle-2","green",  (built_count | string) + " ready") }}
-  {{ metric_card("Total vectors", total_vectors,        "git-commit",    "blue",   "across all collections") }}
+<div class="grid grid-3" style="margin-bottom:var(--space-6)">
+  <div class="stat"><div class="lbl"><i data-lucide="database" style="width:14px;height:14px;color:var(--domain-intelligence)"></i> Collections</div><div class="val">{{ embedding_count }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="check-circle-2" style="width:14px;height:14px;color:var(--success-9)"></i> Built</div><div class="val delta up">{{ built_collection_count }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="hash" style="width:14px;height:14px;color:var(--info-9)"></i> Total Vectors</div><div class="val">{{ total_vectors }}</div></div>
 </div>
 
-{# ── Explain card ── #}
-<div class="card" style="padding:12px 16px;margin-bottom:var(--space-3);display:flex;align-items:flex-start;gap:12px;
-     background:color-mix(in oklch,var(--violet-9) 5%,transparent);
-     border-color:color-mix(in oklch,var(--violet-9) 20%,transparent)">
-  <span style="flex-shrink:0;width:28px;height:28px;border-radius:6px;
-               background:var(--violet-3);display:flex;align-items:center;justify-content:center">
-    <i data-lucide="info" style="width:13px;height:13px;color:var(--violet-9)"></i>
-  </span>
-  <div>
-    <div style="font-size:12px;font-weight:600;color:var(--violet-11);margin-bottom:2px">Semantic search</div>
-    <div class="muted" style="font-size:12px;line-height:1.5">
-      Embedding collections enable semantic search via <code class="mono"
-      style="font-size:11px;background:var(--bg-elev-2);padding:0 4px;border-radius:3px">search_semantic()</code>
-      in the AI Playground. Build a collection to index your lakehouse data as dense vectors.
-    </div>
+<div class="card">
+  <div class="section-h"><h2>Collections</h2></div>
+  {% if collections %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Name</th><th>Source</th><th>Embedding Model</th><th>Vectors</th><th>Dim</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for c in collections %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ c.name }}</td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ c.source_table or '—' }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ c.embedding_model }}</td>
+          <td class="tnum mono" style="font-size:var(--text-xs)">{{ c.vector_count | intword }}</td>
+          <td class="tnum mono" style="font-size:var(--text-xs)">{{ c.dimension }}</td>
+          <td><span class="pill {{ 'success' if c.built else 'warning' }}" style="height:18px;font-size:var(--text-xs)">{{ 'Built' if c.built else 'Pending' }}</span></td>
+          <td>
+            <div class="row" style="gap:6px">
+              {% if not c.built %}
+              <form method="post" action="/intelligence/embeddings/build/{{ c.name }}" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="btn icon ghost sm" data-tip="Build"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i></button>
+              </form>
+              {% endif %}
+              <button class="btn icon ghost sm" data-tip="Search" onclick="document.getElementById('search-modal-{{ c.name }}').showModal()"><i data-lucide="search" style="width:14px;height:14px"></i></button>
+            </div>
+            <dialog class="modal modal-sm" id="search-modal-{{ c.name }}">
+              <form method="get" action="/intelligence/playground" class="col" style="gap:var(--space-4);padding:var(--space-6)">
+                <input type="hidden" name="agent" value="data_analyst">
+                <div class="dlg-header"><h3 style="font-weight:600">Semantic Search: {{ c.name }}</h3></div>
+                <div class="col" style="gap:6px"><label class="cap">Query</label><textarea class="input" name="q" rows="3" placeholder="Search query…" required></textarea></div>
+                <div class="row" style="justify-content:flex-end;gap:var(--space-3)"><button type="button" class="btn ghost" onclick="document.getElementById('search-modal-{{ c.name }}').close()">Cancel</button><button type="submit" class="btn primary">Search</button></div>
+              </form>
+            </dialog>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="database" class="icon"></i><div class="title">No collections</div><div class="desc">Configure embedding collections in dex.yaml.</div></div>
+  {% endif %}
 </div>
 
-{% if collections %}
-
-{# ── Collections table ── #}
-<div class="card" style="overflow:hidden">
-  <table class="dex-table tbl" style="width:100%">
-    <thead>
-      <tr>
-        <th class="sortable">Collection</th>
-        <th class="sortable">Source table</th>
-        <th class="sortable">Column</th>
-        <th class="sortable">Model</th>
-        <th class="sortable">Vectors</th>
-        <th class="sortable">Built at</th>
-        <th>Status</th>
-        <th style="width:80px"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for c in collections %}
-      <tr>
-        <td>
-          <span class="mono" style="font-weight:600;font-size:12px">{{ c.name }}</span>
-        </td>
-        <td class="mono" style="font-size:12px;color:var(--text-2)">{{ c.source }}</td>
-        <td class="mono" style="font-size:12px;color:var(--text-3)">{{ c.column }}</td>
-        <td style="font-size:12px;color:var(--text-3)">{{ c.model }}</td>
-        <td style="font-size:12px">
-          {% if c.built %}
-            <span class="mono" style="font-weight:600">{{ "{:,}".format(c.vector_count) if c.vector_count else '—' }}</span>
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-        </td>
-        <td style="font-size:12px;color:var(--text-3)">
-          {% if c.built and c.built_at %}{{ c.built_at }}{% else %}<span class="muted">—</span>{% endif %}
-        </td>
-        <td>
-          {% if c.built %}
-            <span class="pill success" style="font-size:10px">built</span>
-          {% else %}
-            <span class="pill" style="font-size:10px;color:var(--text-3)">not built</span>
-          {% endif %}
-        </td>
-        <td>
-          <form method="post" action="/intelligence/embeddings/build/{{ c.name }}"
-                style="display:inline">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="btn sm ghost"
-                    style="height:24px;font-size:11px;{% if c.built %}opacity:.6{% endif %}"
-                    {% if not c.built %}title="Build {{ c.name }}"{% else %}title="Rebuild {{ c.name }}"{% endif %}>
-              <i data-lucide="{{ 'refresh-cw' if c.built else 'play' }}"
-                 style="width:10px;height:10px"></i>
-              {{ 'Rebuild' if c.built else 'Build' }}
-            </button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </div>
+{% endblock %}
 
-{% else %}
-
-{% call empty_state("layers", "No embedding collections configured", "Add collections to your dex.yaml to enable semantic search.") %}
-<div class="card" style="margin:16px auto;max-width:460px;padding:16px;text-align:left">
-  <div class="cap" style="margin-bottom:8px">dex.yaml</div>
-  <pre class="mono muted" style="font-size:11.5px;line-height:1.6;margin:0">intelligence:
-  embeddings:
-    movie_plots:
-      source: gold_movies
-      column: plot_summary
-      model: nomic-embed-text</pre>
-</div>
-{% endcall %}
-
-{% endif %}
-
-</div>
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

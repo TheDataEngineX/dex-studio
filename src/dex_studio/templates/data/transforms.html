@@ -1,86 +1,163 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Transforms — Data — DEX Studio{% endblock %}
+{% block title %}Transforms — DEX Studio{% endblock %}
+
 {% block page_title %}Transforms{% endblock %}
-{% block page_sub %}
-  Build a pipeline — compose transformations and watch data flow through
-  {%- if selected_pipeline %} · <span class="mono">{{ selected_pipeline }}</span>{% endif %}
-{% endblock %}
+{% block page_sub %}SQL & Python transform steps for pipelines · {{ pipelines | length }} pipeline{{ 's' if pipelines | length != 1 }}{% endblock %}
+
 {% block page_actions %}
 {% if selected_pipeline %}
-<form method="post" action="/data/pipelines/run/{{ selected_pipeline }}" style="display:inline">
-  <button type="submit" class="btn sm primary"><i data-lucide="play" style="width:12px;height:12px"></i> Run flow</button>
-</form>
+<a href="/data/pipelines/{{ selected_pipeline | urlencode }}" class="btn ghost sm">
+  <i data-lucide="workflow" style="width:12px;height:12px"></i> Pipeline details
+</a>
 {% endif %}
 {% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
-{% if not pipelines %}
-{{ empty_state("workflow", "No pipelines yet", "Add a pipeline on the Pipelines page, then compose its transformations here.") }}
-{% else %}
-<div style="display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start">
+<div class="animate-fade-in">
 
-  {# ── pipeline list sidebar ── #}
-  <div class="card bare" style="overflow:hidden">
-    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600;font-size:13px">Pipelines</span>
-      <span class="muted" style="font-size:11px;margin-left:auto">{{ pipelines | length }}</span>
-    </div>
-    {% for p in pipelines %}
-    {% set layer = 'gold' if 'gold' in p.name else 'silver' if 'silver' in p.name else 'bronze' %}
-    {% set is_active = p.name == selected_pipeline %}
-    <a href="/data/transforms?pipeline={{ p.name }}"
-       style="display:flex;align-items:center;gap:10px;padding:11px 14px 11px 11px;text-decoration:none;
-              border-bottom:{% if not loop.last %}1px solid var(--border){% else %}none{% endif %};
-              background:{% if is_active %}color-mix(in oklch,var(--accent-9) 10%,transparent){% else %}transparent{% endif %};
-              border-left:3px solid {% if is_active %}var(--accent-9){% else %}transparent{% endif %}">
-      <span class="layer-chip {{ layer }}" style="flex-shrink:0;font-size:9.5px;padding:2px 6px">{{ layer[:2].upper() }}</span>
-      <div style="flex:1;min-width:0">
-        <div class="mono" style="font-size:12px;font-weight:{% if is_active %}600{% else %}400{% endif %};color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</div>
-        <div class="muted" style="font-size:10px;margin-top:1px">{{ p.schedule }}</div>
+{# ── Pipeline selector ─────────────────────────────────────────────────────── #}
+<div class="card" style="padding:var(--space-3);margin-bottom:var(--space-4)">
+  <form method="get" style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+    <label for="transform-pipeline" class="cap" style="margin:0">Pipeline</label>
+    <select id="transform-pipeline" name="pipeline" class="input" style="width:auto;min-width:280px" onchange="this.form.submit()">
+      {% for p in pipelines %}
+      <option value="{{ p.name }}" {% if p.name == selected_pipeline %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    {% if selected_pipeline %}
+    <span class="div-x" style="height:20px"></span>
+    <span class="muted" style="font-size:var(--text-sm)">
+      <i data-lucide="database" style="width:12px;height:12px"></i> {{ source }} →
+      <i data-lucide="arrow-right" style="width:12px;height:12px;margin:0 4px"></i>
+      {{ destination }}
+    </span>
+    {% endif %}
+  </form>
+</div>
+
+{% if selected_pipeline and cfg %}
+{# ── Pipeline DAG ──────────────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:var(--space-4);overflow:auto">
+  <div class="section-h">
+    <h2>Pipeline Flow</h2>
+    <span class="pill info" style="font-size:var(--text-xs);height:18px">{{ nodes | length }} nodes</span>
+  </div>
+  <div style="min-height:200px;position:relative">
+    <svg id="transform-dag" style="width:100%;height:280px;background:var(--bg)"></svg>
+  </div>
+</div>
+
+{# ── SQL Transform Steps ───────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:var(--space-4)">
+  <div class="section-h">
+    <h2>SQL Transform Steps</h2>
+    <span class="pill" style="font-size:var(--text-xs);height:18px">{{ steps | length }} step{{ 's' if steps | length != 1 }}</span>
+  </div>
+  {% if steps %}
+  <div class="col" style="gap:var(--space-2)">
+    {% for s in steps %}
+    <div class="card" style="padding:var(--space-3);border-left:3px solid var(--accent-9)">
+      <div class="row" style="justify-content:space-between;margin-bottom:var(--space-2)">
+        <span class="layer-chip sql">{{ s.type | upper }}</span>
+        <span class="muted" style="font-size:var(--text-xs)">Step {{ loop.index }}</span>
       </div>
-      <span class="pill {{ p.status }}" style="height:16px;font-size:9px;flex-shrink:0">{{ p.status[:4] }}</span>
-    </a>
+      <pre class="mono" style="font-size:var(--text-xs);white-space:pre-wrap;overflow:auto;max-height:200px;margin:0;color:var(--text-2)">{{ s.sql }}</pre>
+    </div>
     {% endfor %}
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)">
+    <i data-lucide="code-2" class="icon"></i>
+    <div class="title">No SQL transforms</div>
+    <div class="desc">This pipeline uses declarative transforms or has no transform steps.</  </div>
+  {% endif %}
+</div>
 
-  {# ── main: flow canvas + palette + next steps ── #}
-  <div>
-    <div class="card bare" style="margin-bottom:14px">
-      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
-        <span style="font-weight:600;font-size:13px"><i data-lucide="git-fork" style="width:13px;height:13px;vertical-align:-2px"></i> Data flow</span>
-        <span class="muted mono" style="font-size:11px;margin-left:auto">{{ source }} → {{ destination }}</span>
+{# ── All Transform Steps ───────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="section-h">
+    <h2>All Transform Steps</h2>
+    <span class="pill" style="font-size:var(--text-xs);height:18px">{{ all_steps | length }} total</span>
+  </div>
+  {% if all_steps %}
+  <div class="col" style="gap:var(--space-2)">
+    {% for s in all_steps %}
+    <div class="card" style="padding:var(--space-3);display:flex;align-items:flex-start;gap:var(--space-3)">
+      <div style="width:32px;height:32px;border-radius:var(--r-2);background:color-mix(in oklch,var(--domain-data) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i data-lucide="{% if s.type == 'filter' %}filter{% elif s.type == 'derive' %}sparkles{% elif s.type == 'deduplicate' %}copy{% else %}code-2{% endif %}" style="width:16px;height:16px;color:var(--domain-data)"></i>
       </div>
-      {% with auto_load = True %}{% include "data/flow_canvas.html" %}{% endwith %}
-    </div>
-
-    {# ── add transformation ── #}
-    <div class="card bare" style="margin-bottom:14px">
-      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
-        <span style="font-weight:600;font-size:13px"><i data-lucide="plus-circle" style="width:13px;height:13px;vertical-align:-2px"></i> Add transformation</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:var(--text-sm)">{{ s.type | upper }}</div>
+        <div class="mono muted" style="font-size:var(--text-xs);margin-top:2px;white-space:pre-wrap;overflow:hidden;text-overflow:ellipsis">{{ s.detail }}</div>
       </div>
-      <form method="post" action="/data/transforms/{{ selected_pipeline }}/add" x-data="{ t: 'filter' }"
-            style="padding:12px 14px;display:grid;grid-template-columns:140px 1fr auto;gap:8px;align-items:start">
-        <select name="type" x-model="t" class="input" style="height:32px">
-          {% for tt in transform_types %}<option value="{{ tt }}">{{ tt }}</option>{% endfor %}
-        </select>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <input name="condition" class="input" placeholder="condition — e.g. vote_count > 1000" x-show="t === 'filter'">
-          <input name="name" class="input" placeholder="new column name — e.g. score_x2" x-show="t === 'derive'">
-          <input name="expression" class="input" placeholder="expression — e.g. target_rating * 2" x-show="t === 'derive'">
-          <input name="key" class="input" placeholder="key column(s), comma-separated — e.g. movie_id" x-show="t === 'deduplicate'">
-          <textarea name="sql" rows="2" class="input" placeholder="SELECT * FROM {{ source or 'source' }} WHERE ..." x-show="t === 'sql'" style="height:auto;font-family:var(--font-mono);padding:8px 10px"></textarea>
-          <span class="muted" style="font-size:10.5px" x-show="t === 'filter'">Keeps only rows where the condition is true — watch the row count drop in the flow.</span>
-          <span class="muted" style="font-size:10.5px" x-show="t === 'deduplicate'">Drops duplicate rows by the key column(s).</span>
-        </div>
-        <button type="submit" class="btn primary" style="height:32px"><i data-lucide="plus" style="width:12px;height:12px"></i> Add step</button>
-      </form>
     </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)">
+    <i data-lucide="git-fork" class="icon"></i>
+    <div class="title">No transforms defined</div>
+    <div class="desc">Add transform steps in the pipeline configuration.</div>
+  </div>
+  {% endif %}
+</div>
 
+{% else %}
+<div class="card">
+  <div class="empty-state" style="padding:var(--space-12)">
+    <i data-lucide="git-fork" class="icon"></i>
+    <div class="title">No pipeline selected</div>
+    <div class="desc">Select a pipeline to view its transforms.</div>
   </div>
 </div>
 {% endif %}
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+  
+  // Render DAG
+  const nodes = {{ nodes | tojson }};
+  const svg = document.getElementById('transform-dag');
+  if (svg && nodes.length) {
+    // Simple horizontal layout
+    const layerX = { source: 80, transform: 350, sink: 620 };
+    let html = '<defs><marker id="dag-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="var(--text-4)"/></defs>';
+    
+    nodes.forEach((node, i) => {
+      const x = layerX[node.kind] || (100 + i * 200);
+      const y = 60 + (i % 4) * 70;
+      const color = node.kind === 'source' ? '#60a5fa' : node.kind === 'sink' ? '#22c55e' : '#a78bfa';
+      const icon = node.kind === 'source' ? 'database' : node.kind === 'sink' ? 'table-2' : 'code-2';
+      
+      html += `
+        <g transform="translate(${x},${y})" style="cursor:pointer">
+          <rect x="-70" y="-30" width="140" height="60" rx="8" fill="var(--bg-elev)" stroke="${color}" stroke-width="2"/>
+          <text x="0" y="-8" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">${node.label || node.transform_type || node.kind}</text>
+          <text x="0" y="10" text-anchor="middle" font-size="9" fill="var(--text-4)" style="text-transform:uppercase;letter-spacing:0.04em">${node.kind}</text>
+        </g>
+      `;
+    });
+    
+    // Draw edges
+    nodes.forEach((node, i) => {
+      if (i > 0) {
+        const prev = nodes[i-1];
+        const x1 = (layerX[prev.kind] || 0) + 70;
+        const y1 = 60 + ((i-1) % 4) * 70;
+        const x2 = (layerX[node.kind] || 0) - 70;
+        const y2 = 60 + (i % 4) * 70;
+        html += `<path d="M ${x1} ${y1} C ${(x1+x2)/2} ${y1}, ${(x1+x2)/2} ${y2}, ${x2} ${y2}" stroke="var(--text-4)" stroke-width="1.5" fill="none" marker-end="url(#dag-arrow)"/>`;
+      }
+    });
+    
+    svg.innerHTML = html;
+  }
+});
+</script>
 {% endblock %}

@@ -1,13 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}DEX Studio{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <!-- Fonts: system stack — no external font requests -->
-  <link rel="stylesheet" href="/static/studio.css?v={{ css_v }}">
-
+  
   <!-- Theme init — runs before body to prevent flash -->
   <script>
     (function () {
@@ -16,10 +14,16 @@
     })();
   </script>
 
+  <!-- Styles -->
+  <link rel="stylesheet" href="/static/studio.css?v={{ css_v }}">
+
   <!-- Vendored JS — no CDN dependency -->
   <script defer src="/static/vendor/alpine.min.js"></script>
   <script src="/static/vendor/htmx.min.js"></script>
   <script src="/static/vendor/htmx-sse.js"></script>
+
+  <!-- API Client -->
+  <script src="/static/js/api-client.js"></script>
 
   {% if csrf_token is defined %}
   <meta name="csrf-token" content="{{ csrf_token }}">
@@ -28,40 +32,19 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-<script>
-  (function () {
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta) {
-      document.body.setAttribute('hx-headers', JSON.stringify({'X-CSRF-Token': meta.getAttribute('content')}));
-    }
-    document.addEventListener('DOMContentLoaded', function () {
-      var token = meta ? meta.getAttribute('content') : '';
-      if (!token) return;
-      document.querySelectorAll('form[method="post"],form[method="POST"]').forEach(function (form) {
-        form.addEventListener('submit', function () {
-          var action = form.action || '';
-          if (!action.includes('_csrf=')) {
-            form.action = action + (action.includes('?') ? '&' : '?') + '_csrf=' + encodeURIComponent(token);
-          }
-        });
-      });
-    });
-  })();
-</script>
+<div class="shell" id="shell" x-data="dexApp()">
 
-<div class="two-rail-shell" id="shell" x-data="dexApp()">
-
-  {# ── Icon rail (44px) ──────────────────────────────────────────────── #}
-  <nav class="rail" aria-label="Domain navigation">
+  {# ── Icon rail (48px) ──────────────────────────────────────────────── #}
+  <nav class="rail" aria-label="Domain navigation" :class="{ open: sidebarOpen }">
 
     {# Logo — links to hub #}
     <a href="/" class="rail-logo" style="text-decoration:none" data-tip="DEX Studio">D</a>
 
     {# Hub icon (always visible above separator) #}
     <a href="/" class="rail-icon {{ 'active' if current_path == '/' else '' }}"
-       style="--rail-icon-color: var(--domain-hub)"
+       style="--rail-icon-color: var(--domain-data)"
        data-tip="Hub">
-      <i data-lucide="home" style="width:16px;height:16px"></i>
+      <i data-lucide="home" style="width:18px;height:18px"></i>
     </a>
 
     <div class="rail-sep"></div>
@@ -72,96 +55,99 @@
        class="rail-icon {{ 'active' if dom.active else '' }}"
        style="--rail-icon-color: {{ dom.color }}"
        data-tip="{{ dom.label }}">
-      <i data-lucide="{{ dom.icon }}" style="width:16px;height:16px"></i>
+      <i data-lucide="{{ dom.icon }}" style="width:18px;height:18px"></i>
     </a>
     {% endfor %}
 
     {# Footer icons #}
     <div class="rail-foot">
       <a href="/system/status" class="rail-icon" data-tip="System health">
-        <i data-lucide="heart-pulse" style="width:15px;height:15px"></i>
+        <i data-lucide="heart-pulse" style="width:16px;height:16px"></i>
       </a>
       <form method="post" action="/logout" style="display:contents">
         <button type="submit" class="rail-icon" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0;width:100%">
-          <i data-lucide="log-out" style="width:15px;height:15px"></i>
+          <i data-lucide="log-out" style="width:16px;height:16px"></i>
         </button>
       </form>
     </div>
 
   </nav>
 
-  {# ── Page panel (156px) ─────────────────────────────────────────────── #}
-  <aside class="page-panel" style="--domain-color: {{ nav_domain_color }}" aria-label="Page navigation">
+  {# ── Page panel (168px) ─────────────────────────────────────────────── #}
+  <aside class="panel" style="--domain-color: {{ nav_domain_color }}" aria-label="Page navigation" :class="{ open: sidebarOpen }">
 
     {# Project name + switcher at top #}
-    <div style="padding:8px 8px 6px;flex-shrink:0;border-bottom:1px solid var(--shell-border)">
-      {% if all_projects and all_projects | length > 1 %}
-      <div x-data="{open:false}">
-        <button @click="open=!open"
-                style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;
-                       cursor:pointer;padding:4px 4px;border-radius:var(--r-2);
-                       transition:background var(--d-fast)"
-                onmouseenter="this.style.background='var(--bg-hover)'"
-                onmouseleave="this.style.background='none'">
-          <span style="font-size:11.5px;font-weight:600;color:var(--text-2);flex:1;text-align:left;
-                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ project_name }}</span>
-          <i data-lucide="chevrons-up-down" style="width:11px;height:11px;color:var(--text-4);flex-shrink:0"></i>
-        </button>
-        <div x-show="open" x-cloak @click.outside="open=false"
-             style="position:absolute;left:52px;z-index:9000;min-width:180px;
-                    border-radius:var(--r-3);overflow:hidden;box-shadow:var(--shadow-xl);
-                    border:1px solid var(--shell-border);background:var(--bg-elev);margin-top:2px">
-          {% for p in all_projects %}
-          <form method="post" action="/projects/switch" @submit="open=false">
-            <input type="hidden" name="config_path" value="{{ p.config_path }}">
-            <button type="submit" class="proj-switch-btn {{ 'active' if p.config_path == current_config else '' }}"
-                    style="width:100%">
-              <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
-                 style="width:12px;height:12px;flex-shrink:0"></i>
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
-            </button>
-          </form>
-          {% endfor %}
-          <a href="/onboarding" @click="open=false" class="proj-new-link">
-            <i data-lucide="plus-circle" style="width:12px;height:12px"></i> New project…
-          </a>
+    <div class="panel-header">
+      <div class="panel-project">
+        {% if all_projects and all_projects | length > 1 %}
+        <div x-data="{open:false}">
+          <button @click="open=!open"
+                  style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;
+                         cursor:pointer;padding:4px 4px;border-radius:var(--r-2);
+                         transition:background var(--d-fast)"
+                  onmouseenter="this.style.background='var(--bg-hover)'"
+                  onmouseleave="this.style.background='none'">
+            <span class="panel-project-name">{{ project_name }}</span>
+            <i data-lucide="chevrons-up-down" style="width:12px;height:12px;color:var(--text-4);flex-shrink:0"></i>
+          </button>
+          <div x-show="open" x-cloak @click.outside="open=false"
+               style="position:absolute;left:220px;z-index:9000;min-width:200px;
+                      border-radius:var(--r-3);overflow:hidden;box-shadow:var(--shadow-xl);
+                      border:1px solid var(--border);background:var(--bg-elev);margin-top:2px">
+            {% for p in all_projects %}
+            <form method="post" action="/projects/switch" @submit="open=false">
+              <input type="hidden" name="config_path" value="{{ p.config_path }}">
+              <button type="submit" class="proj-switch-btn {{ 'active' if p.config_path == current_config else '' }}"
+                      style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;background:none;border:none;text-align:left;cursor:pointer;color:var(--text)">
+                <i data-lucide="{{ 'check-circle-2' if p.config_path == current_config else 'folder' }}"
+                   style="width:14px;height:14px;flex-shrink:0"></i>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+              </button>
+            </form>
+            {% endfor %}
+            <a href="/onboarding" @click="open=false" class="proj-new-link"
+               style="display:flex;align-items:center;gap:8px;padding:8px 12px;color:var(--accent-11);font-size:var(--text-sm)">
+              <i data-lucide="plus-circle" style="width:14px;height:14px"></i> New project…
+            </a>
+          </div>
         </div>
-      </div>
-      {% else %}
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 4px">
-        <span style="font-size:11.5px;font-weight:600;color:var(--text-2);
-                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ project_name }}</span>
+        {% else %}
+        <span class="panel-project-name">{{ project_name }}</span>
         <a href="/onboarding" style="color:var(--text-4);display:flex;align-items:center">
-          <i data-lucide="chevrons-up-down" style="width:11px;height:11px"></i>
+          <i data-lucide="chevrons-up-down" style="width:12px;height:12px"></i>
         </a>
+        {% endif %}
       </div>
-      {% endif %}
     </div>
 
     {# Domain name + colored dot #}
     {% if nav_domain_label and nav_domain_label != 'DEX Studio' %}
-    <div class="panel-domain-name">
+    <div class="panel-domain">
       <span class="panel-domain-dot"></span>
-      {{ nav_domain_label }}
+      <span class="panel-domain-label">{{ nav_domain_label }}</span>
     </div>
     {% endif %}
 
     {# Page groups (Monitor · Explore · Build) #}
-    {% for grp in nav_page_groups %}
-    <div class="panel-group-label">{{ grp.label }}</div>
-    {% for item in grp['items'] %}
-    <a href="{{ item.href }}"
-       class="panel-item {{ 'active' if item.active else '' }}"
-       style="text-decoration:none">
-      <i data-lucide="{{ item.icon }}" style="width:13px;height:13px;flex-shrink:0"></i>
-      <span>{{ item.label }}</span>
-    </a>
-    {% endfor %}
-    {% endfor %}
+    <nav class="panel-nav">
+      {% for grp in nav_page_groups %}
+      <div class="panel-group">
+        <div class="panel-group-label">{{ grp.label }}</div>
+        {% for item in grp['items'] %}
+        <a href="{{ item.href }}"
+           class="panel-item {{ 'active' if item.active else '' }}"
+           style="text-decoration:none">
+          <i data-lucide="{{ item.icon }}" style="width:14px;height:14px;flex-shrink:0"></i>
+          <span class="label">{{ item.label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
 
     {# Fallback: show the existing nav for the Hub (no domain selected) #}
     {% if not nav_page_groups %}
-    <div style="padding:8px 0">
+    <nav class="panel-nav">
       {% for group in nav_groups %}
       {% if group.label %}
       <div class="panel-group-label">{{ group.label }}</div>
@@ -172,214 +158,201 @@
       <a href="{{ item.href }}"
          class="panel-item {{ 'active' if is_active else '' }}"
          style="text-decoration:none">
-        <i data-lucide="{{ item.icon }}" style="width:13px;height:13px;flex-shrink:0"></i>
-        <span>{{ item.label }}</span>
+        <i data-lucide="{{ item.icon }}" style="width:14px;height:14px;flex-shrink:0"></i>
+        <span class="label">{{ item.label }}</span>
       </a>
       {% endfor %}
       {% endfor %}
-    </div>
+    </nav>
     {% endif %}
 
     {# Engine + system metrics at foot #}
-    <div style="margin-top:auto;border-top:1px solid var(--shell-border);flex-shrink:0">
+    <div class="panel-foot">
       {# Engine status row #}
       <div style="padding:6px 8px;display:flex;align-items:center;gap:6px">
         {% if engine_ready %}
           {% set _hs = health_status | default('ok') %}
           {% if _hs in ('ok', 'healthy') %}
-            <span class="sdot ok"></span>
-            <span style="font-size:10.5px;color:var(--text-4);flex:1">Engine ready</span>
+            <span class="pill success" style="height:16px;font-size:9px">Engine ready</span>
           {% elif _hs == 'degraded' %}
-            <span class="sdot warn"></span>
-            <span style="font-size:10.5px;color:var(--state-warn);flex:1">Degraded</span>
+            <span class="pill warning" style="height:16px;font-size:9px">Degraded</span>
           {% else %}
-            <span class="sdot error"></span>
-            <span style="font-size:10.5px;color:var(--state-error);flex:1">Engine error</span>
+            <span class="pill error" style="height:16px;font-size:9px">Engine error</span>
           {% endif %}
         {% else %}
           {% if engine_offline %}
-          <span class="sdot error"></span>
-          <span style="font-size:10.5px;color:var(--state-error);flex:1">Offline</span>
+          <span class="pill error" style="height:16px;font-size:9px">Offline</span>
           {% else %}
-          <span class="sdot idle"></span>
-          <span style="font-size:10.5px;color:var(--text-4);flex:1">No project</span>
+          <span class="pill" style="height:16px;font-size:9px">No project</span>
           {% endif %}
         {% endif %}
       </div>
       {# CPU / MEM live metrics #}
-      <div id="sys-metrics-foot" style="padding:4px 8px 8px;display:flex;flex-direction:column;gap:4px">
+      <div id="sys-metrics-foot" style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
         <div style="display:flex;align-items:center;gap:5px">
-          <span style="font-size:9.5px;color:var(--text-4);width:28px;flex-shrink:0">CPU</span>
-          <div style="flex:1;height:3px;background:var(--border);border-radius:999px;overflow:hidden">
+          <span style="font-size:10px;color:var(--text-4);width:28px;flex-shrink:0">CPU</span>
+          <div style="flex:1;height:4px;background:var(--border);border-radius:999px;overflow:hidden">
             <div id="cpu-bar" style="height:100%;width:0%;background:var(--accent-9);border-radius:999px;transition:width .5s ease"></div>
           </div>
-          <span id="cpu-pct" style="font-size:9.5px;color:var(--text-4);width:28px;text-align:right">—</span>
+          <span id="cpu-pct" style="font-size:10px;color:var(--text-4);width:28px;text-align:right">—</span>
         </div>
         <div style="display:flex;align-items:center;gap:5px">
-          <span style="font-size:9.5px;color:var(--text-4);width:28px;flex-shrink:0">MEM</span>
-          <div style="flex:1;height:3px;background:var(--border);border-radius:999px;overflow:hidden">
-            <div id="mem-bar" style="height:100%;width:0%;background:var(--green-9);border-radius:999px;transition:width .5s ease"></div>
+          <span style="font-size:10px;color:var(--text-4);width:28px;flex-shrink:0">MEM</span>
+          <div style="flex:1;height:4px;background:var(--border);border-radius:999px;overflow:hidden">
+            <div id="mem-bar" style="height:100%;width:0%;background:var(--success-9);border-radius:999px;transition:width .5s ease"></div>
           </div>
-          <span id="mem-pct" style="font-size:9.5px;color:var(--text-4);width:28px;text-align:right">—</span>
+          <span id="mem-pct" style="font-size:10px;color:var(--text-4);width:28px;text-align:right">—</span>
         </div>
       </div>
     </div>
 
   </aside>
 
+  {# ── Topbar ──────────────────────────────────────────────────────────── #}
+  <header class="topbar">
+    {# Mobile menu button #}
+    <button class="mobile-menu-btn" @click="sidebarOpen = !sidebarOpen" aria-label="Open navigation">
+      <i data-lucide="menu" style="width:20px;height:20px;color:var(--text-2)"></i>
+    </button>
+
+    {# Breadcrumb #}
+    <div class="topbar-crumb crumb">
+      {% for label, href in nav_breadcrumbs %}
+        {% if not loop.first %}
+          <span class="sep"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></span>
+        {% endif %}
+        {% if href %}
+          <a href="{{ href }}">{{ label }}</a>
+        {% else %}
+          <span class="{{ 'leaf' if loop.last else '' }}">{{ label }}</span>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {# Global search #}
+    <div class="topbar-search">
+      <div class="input-icon" style="width:100%">
+        <i data-lucide="search" class="icon" style="width:14px;height:14px"></i>
+        <input class="input" id="cmd-trigger" placeholder="Jump to…  tables, pipelines, runs"
+               readonly style="cursor:pointer"
+               @click.prevent="window.dispatchEvent(new CustomEvent('open-cmd'))"
+               @focus="window.dispatchEvent(new CustomEvent('open-cmd'));$el.blur()">
+        <span class="kbd-hint"><kbd class="kbd">⌘K</kbd></span>
+      </div>
+    </div>
+
+    {# Right actions #}
+    <div class="topbar-actions">
+      <div class="btn icon ghost" data-tip="Notifications" id="notif-btn" onclick="toggleNotif()">
+        <i data-lucide="bell" style="width:16px;height:16px"></i>
+        <span id="notif-badge" class="pill error" style="display:none;height:14px;padding:0 5px;font-size:9px;position:absolute;top:-4px;right:-4px;transform:none">0</span>
+      </div>
+      <div id="notif-dropdown" class="modal-overlay" style="display:none;position:absolute;top:100%;right:0;z-index:200;min-width:320px;max-width:400px;margin-top:8px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--r-3);box-shadow:var(--shadow-lg);overflow:hidden">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+          <span style="font-weight:600;font-size:13px">Notifications</span>
+          <span style="flex:1"></span>
+          <button class="btn icon ghost sm" onclick="clearNotifs()"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>
+        </div>
+        <div id="notif-list" style="max-height:300px;overflow:auto;padding:8px">
+          <div style="text-align:center;padding:24px;color:var(--text-4);font-size:12px">No notifications</div>
+        </div>
+      </div>
+      <button class="btn icon ghost" data-tip="Toggle theme" onclick="toggleTheme()">
+        <i id="dex-theme-icon" data-lucide="moon" style="width:16px;height:16px"></i>
+      </button>
+      <form method="post" action="/system/reload-config" style="display:contents">
+        <button type="submit" class="btn icon ghost" data-tip="Reload config from disk"
+                id="reload-cfg-btn" style="position:relative">
+          <i data-lucide="refresh-cw" style="width:16px;height:16px"></i>
+        </button>
+      </form>
+      <button class="btn icon ghost" id="ai-sidebar-btn" data-tip="Dex AI (⌘/)" onclick="dexAiToggle()"
+              style="position:relative">
+        <i data-lucide="zap" style="width:16px;height:16px;color:var(--accent-11)"></i>
+      </button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
+      <form method="post" action="/logout" style="display:contents">
+        <button type="submit" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0">
+          <div class="glyph" style="width:28px;height:28px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg-elev-2);border:1px solid var(--border);color:var(--text-2)">JM</div>
+        </button>
+      </form>
+    </div>
+  </header>
+
   {# ── Main content column ─────────────────────────────────────────────── #}
-  <div class="main-col">
-
-    {# ── Topbar ──────────────────────────────────────────────────────────── #}
-    <div class="topbar" style="border-bottom:1px solid var(--shell-border)">
-
-      {# Breadcrumb #}
-      <div class="pages-crumb crumb">
-        {% for label, href in nav_breadcrumbs %}
-          {% if not loop.first %}
-            <span class="sep"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></span>
-          {% endif %}
-          {% if href %}
-            <a href="{{ href }}">{{ label }}</a>
-          {% else %}
-            <span class="{{ 'leaf' if loop.last else '' }}">{{ label }}</span>
-          {% endif %}
-        {% endfor %}
-      </div>
-
-      {# Global search #}
-      <div class="global-search">
-        <div class="input-icon" style="width:100%">
-          <i data-lucide="search" class="icon" style="width:13px;height:13px"></i>
-          <input class="input" id="cmd-trigger" placeholder="Jump to…  tables, pipelines, runs"
-                 readonly style="cursor:pointer"
-                 @click.prevent="window.dispatchEvent(new CustomEvent('open-cmd'))"
-                 @focus="window.dispatchEvent(new CustomEvent('open-cmd'));$el.blur()">
-          <span class="kbd-hint"><kbd class="kbd">⌘K</kbd></span>
-        </div>
-      </div>
-
-      {# Right actions #}
-      <div class="row" style="gap:4px">
-        <button class="btn icon ghost" data-tip="Notifications">
-          <i data-lucide="bell" style="width:15px;height:15px"></i>
-        </button>
-        <button class="btn icon ghost" data-tip="Toggle theme" onclick="toggleTheme()">
-          <i id="dex-theme-icon" data-lucide="moon" style="width:15px;height:15px"></i>
-        </button>
-        <form method="post" action="/system/reload-config" style="display:contents">
-          <button type="submit" class="btn icon ghost" data-tip="Reload config from disk"
-                  id="reload-cfg-btn" style="position:relative">
-            <i data-lucide="refresh-cw" style="width:15px;height:15px"></i>
-          </button>
-        </form>
-        <button class="btn icon ghost" id="ai-sidebar-btn" data-tip="Dex AI (⌘/)" onclick="dexAiToggle()"
-                style="position:relative">
-          <i data-lucide="zap" style="width:15px;height:15px;color:var(--accent-11)"></i>
-        </button>
-        <div style="width:1px;height:20px;background:var(--border);margin:0 6px"></div>
-        <form method="post" action="/logout" style="display:contents">
-          <button type="submit" data-tip="Sign out" style="background:none;border:none;cursor:pointer;padding:0">
-            <div class="glyph" style="width:26px;height:26px;border-radius:999px;font-size:11px;font-weight:600;flex-shrink:0">JM</div>
-          </button>
-        </form>
-      </div>
-    </div>
-
-    {# ── Content ──────────────────────────────────────────────────────────── #}
+  <main class="content" id="main-content">
     {%- set _cc %}{% block content_class %}{% endblock %}{% endset -%}
-    <div class="content {{ _cc }}" id="main-content">
+    <div class="content-inner{% if _cc %} {{ _cc }}{% endif %}">
+      {% if _cc == 'full-bleed' %}
 
-      {% if 'full-bleed' in _cc %}
-        {% block full_bleed %}{% endblock %}
+      {% block full_bleed %}{% endblock %}
+
       {% else %}
-      <div class="content-inner">
 
-        {% block page_header %}
-        <div class="page-header">
-          <div>
-            <div class="row" style="gap:10px">
-              <h1>{% block page_title %}{% endblock %}</h1>
-              {% block page_badge %}{% endblock %}
-            </div>
-            {% block page_sub %}{% endblock %}
+      {% block page_header %}
+      <header class="page-header">
+        <div>
+          <div class="row" style="gap:10px">
+            <h1>{% block page_title %}{% endblock %}</h1>
+            {% block page_badge %}{% endblock %}
           </div>
-          <div class="actions">{% block page_actions %}{% endblock %}</div>
+          {% block page_sub %}{% endblock %}
         </div>
-        {% endblock %}
+        <div class="actions">{% block page_actions %}{% endblock %}</div>
+      </header>
+      {% endblock %}
 
-        {% block content %}{% endblock %}
+      {% block content %}{% endblock %}
 
-      </div>
       {% endif %}
-
-      {% if next_steps %}
-      <div class="card" style="margin:0 16px 16px;padding:11px 14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-           background:color-mix(in oklch,var(--accent-9) 5%,transparent);border-color:color-mix(in oklch,var(--accent-9) 20%,transparent)">
-        <span style="font-weight:600;font-size:12px;color:var(--accent-11);display:flex;align-items:center;gap:6px">
-          <i data-lucide="sparkles" style="width:13px;height:13px"></i> Next steps
-        </span>
-        {% for s in next_steps %}
-        <a href="{{ s.href }}" class="row" style="gap:5px;text-decoration:none;color:var(--text);font-size:12px">
-          <i data-lucide="{{ s.icon }}" style="width:12px;height:12px;color:var(--accent-11)"></i> {{ s.label }}
-        </a>
-        {% endfor %}
-      </div>
-      {% endif %}
-
     </div>
-  </div>
+  </main>
 
-  {# ── Dex AI pane — rightmost flex child, width transitions 0↔340px ── #}
-  <div class="dex-ai-pane" id="dex-ai-pane">
-    <div class="dex-ai-pane-inner">
-
+  {# ── Dex AI pane — rightmost, width 360px ── #}
+  <aside class="ai-pane" id="dex-ai-pane">
+    <div class="ai-pane-inner">
       {# Header #}
-      <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;
-                  border-bottom:1px solid var(--shell-border);flex-shrink:0">
-        <i data-lucide="zap" style="width:14px;height:14px;color:var(--accent-11);flex-shrink:0"></i>
-        <span style="font-size:13px;font-weight:600;flex:1">Dex AI</span>
+      <div class="ai-pane-header">
+        <i data-lucide="zap" class="icon" style="width:16px;height:16px"></i>
+        <h3>Dex AI</h3>
         <select id="dex-ai-agent-select"
                 onchange="dexAiAgentChange(this.value)"
-                style="font-size:10px;background:var(--bg-input);border:1px solid var(--border);
-                       border-radius:var(--r-2);color:var(--text);padding:2px 4px;max-width:110px;
+                style="font-size:10px;background:var(--bg-elev);border:1px solid var(--border);
+                       border-radius:var(--r-2);color:var(--text);padding:2px 6px;max-width:120px;
                        cursor:pointer;outline:none">
           <option value="">— agent —</option>
         </select>
         <button onclick="dexAiClose()"
-                style="background:none;border:none;cursor:pointer;padding:2px;color:var(--text-4);
+                style="background:none;border:none;cursor:pointer;padding:4px;color:var(--text-4);
                        display:flex;align-items:center;border-radius:var(--r-1)"
                 onmouseenter="this.style.color='var(--text)'"
                 onmouseleave="this.style.color='var(--text-4)'"
                 data-tip="Close (⌘/)">
-          <i data-lucide="x" style="width:14px;height:14px"></i>
+          <i data-lucide="x" style="width:16px;height:16px"></i>
         </button>
       </div>
 
       {# Context pill #}
-      <div id="dex-ai-ctx"
-           style="font-size:10.5px;color:var(--text-4);padding:6px 14px;flex-shrink:0;
-                  border-bottom:1px solid var(--shell-border);line-height:1.4;
-                  min-height:28px;display:flex;align-items:flex-start;gap:6px">
-        <i data-lucide="info" style="width:11px;height:11px;color:var(--accent-11);flex-shrink:0;margin-top:1px"></i>
+      <div id="dex-ai-ctx" class="ai-pane-ctx"
+           style="display:flex;align-items:flex-start;gap:8px">
+        <i data-lucide="info" style="width:12px;height:12px;color:var(--accent-11);flex-shrink:0;margin-top:1px"></i>
         <span id="dex-ai-ctx-text">Loading context…</span>
       </div>
 
       {# Messages #}
-      <div id="dex-ai-msgs"
-           style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+      <div id="dex-ai-msgs" class="ai-pane-msgs">
         <div data-empty style="text-align:center;color:var(--text-4);font-size:12px;margin-top:auto;padding:20px 0;line-height:1.6">
           Ask anything about your data,<br>pipelines, models, or system.
         </div>
       </div>
 
       {# Input #}
-      <div style="padding:10px 12px;border-top:1px solid var(--shell-border);flex-shrink:0">
+      <div class="ai-pane-input">
         <div style="display:flex;gap:8px;align-items:flex-end">
           <textarea id="dex-ai-input"
                     placeholder="Ask Dex AI…"
                     rows="2"
-                    style="flex:1;resize:none;background:var(--bg-input);border:1px solid var(--border);
+                    style="flex:1;resize:none;background:var(--bg-elev);border:1px solid var(--border);
                            border-radius:var(--r-2);padding:8px 10px;font-size:12.5px;
                            color:var(--text);font-family:inherit;line-height:1.5;
                            outline:none;transition:border-color var(--d-fast)"
@@ -392,27 +365,26 @@
                          display:flex;align-items:center;gap:5px;transition:opacity var(--d-fast)"
                   onmouseenter="this.style.opacity='.85'"
                   onmouseleave="this.style.opacity='1'">
-            <i data-lucide="send" style="width:13px;height:13px"></i>
+            <i data-lucide="send" style="width:14px;height:14px"></i>
           </button>
         </div>
         <div style="font-size:10px;color:var(--text-4);margin-top:5px;padding-left:2px">
           Shift+Enter for newline · ⌘/ to toggle · powered by Ollama
         </div>
       </div>
-
     </div>
-  </div>
+  </aside>
 
-</div>{# .two-rail-shell #}
+</div>{# .shell #}
 
-{# ── Command palette — driven by nav_cmd_pages from nav.py ───────────────────── #}
+{# ── Command palette ───────────────────────────────────────────────────── #}
 <script id="nav-data" type="application/json">{{ nav_cmd_pages | tojson }}</script>
-<div id="cmd-palette" style="display:none" x-data="cmdPalette()"
+<div id="cmd-palette" class="cmd-palette" x-data="cmdPalette()"
      @open-cmd.window="open()" @keydown.window.meta.k.prevent="open()" @keydown.window.ctrl.k.prevent="open()">
   <div class="cmd-overlay" @click="close()" x-show="isOpen">
-    <div class="cmd-modal fade-in" @click.stop>
+    <div class="cmd-modal">
       <div class="cmd-input-row">
-        <i data-lucide="search" style="width:14px;height:14px;color:var(--text-4);flex-shrink:0"></i>
+        <i data-lucide="search" class="icon" style="width:16px;height:16px"></i>
         <input x-ref="input" x-model="q" @keydown.escape="close()" @keydown.enter="goFirst()"
                @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)"
                placeholder="Jump to a page, table, action…" style="width:100%" />
@@ -425,12 +397,12 @@
             <template x-for="(item, ii) in group.items" :key="ii">
               <a :href="item.href" class="cmd-item" :class="item.focused ? 'focused' : ''"
                  @click="close()" style="text-decoration:none;color:inherit">
-                <span class="ci-glyph">
-                  <i :data-lucide="item.icon" style="width:13px;height:13px"></i>
+                <span class="glyph">
+                  <i :data-lucide="item.icon" style="width:14px;height:14px"></i>
                 </span>
                 <div style="flex:1;min-width:0">
-                  <div class="ci-label" x-text="item.label"></div>
-                  <div class="ci-sub" x-text="item.sub || ''"></div>
+                  <div class="label" x-text="item.label"></div>
+                  <div class="sub" x-text="item.sub || ''"></div>
                 </div>
                 <i data-lucide="arrow-right" style="width:12px;height:12px;color:var(--text-4)"></i>
               </a>
@@ -438,7 +410,7 @@
           </div>
         </template>
         <div x-show="filteredGroups().length === 0"
-             class="muted" style="padding:20px 14px;text-align:center;font-size:13px">
+             class="muted" style="padding:20px;text-align:center;font-size:13px">
           No results.
         </div>
       </div>
@@ -452,53 +424,48 @@
   </div>
 </div>
 
-{# ── Confirm dialog ────────────────────────────────────────────────────────────── #}
-<dialog id="dex-confirm-dialog" style="border-radius:var(--r-3);border:1px solid var(--border);background:var(--bg-elev);padding:24px;min-width:320px;max-width:420px;color:var(--text)">
-  <div style="display:flex;flex-direction:column;gap:16px">
-    <div style="display:flex;align-items:flex-start;gap:12px">
-      <span style="width:32px;height:32px;border-radius:var(--r-2);background:color-mix(in oklch,var(--red-9) 15%,transparent);
-                   border:1px solid color-mix(in oklch,var(--red-9) 30%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <i data-lucide="trash-2" style="width:15px;height:15px;color:var(--red-9)"></i>
-      </span>
-      <div>
-        <div style="font-weight:600;font-size:14px" id="confirm-title">Delete?</div>
-        <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.5" id="confirm-body">This action cannot be undone.</div>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn ghost" onclick="document.getElementById('dex-confirm-dialog').close()">Cancel</button>
-      <button class="btn" id="confirm-ok-btn" style="background:var(--red-9);color:#fff;border-color:var(--red-9)" onclick="dexConfirmExecute()">Delete</button>
-    </div>
-  </div>
-</dialog>
-
-{# ── Toast container ──────────────────────────────────────────────────────────── #}
+{# ── Toast container ───────────────────────────────────────────────────── #}
 <div id="toast-container" x-data="toastStore()"
      @show-toast.window="add($event.detail.msg, $event.detail.kind)"
-     style="position:fixed;bottom:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+     class="toast-container">
   <template x-for="t in toasts" :key="t.id">
-    <div class="card"
-         style="pointer-events:auto;min-width:260px;max-width:400px;animation:slidedown .2s ease both;cursor:pointer;
-                display:flex;align-items:flex-start;gap:10px;padding:12px 14px"
-         :style="t.kind === 'success' ? 'border-color:var(--green-6)' : t.kind === 'error' ? 'border-color:var(--red-6)' : ''"
+    <div class="toast"
+         :class="t.kind"
+         style="pointer-events:auto;cursor:pointer"
          @click="remove(t.id)">
       <i :data-lucide="t.kind === 'success' ? 'check-circle-2' : t.kind === 'error' ? 'x-circle' : 'info'"
-         :style="t.kind === 'success' ? 'color:var(--green-9)' : t.kind === 'error' ? 'color:var(--red-9)' : 'color:var(--blue-9)'"
-         style="width:15px;height:15px;flex-shrink:0;margin-top:1px"></i>
-      <span x-text="t.msg" style="font-size:var(--text-sm);line-height:1.5;flex:1"></span>
+         :class="t.kind"
+         class="icon"
+         style="width:16px;height:16px;flex-shrink:0;margin-top:1px"></i>
+      <span class="msg" x-text="t.msg" style="font-size:var(--text-sm);line-height:1.5;flex:1"></span>
     </div>
   </template>
 </div>
 
-{% if flash %}
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
-  });
-</script>
-{% endif %}
-
-<div id="top-loader"></div>
+{# ── Confirm dialog ────────────────────────────────────────────────────── #}
+<dialog id="dex-confirm-dialog" class="modal modal-sm"
+        style="border-radius:var(--r-3);border:1px solid var(--border);background:var(--bg-elev);padding:0;min-width:360px;max-width:440px;color:var(--text);margin:auto">
+  <form method="dialog">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:32px;height:32px;border-radius:var(--r-2);background:color-mix(in oklch,var(--error-9) 15%,transparent);
+                     border:1px solid color-mix(in oklch,var(--error-9) 30%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i data-lucide="trash-2" style="width:16px;height:16px;color:var(--error-9)"></i>
+        </span>
+        <div>
+          <div style="font-weight:600;font-size:14px" id="confirm-title">Delete?</div>
+          <div class="muted" style="font-size:12px;margin-top:2px" id="confirm-body">This action cannot be undone.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn ghost" value="cancel">Cancel</button>
+        <button class="btn danger" id="confirm-ok-btn" value="default">Delete</button>
+      </div>
+    </div>
+  </form>
+</dialog>
 
 {# Lucide #}
 <script src="/static/vendor/lucide.min.js"></script>
@@ -529,6 +496,7 @@ document.addEventListener('alpine:init', () => {
 function dexApp() {
   return {
     get sidebarOpen() { return Alpine.store('shell').sidebarOpen; },
+    set sidebarOpen(v) { Alpine.store('shell').sidebarOpen = v; },
     closeSidebar()    { Alpine.store('shell').sidebarOpen = false; },
   };
 }
@@ -539,13 +507,13 @@ function toastStore() {
     add(msg, kind = 'info') {
       const id = Date.now();
       this.toasts.push({ id, msg, kind });
-      setTimeout(() => this.remove(id), 4500);
+      setTimeout(() => this.remove(id), 5000);
     },
     remove(id) { this.toasts = this.toasts.filter(t => t.id !== id); },
   };
 }
 
-// ── Command palette — data injected from nav.py via #nav-data ────────────────
+// ── Command palette ──────────────────────────────────────────────────────────
 function cmdPalette() {
   const ALL_PAGES = JSON.parse(document.getElementById('nav-data').textContent);
 
@@ -553,14 +521,14 @@ function cmdPalette() {
     isOpen: false,
     q: '',
     open() {
-      this.$el.style.display = 'block';
+      this.$el.classList.add('open');
       this.isOpen = true;
       this.q = '';
       this.$nextTick(() => { if (this.$refs.input) this.$refs.input.focus(); lucide.createIcons(); });
     },
     close() {
       this.isOpen = false;
-      this.$el.style.display = 'none';
+      this.$el.classList.remove('open');
     },
     filteredGroups() {
       const q = this.q.toLowerCase();
@@ -601,6 +569,60 @@ function cmdPalette() {
   });
 })();
 
+// ── Relative time helper ─────────────────────────────────────────────────────
+globalThis.relativeTime = function (iso) {
+  if (!iso) return '—';
+  const diff = new Date(iso) - Date.now();
+  if (diff < 0) return 'soon';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return 'in ' + mins + 'm';
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return 'in ' + hrs + 'h' + (rem ? ' ' + rem + 'm' : '');
+};
+
+// ── data-ts live ticker ──────────────────────────────────────────────────────
+(function () {
+  function _tickTs() {
+    document.querySelectorAll('[data-ts]').forEach(function (el) {
+      el.textContent = relativeTime(el.dataset.ts);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', _tickTs);
+  setInterval(_tickTs, 30000);
+  document.addEventListener('htmx:afterSwap', function () {
+    _tickTs();
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  });
+})();
+
+// ── System metrics poll ──────────────────────────────────────────────────────
+(function () {
+  function _updateMetrics() {
+    fetch('/system/metrics-live')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        const cpuBar = document.getElementById('cpu-bar');
+        const memBar = document.getElementById('mem-bar');
+        const cpuPct = document.getElementById('cpu-pct');
+        const memPct = document.getElementById('mem-pct');
+        if (cpuBar) { cpuBar.style.width = Math.min(100, Math.max(0, d.cpu_pct)) + '%'; }
+        if (memBar) { memBar.style.width = Math.min(100, Math.max(0, d.mem_pct)) + '%'; }
+        if (cpuPct) { cpuPct.textContent = d.cpu_pct.toFixed(1) + '%'; }
+        if (memPct) { memPct.textContent = d.mem_pct.toFixed(1) + '%'; }
+        // Background pipeline completions have no request/response to ride an
+        // HX-Trigger header on — they queue here and ride this existing poll.
+        (d.toasts || []).forEach(t => window.dispatchEvent(new CustomEvent('show-toast', { detail: t })));
+      })
+      .catch(() => {});
+  }
+  document.addEventListener('DOMContentLoaded', _updateMetrics);
+  setInterval(_updateMetrics, 5000);
+  document.addEventListener('htmx:afterSwap', _updateMetrics);
+})();
+
 // ── HTMX → toast bridge ──────────────────────────────────────────────────────
 document.addEventListener('htmx:afterRequest', (e) => {
   const trigger = e.detail.xhr?.getResponseHeader('HX-Trigger');
@@ -611,125 +633,23 @@ document.addEventListener('htmx:afterRequest', (e) => {
   } catch {}
 });
 
-// ── Sortable + paginated tables ───────────────────────────────────────────────
-(function () {
-  function initSortable(table) {
-    if (table.dataset.sortInit) return;
-    table.dataset.sortInit = '1';
-    table.querySelectorAll('th.sortable').forEach((th) => {
-      th.style.cursor = 'pointer';
-      if (!th.getAttribute('tabindex')) th.setAttribute('tabindex', '0');
-      function doSort() {
-        const asc = !th.classList.contains('sort-asc');
-        table.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-        const col = th.cellIndex;
-        const tbody = table.querySelector('tbody');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        rows.sort((a, b) => {
-          const av = (a.cells[col]?.textContent ?? '').trim();
-          const bv = (b.cells[col]?.textContent ?? '').trim();
-          const an = Number.parseFloat(av.replace(/[^0-9.-]/g, ''));
-          const bn = Number.parseFloat(bv.replace(/[^0-9.-]/g, ''));
-          const cmp = (!Number.isNaN(an) && !Number.isNaN(bn)) ? an - bn : av.localeCompare(bv);
-          return asc ? cmp : -cmp;
-        });
-        rows.forEach(r => tbody.appendChild(r));
-        if (table._pgRender) table._pgRender();
-      }
-      th.addEventListener('click', doSort);
-      th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); } });
-    });
-  }
+// Global toast API
+window.showToast = (msg, kind = 'info') => {
+  window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, kind } }));
+};
 
-  function initPagination(table, pageSize) {
-    if (table.dataset.pgInit) return;
-    table.dataset.pgInit = '1';
-    let page = 1;
-    function render() {
-      const all = Array.from(table.querySelectorAll('tbody tr'));
-      const visible = all.filter(r => !r.dataset.filterHide);
-      const total = visible.length;
-      const pages = Math.max(1, Math.ceil(total / pageSize));
-      if (page > pages) page = pages;
-      all.forEach(r => { if (!r.dataset.filterHide) r.style.display = 'none'; });
-      visible.slice((page - 1) * pageSize, page * pageSize).forEach(r => { r.style.display = ''; });
-      let pg = table._pgEl;
-      if (!pg) {
-        pg = document.createElement('div');
-        pg.className = 'table-pagination';
-        pg.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)';
-        (table.closest('.card') || table.parentElement).appendChild(pg);
-        table._pgEl = pg;
-      }
-      if (pages <= 1) { pg.style.display = 'none'; return; }
-      pg.style.display = 'flex';
-      const start = (page - 1) * pageSize + 1;
-      const end   = Math.min(page * pageSize, total);
-      let btnHtml = '';
-      const lo = Math.max(1, page - 2), hi = Math.min(pages, page + 2);
-      if (lo > 1) btnHtml += `<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="1">1</button>${lo > 2 ? '<span style="color:var(--text-4)">…</span>' : ''}`;
-      for (let i = lo; i <= hi; i++) {
-        btnHtml += `<button class="btn sm ${i===page?'primary':'ghost'}" style="min-width:28px;padding:0 6px" data-pg="${i}">${i}</button>`;
-      }
-      if (hi < pages) btnHtml += `${hi < pages - 1 ? '<span style="color:var(--text-4)">…</span>' : ''}<button class="btn sm ghost" style="min-width:28px;padding:0 6px" data-pg="${pages}">${pages}</button>`;
-      pg.innerHTML =
-        `<span style="flex:1;color:var(--text-3)">${start}–${end} of ${total}</span>` +
-        `<button ${page===1?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-prev>‹ Prev</button>` +
-        btnHtml +
-        `<button ${page===pages?'disabled':''} class="btn sm ghost" style="padding:0 8px" data-pg-next>Next ›</button>`;
-      pg.querySelector('[data-pg-prev]')?.addEventListener('click', () => { if (page > 1) { page--; render(); } });
-      pg.querySelector('[data-pg-next]')?.addEventListener('click', () => { if (page < pages) { page++; render(); } });
-      pg.querySelectorAll('[data-pg]').forEach(b => {
-        b.addEventListener('click', () => { page = Number(b.dataset.pg); render(); });
-      });
-    }
-    table._pgRender = render;
-    render();
-  }
+// ── Notifications dropdown ────────────────────────────────────────────────────
+function toggleNotif() {
+  const dd = document.getElementById('notif-dropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+function clearNotifs() {
+  const list = document.getElementById('notif-list');
+  if (list) list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-4);font-size:12px">No notifications</div>';
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.style.display = 'none'; badge.textContent = '0'; }
+}
 
-  function initFilter(input) {
-    if (input.dataset.filterInit || !input.dataset.table) return;
-    input.dataset.filterInit = '1';
-    const table = document.getElementById(input.dataset.table);
-    if (!table) return;
-    input.addEventListener('input', () => {
-      const q = input.value.toLowerCase();
-      table.querySelectorAll('tbody tr').forEach(r => {
-        r.dataset.filterHide = r.textContent.toLowerCase().includes(q) ? '' : '1';
-        r.style.display = r.dataset.filterHide ? 'none' : '';
-      });
-      if (table._pgRender) table._pgRender();
-    });
-  }
-
-  function boot(root) {
-    (root || document).querySelectorAll('table.tbl, table.dex-table').forEach(t => {
-      initSortable(t);
-      const rowCount  = t.querySelectorAll('tbody tr').length;
-      const pageSize  = parseInt(t.dataset.pageSize, 10) || 20;
-      const threshold = parseInt(t.dataset.pageThreshold, 10) || 10;
-      if (rowCount > threshold) initPagination(t, pageSize);
-    });
-    (root || document).querySelectorAll('.dex-table-filter').forEach(initFilter);
-  }
-  document.addEventListener('DOMContentLoaded', () => boot());
-  document.addEventListener('htmx:afterSwap', e => boot(e.target));
-})();
-</script>
-
-{# Mobile overlay — two-rail shell handles mobile via CSS in studio.css #}
-<button onclick="Alpine.store('shell').sidebarOpen = !Alpine.store('shell').sidebarOpen"
-        id="mobile-menu-btn"
-        style="display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--bg-elev);
-               border:1px solid var(--border);border-radius:var(--r-2);padding:6px;cursor:pointer;
-               box-shadow:var(--shadow-md)" aria-label="Open navigation">
-  <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-2)"></i>
-</button>
-
-{% block scripts %}{% endblock %}
-
-<script>
 // ── Dex AI pane ───────────────────────────────────────────────────────────────
 (function () {
   let _open = false;
@@ -750,7 +670,6 @@ document.addEventListener('htmx:afterRequest', (e) => {
         const lines = (data.context || '').split('\n').filter(Boolean);
         ctxTx().textContent = lines.slice(0, 4).join(' · ') || 'Ready';
 
-        // populate agent dropdown
         const s = sel();
         if (!s) return;
         const agents = data.agents || [];
@@ -799,6 +718,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
     if (_open) return;
     _open = true;
     pane().classList.add('open');
+    document.getElementById('shell').classList.add('ai-open');
     if (btn()) btn().style.background = 'color-mix(in oklch,var(--accent-9) 15%,transparent)';
     lucide.createIcons({ el: pane() });
     _loadCtx();
@@ -809,6 +729,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
     if (!_open) return;
     _open = false;
     pane().classList.remove('open');
+    document.getElementById('shell').classList.remove('ai-open');
     if (btn()) btn().style.background = '';
   };
 
@@ -875,7 +796,6 @@ document.addEventListener('htmx:afterRequest', (e) => {
     bub.textContent = '…';
     const agent = (sel() && sel().value) || _agent || 'bot';
 
-    // Long messages (>1500 chars) → POST chat (no streaming, but handles full agent loop)
     if (msg.length > 1500) {
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
       fetch('/intelligence/chat', {
@@ -885,15 +805,14 @@ document.addEventListener('htmx:afterRequest', (e) => {
       })
         .then(r => r.json())
         .then(d => {
-          bub.style.color = d.error ? 'var(--red-9)' : '';
+          bub.style.color = d.error ? 'var(--error-9)' : '';
           bub.textContent = d.error ? 'Error: ' + d.error : (d.content || '(no response)');
           msgs().scrollTop = msgs().scrollHeight;
         })
-        .catch(e => { bub.style.color = 'var(--red-9)'; bub.textContent = 'Failed: ' + e.message; });
+        .catch(e => { bub.style.color = 'var(--error-9)'; bub.textContent = 'Failed: ' + e.message; });
       return;
     }
 
-    // SSE streaming — tokens + SQL tool call + result table
     const url = '/intelligence/stream?agent=' + encodeURIComponent(agent) + '&message=' + encodeURIComponent(msg);
     const es = new EventSource(url);
     let textBuf = '';
@@ -922,7 +841,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
       }
 
       if (d.error) {
-        bub.style.color = 'var(--red-9)';
+        bub.style.color = 'var(--error-9)';
         if (!textBuf) bub.textContent = 'Error: ' + d.error;
         es.close();
       }
@@ -944,7 +863,7 @@ document.addEventListener('htmx:afterRequest', (e) => {
 
     es.onerror = function () {
       if (!textBuf) {
-        bub.style.color = 'var(--red-9)';
+        bub.style.color = 'var(--error-9)';
         bub.textContent = 'Connection error — check Ollama is running.';
       }
       es.close();
@@ -957,128 +876,30 @@ document.addEventListener('htmx:afterRequest', (e) => {
   });
 }());
 
-// ── Relative time helper (shared — used by pipelines, scheduler, etc.) ───────
-globalThis.relativeTime = function (iso) {
-  if (!iso) return '—';
-  const diff = new Date(iso) - Date.now();
-  if (diff < 0) return 'soon';
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return 'in ' + mins + 'm';
-  const hrs = Math.floor(mins / 60);
-  const rem = mins % 60;
-  return 'in ' + hrs + 'h' + (rem ? ' ' + rem + 'm' : '');
+// ── Confirm dialog ────────────────────────────────────────────────────────────
+window.dexConfirm = function (formEl, title, body) {
+  const dialog = document.getElementById('dex-confirm-dialog');
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-body').textContent = body;
+  const okBtn = document.getElementById('confirm-ok-btn');
+  okBtn.onclick = () => {
+    dialog.close();
+    formEl.submit();
+  };
+  dialog.showModal();
 };
 
-// ── data-ts live ticker — updates all [data-ts] spans every 30s ───────────
-(function () {
-  function _tickTs() {
-    document.querySelectorAll('[data-ts]').forEach(function (el) {
-      el.textContent = relativeTime(el.dataset.ts);
-    });
-  }
-  document.addEventListener('DOMContentLoaded', _tickTs);
-  setInterval(_tickTs, 30000);
-  document.addEventListener('htmx:afterSwap', function () {
-    _tickTs();
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-  });
-}());
+</script>
 
-// ── System metrics poll (CPU / MEM bars) ──────────────────────────────────────
-(function () {
-  function _updateMetrics() {
-    fetch('/system/metrics-live')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (!d) return;
-        const cpuPct = d.cpu_pct || 0;
-        const memPct = d.mem_pct || 0;
-        const cpuBar = document.getElementById('cpu-bar');
-        const memBar = document.getElementById('mem-bar');
-        const cpuTxt = document.getElementById('cpu-pct');
-        const memTxt = document.getElementById('mem-pct');
-        if (cpuBar) cpuBar.style.width = cpuPct + '%';
-        if (memBar) memBar.style.width = memPct + '%';
-        if (cpuTxt) cpuTxt.textContent = cpuPct + '%';
-        if (memTxt) memTxt.textContent = memPct + '%';
-        // colour the bar red if high
-        if (cpuBar) cpuBar.style.background = cpuPct > 80 ? 'var(--red-9)' : 'var(--accent-9)';
-        if (memBar) memBar.style.background = memPct > 85 ? 'var(--red-9)' : 'var(--green-9)';
-      })
-      .catch(() => {});
-  }
+{% if flash %}
+<script>
   document.addEventListener('DOMContentLoaded', () => {
-    _updateMetrics();
-    setInterval(_updateMetrics, 5000);
+    window.dispatchEvent(new CustomEvent('show-toast', {detail: {msg: {{ flash.msg | tojson }}, kind: {{ flash.kind | tojson }}}}));
   });
-}());
 </script>
+{% endif %}
 
-<script>
-// ── Sidebar collapse ──────────────────────────────────────────────────────────
-(function () {
-  const KEY = 'dex-sidebar';
-  function _applySidebar(mode) {
-    const shell = document.getElementById('shell');
-    if (!shell) return;
-    shell.setAttribute('data-sidebar', mode);
-    const icon  = document.getElementById('sidebar-toggle-icon');
-    const label = document.getElementById('sidebar-toggle-label');
-    const collapsed = mode === 'icons';
-    if (icon)  icon.dataset.lucide = collapsed ? 'panel-left-open' : 'panel-left-close';
-    if (label) label.style.display = collapsed ? 'none' : '';
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-  }
-  globalThis.toggleSidebar = function () {
-    const shell = document.getElementById('shell');
-    const next = (shell?.getAttribute('data-sidebar') === 'icons') ? 'labeled' : 'icons';
-    localStorage.setItem(KEY, next);
-    _applySidebar(next);
-  };
-  document.addEventListener('DOMContentLoaded', function () {
-    const saved = localStorage.getItem(KEY);
-    if (saved && saved !== 'labeled') _applySidebar(saved);
-  });
-}());
+{% block scripts %}{% endblock %}
 
-// ── Global confirm dialog ─────────────────────────────────────────────────────
-(function () {
-  let _pendingForm = null;
-  globalThis.dexConfirm = function (form, title, body) {
-    _pendingForm = form;
-    const dlg = document.getElementById('dex-confirm-dialog');
-    if (!dlg) { form.submit(); return; }
-    document.getElementById('confirm-title').textContent = title || 'Delete?';
-    document.getElementById('confirm-body').innerHTML    = body  || 'This action cannot be undone.';
-    lucide.createIcons({ el: dlg });
-    dlg.showModal();
-  };
-  globalThis.dexConfirmExecute = function () {
-    const dlg = document.getElementById('dex-confirm-dialog');
-    if (dlg) dlg.close();
-    if (_pendingForm) {
-      const f = _pendingForm; _pendingForm = null;
-      if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }
-    }
-  };
-}());
-</script>
-<script>
-/* UI prefs — persisted in localStorage, applied on every page load */
-(function () {
-  var w = parseInt(localStorage.getItem('dex_window_width') || '0', 10);
-  var h = parseInt(localStorage.getItem('dex_window_height') || '0', 10);
-  /* Window resize listener — debounced at 500 ms */
-  var _resizeTimer;
-  window.addEventListener('resize', function () {
-    clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(function () {
-      localStorage.setItem('dex_window_width', String(window.innerWidth));
-      localStorage.setItem('dex_window_height', String(window.innerHeight));
-    }, 500);
-  });
-}());
-</script>
 </body>
 </html>

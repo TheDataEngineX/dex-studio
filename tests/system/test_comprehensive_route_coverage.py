@@ -281,6 +281,9 @@ _KNOWN_JSON_AUTH = {  # routes using JsonReadDep — return 401 not 303 redirect
     "/data/pipelines/status",
     "/data/pipelines/runs/all",
     "/data/pipelines/{name}/runs",
+    "/data/pipelines/queue/status",
+    "/data/pipelines/metadata",
+    "/data/sql/tables",
     "/intelligence/stream",
     "/intelligence/chat",
     "/intelligence/native",
@@ -579,10 +582,6 @@ class TestSystemRoutes:
 
     def test_system_runs(self, authenticated_client: TestClient) -> None:
         r = authenticated_client.get("/system/runs")
-        assert r.status_code in (200, 303)
-
-    def test_system_costs(self, authenticated_client: TestClient) -> None:
-        r = authenticated_client.get("/system/costs")
         assert r.status_code in (200, 303)
 
     def test_system_alerting(self, authenticated_client: TestClient) -> None:

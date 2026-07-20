@@ -21,16 +21,16 @@
 {% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
+<div class="animate-fade-in">
 
 {# ── Filter bar ───────────────────────────────────────────────────────────── #}
-<div class="card" style="padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<div class="card" style="padding:var(--space-3);display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
   <button class="chip active" id="f-all"     onclick="setStatusFilter('all',this)">All <span class="count">{{ pipelines | length }}</span></button>
   <button class="chip" id="f-running" onclick="setStatusFilter('running',this)" style="color:var(--accent-9)">Running <span class="count">{{ pipelines | selectattr('status','equalto','running') | list | length }}</span></button>
-  <button class="chip" id="f-queued" onclick="setStatusFilter('queued',this)" style="color:var(--yellow-9)">Queued <span class="count">{{ pipelines | selectattr('status','equalto','queued') | list | length }}</span></button>
-  <button class="chip" id="f-success" onclick="setStatusFilter('success',this)" style="color:var(--green-9)">Success <span class="count">{{ pipelines | selectattr('status','in',['success','succeeded','ok']) | list | length }}</span></button>
-  <button class="chip" id="f-failed"  onclick="setStatusFilter('failed',this)"  style="color:var(--red-9)">Failed <span class="count">{{ pipelines | selectattr('status','in',['error','failed']) | list | length }}</span></button>
-  <button class="chip" id="f-skipped"  onclick="setStatusFilter('skipped',this)"  style="color:var(--blue-9)">Skipped <span class="count">{{ pipelines | selectattr('status','equalto','skipped') | list | length }}</span></button>
+  <button class="chip" id="f-queued" onclick="setStatusFilter('queued',this)" style="color:var(--warning-9)">Queued <span class="count">{{ pipelines | selectattr('status','equalto','queued') | list | length }}</span></button>
+  <button class="chip" id="f-success" onclick="setStatusFilter('success',this)" style="color:var(--success-9)">Success <span class="count">{{ pipelines | selectattr('status','in',['success','succeeded','ok']) | list | length }}</span></button>
+  <button class="chip" id="f-failed"  onclick="setStatusFilter('failed',this)"  style="color:var(--error-9)">Failed <span class="count">{{ pipelines | selectattr('status','in',['error','failed']) | list | length }}</span></button>
+  <button class="chip" id="f-skipped"  onclick="setStatusFilter('skipped',this)"  style="color:var(--info-9)">Skipped <span class="count">{{ pipelines | selectattr('status','equalto','skipped') | list | length }}</span></button>
   <button class="chip" id="f-never"   onclick="setStatusFilter('never',this)">Never run <span class="count">{{ pipelines | selectattr('status','in',['never','idle','']) | list | length }}</span></button>
 
   <div class="div-x" style="height:22px"></div>
@@ -43,28 +43,28 @@
   </select>
 
   <div style="flex:1"></div>
-  <div class="input-icon" style="width:260px">
+  <div class="input-icon" style="width:280px">
     <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
     <input class="input" id="f-search" placeholder="search pipelines…" style="height:26px;font-size:12px;font-family:var(--font-mono)" oninput="applyPipeFilters()">
   </div>
 </div>
 
 {# ── Pipelines table ──────────────────────────────────────────────────────── #}
-<div class="card bare" style="margin-top:16px">
+<div class="card card-bare" style="margin-top:var(--space-3)">
   {% if pipelines %}
-  <table class="dex-table" id="pipe-table" style="font-size:12.5px">
+  <table class="tbl" id="pipe-table" style="font-size:var(--text-sm)">
     <thead>
       <tr>
         <th class="sortable" data-sort-key="name" onclick="sortPipeTable(this)">Name</th>
         <th class="sortable" data-sort-key="status" onclick="sortPipeTable(this)">Status</th>
-        <th style="width:64px">Layer</th>
+        <th style="width:72px">Layer</th>
         <th class="sortable" data-sort-key="schedule" onclick="sortPipeTable(this)">Schedule</th>
         <th class="sortable" data-sort-key="last-run" onclick="sortPipeTable(this)">Last run</th>
         <th class="sortable" data-sort-key="next-run" onclick="sortPipeTable(this)">Next run</th>
         <th class="sortable num" data-sort-key="duration" onclick="sortPipeTable(this)">Duration</th>
         <th class="sortable num" data-sort-key="rows-out" onclick="sortPipeTable(this)">Rows out</th>
         <th style="width:60px">Trend</th>
-        <th style="width:70px"></th>
+        <th style="width:80px"></th>
       </tr>
     </thead>
     <tbody id="pipe-table-body">
@@ -73,6 +73,7 @@
       {% set failed  = p.status in ('error','failed') %}
       {% set ok      = p.status in ('success','succeeded') %}
       {% set skipped = p.status == 'skipped' %}
+      {% set queued  = p.status == 'queued' %}
       {% set layer   = 'bronze' if p.name.startswith('bronze_') else 'silver' if p.name.startswith('silver_') else 'gold' if p.name.startswith('gold_') else 'other' %}
       <tr class="list-row pipe-row"
           data-name="{{ p.name }}"
@@ -103,22 +104,22 @@
           {% else %}<span class="pill" data-status-pill style="height:16px;font-size:9.5px">{{ p.status or 'never' }}</span>
           {% endif %}
           <div data-progress-wrap style="display:{{ 'block' if running else 'none' }};margin-top:4px;width:70px">
-            <div style="height:3px;border-radius:2px;background:var(--shell-border);overflow:hidden">
+            <div style="height:3px;border-radius:2px;background:var(--border);overflow:hidden">
               <div data-progress-bar style="height:100%;width:0%;background:var(--accent-9);transition:width .3s"></div>
             </div>
             <div data-progress-label style="font-size:8.5px;color:var(--text-4);margin-top:1px"></div>
           </div>
         </td>
         <td>
-          <span class="chip" style="height:18px;font-size:9.5px;padding:0 7px;text-transform:capitalize">{{ layer }}</span>
+          <span class="layer-chip {{ layer }}">{{ layer }}</span>
         </td>
-        <td class="mono dim" style="font-size:11.5px">{{ p.schedule or 'manual' }}</td>
-        <td class="mono dim" style="font-size:11.5px" data-last-run-text>{{ p.last_run or 'never' }}</td>
-        <td class="mono dim" style="font-size:11.5px">
+        <td class="mono dim" style="font-size:var(--text-xs)">{{ p.schedule or 'manual' }}</td>
+        <td class="mono dim" style="font-size:var(--text-xs)" data-last-run-text>{{ p.last_run or 'never' }}</td>
+        <td class="mono dim" style="font-size:var(--text-xs)">
           {% if p.next_run_at %}<span data-ts="{{ p.next_run_at }}">—</span>{% else %}—{% endif %}
         </td>
-        <td class="num mono dim" style="font-size:11.5px">{{ p.duration_ms or '—' }}</td>
-        <td class="num mono dim" style="font-size:11.5px">{{ '{:,}'.format(p.rows_out | int) if p.rows_out and p.rows_out != '—' else '—' }}</td>
+        <td class="num mono dim" style="font-size:var(--text-xs)">{{ p.duration_ms or '—' }}</td>
+        <td class="num mono dim" style="font-size:var(--text-xs)">{{ '{:,}'.format(p.rows_out | int) if p.rows_out and p.rows_out != '—' else '—' }}</td>
         <td>
           <div class="sparkbar" style="height:16px;width:48px">
             {% for col in sparkbar_by_pipeline.get(p.name, []) %}
@@ -131,13 +132,13 @@
             <form method="post" action="/data/pipelines/run/{{ p.name }}" style="display:inline">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <button type="submit" class="btn icon ghost sm" title="Run now">
-                <i data-lucide="play" style="width:11px;height:11px"></i>
+                <i data-lucide="play" style="width:12px;height:12px"></i>
               </button>
             </form>
             <form method="post" action="/data/pipelines/delete/{{ p.name }}"
-                  onsubmit="event.preventDefault();event.stopPropagation();dexConfirm(this,'Delete pipeline?','This will permanently remove &quot;{{ p.name }}&quot; and its run history.')">
-              <button type="submit" class="btn icon ghost sm" title="Delete pipeline" style="color:var(--red-9)">
-                <i data-lucide="trash-2" style="width:11px;height:11px"></i>
+                  onsubmit="event.preventDefault();event.stopPropagation();dexConfirm(this,'Delete pipeline?','This will permanently remove "{{ p.name }}" and its run history.')">
+              <button type="submit" class="btn icon ghost sm" title="Delete pipeline" style="color:var(--error-9)">
+                <i data-lucide="trash-2" style="width:12px;height:12px"></i>
               </button>
             </form>
           </div>
@@ -147,10 +148,10 @@
     </tbody>
   </table>
   {% else %}
-  <div class="dex-empty-state" style="padding:48px 16px">
-    <i data-lucide="workflow" style="width:28px;height:28px;opacity:.3;margin-bottom:12px"></i>
-    <div style="font-size:var(--text-sm);font-weight:500;margin-bottom:4px">No pipelines yet</div>
-    <div class="muted" style="font-size:var(--text-xs)">Add a pipeline to get started.</div>
+  <div class="empty-state">
+    <i data-lucide="workflow" class="icon"></i>
+    <div class="title">No pipelines yet</div>
+    <div class="desc">Add a pipeline to get started.</div>
   </div>
   {% endif %}
 </div>
@@ -161,20 +162,20 @@
 </div>
 
 {# ── New Pipeline wizard ─────────────────────────────────────────────────── #}
-<dialog class="dex-dialog" id="add-pipeline-modal" style="width:680px;max-width:95vw">
+<dialog class="modal modal-lg" id="add-pipeline-modal">
   <div>
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3 style="font-size:15px;font-weight:600;margin:0">New Pipeline</h3>
+    <div class="modal-header">
+      <h3>New Pipeline</h3>
       <button class="btn icon ghost sm" onclick="this.closest('dialog').close()">
         <i data-lucide="x" style="width:14px;height:14px"></i>
       </button>
     </div>
 
     {# Step tabs #}
-    <div class="row" style="gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+    <div class="row" style="gap:0;border-bottom:1px solid var(--border);margin-bottom:var(--space-4);padding:0 var(--space-4)">
       {% for num, label in [(1,'Source'),(2,'Transforms'),(3,'Sink')] %}
       <div id="pwiz-tab-{{ num }}"
-           style="padding:8px 16px;font-size:12px;font-weight:500;cursor:default;
+           style="padding:8px 16px;font-size:var(--text-sm);font-weight:500;cursor:default;
                   color:{{ 'var(--accent-11)' if loop.first else 'var(--text-3)' }};
                   border-bottom:2px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};
                   margin-bottom:-1px">
@@ -186,7 +187,7 @@
     {# Live preview canvas #}
     <div style="display:flex;align-items:center;gap:6px;padding:10px 12px;
                 background:var(--bg);border:1px solid var(--border);border-radius:var(--r-2);
-                margin-bottom:16px;min-height:58px;overflow-x:auto">
+                margin-bottom:var(--space-4);min-height:58px;overflow-x:auto">
       <div id="pwiz-src-node"
            style="flex-shrink:0;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);
                   border-top:3px solid var(--border-strong);border-radius:var(--r-2);min-width:110px">
@@ -197,8 +198,8 @@
       <div id="pwiz-xform-strip" style="display:flex;align-items:center;gap:5px;flex:1"></div>
       <div id="pwiz-dst-node"
            style="flex-shrink:0;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);
-                  border-top:3px solid var(--green-9);border-radius:var(--r-2);min-width:110px">
-        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--green-11);margin-bottom:3px">sink</div>
+                  border-top:3px solid var(--success-9);border-radius:var(--r-2);min-width:110px">
+        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--success-11);margin-bottom:3px">sink</div>
         <div id="pwiz-dst-lbl" class="mono muted" style="font-size:11px">— none —</div>
       </div>
     </div>
@@ -207,11 +208,11 @@
 
       {# Step 1: Source #}
       <div id="pwiz-step-1">
-        <div class="col" style="gap:12px">
+        <div class="col" style="gap:var(--space-4)">
           <div class="col" style="gap:4px">
             <label class="cap" for="pwiz-name">Pipeline name *</label>
             <input id="pwiz-name" type="text" name="name" placeholder="etl_movies_gold" required
-                   class="input" style="font-family:var(--font-mono);font-size:12px">
+                   class="input" style="font-family:var(--font-mono);font-size:var(--text-sm)">
           </div>
           <div class="col" style="gap:6px">
             <span class="cap">Select source</span>
@@ -225,8 +226,8 @@
                 <input type="radio" name="source" value="{{ t }}" style="accent-color:var(--accent-9);flex-shrink:0"
                        onchange="pwizSetSource('{{ t }}')">
                 <div>
-                  <div style="font-weight:500;font-size:12px;font-family:var(--font-mono)">{{ t }}</div>
-                  <div class="muted" style="font-size:10.5px;margin-top:1px">{{ src_desc.get(t,'connector') }}</div>
+                  <div style="font-weight:500;font-size:var(--text-sm);font-family:var(--font-mono)">{{ t }}</div>
+                  <div class="muted" style="font-size:var(--text-xs);margin-top:1px">{{ src_desc.get(t,'connector') }}</div>
                 </div>
               </label>
               {% endfor %}
@@ -237,33 +238,12 @@
 
       {# Step 2: Transforms #}
       <div id="pwiz-step-2" style="display:none">
-        <div class="muted" style="font-size:12px;margin-bottom:10px">Click to add transform steps. All steps are optional.</div>
-        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
-          {% for kind, icon, label, desc in [
-            ('filter','funnel','Filter rows','Keep rows matching a condition'),
-            ('deduplicate','copy-minus','Deduplicate','Remove duplicate rows'),
-            ('sql','code-2','SQL transform','Custom SQL query on the dataset'),
-            ('derive','plus-circle','Derive column','Add a computed column'),
-            ('cast','arrow-right-left','Cast types','Change column data types'),
-            ('aggregate','sigma','Aggregate','Group by + aggregate functions'),
-          ] %}
-          <button type="button" class="card"
-                  style="padding:10px 12px;text-align:left;cursor:pointer;display:flex;gap:8px;align-items:flex-start"
-                  onclick="pwizAddTransform('{{ kind }}','{{ icon }}','{{ label }}')"
-                  onmouseenter="this.style.borderColor='var(--accent-9)'"
-                  onmouseleave="this.style.borderColor=''">
-            <span class="glyph accent" style="width:24px;height:24px;flex-shrink:0">
-              <i data-lucide="{{ icon }}" style="width:12px;height:12px"></i>
-            </span>
-            <div>
-              <div style="font-weight:500;font-size:12px">{{ label }}</div>
-              <div class="muted" style="font-size:10.5px;margin-top:1px;line-height:1.4">{{ desc }}</div>
-            </div>
-          </button>
-          {% endfor %}
+        <div class="muted" style="font-size:var(--text-sm);margin-bottom:10px">Click to add transform steps. All steps are optional.</div>
+        <div id="pwiz-transform-catalog" class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:var(--space-4)">
+          {# Rendered dynamically from TRANSFORM_SCHEMA #}
         </div>
         <div id="pwiz-steps-list" class="col" style="gap:6px">
-          <div id="pwiz-no-steps" class="muted" style="font-size:12px;text-align:center;padding:10px 0">
+          <div id="pwiz-no-steps" class="muted" style="font-size:var(--text-sm);text-align:center;padding:10px 0">
             No transforms added — source flows directly to sink.
           </div>
         </div>
@@ -271,20 +251,20 @@
 
       {# Step 3: Sink #}
       <div id="pwiz-step-3" style="display:none">
-        <div class="col" style="gap:12px">
+        <div class="col" style="gap:var(--space-4)">
           <div class="col" style="gap:4px">
             <label class="cap" for="pwiz-dest">Destination *</label>
             <input id="pwiz-dest" type="text" name="destination" placeholder="warehouse.gold.movies"
-                   class="input" style="font-family:var(--font-mono);font-size:12px"
+                   class="input" style="font-family:var(--font-mono);font-size:var(--text-sm)"
                    oninput="document.getElementById('pwiz-dst-lbl').textContent=this.value||'— none —'">
-            <div class="muted" style="font-size:11px;margin-top:4px">Format: <code>layer.schema.table</code></div>
+            <div class="muted" style="font-size:var(--text-xs);margin-top:4px">Format: <code>layer.schema.table</code></div>
           </div>
           <div class="col" style="gap:4px">
             <label class="cap" for="pwiz-sched">Schedule (optional)</label>
             <div class="row" style="gap:8px">
               <input id="pwiz-sched" type="text" name="schedule" placeholder="0 2 * * *"
-                     class="input" style="font-family:var(--font-mono);font-size:12px;flex:1">
-              <select class="input" style="width:160px;font-size:12px"
+                     class="input" style="font-family:var(--font-mono);font-size:var(--text-sm);flex:1">
+              <select class="input" style="width:160px;font-size:var(--text-sm)"
                       onchange="if(this.value){document.getElementById('pwiz-sched').value=this.value;this.value=''}">
                 <option value="">— presets —</option>
                 <option value="@hourly">@hourly</option>
@@ -299,7 +279,7 @@
 
       <input type="hidden" name="transforms" id="pwiz-transforms-field" value="">
 
-      <div class="row" style="gap:8px;margin-top:18px">
+      <div class="modal-footer">
         <button type="button" class="btn ghost" id="pwiz-back" style="display:none" onclick="pwizNav(-1)">← Back</button>
         <span style="flex:1"></span>
         <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
@@ -353,202 +333,146 @@
   };
 
   globalThis.pwizSetSource = function (name) {
-    const lbl = document.getElementById('pwiz-src-lbl');
-    if (lbl) lbl.textContent = name;
+    document.getElementById('pwiz-src-lbl').textContent = name;
+    _steps(2);
+    _tab(2);
+    _pwizStep = 2;
   };
 
-  globalThis.pwizAddTransform = function (kind, icon, label) {
-    _xforms.push({ kind, label });
-    _updateXformStrip();
-    _updateXformList();
-    document.getElementById('pwiz-transforms-field').value = _xforms.map(x => x.kind).join(',');
-  };
-
-  function _updateXformStrip() {
-    const strip = document.getElementById('pwiz-xform-strip');
-    if (!strip) return;
-    strip.innerHTML = '';
-    _xforms.forEach((x, i) => {
-      if (i > 0) {
-        const arr = document.createElement('div');
-        arr.innerHTML = '<i data-lucide="arrow-right" style="width:12px;height:12px;opacity:.35"></i>';
-        strip.appendChild(arr);
-      }
-      const node = document.createElement('div');
-      node.style.cssText = 'flex-shrink:0;padding:6px 9px;background:color-mix(in oklch,var(--accent-9) 10%,var(--bg-elev));' +
-        'border:1px solid color-mix(in oklch,var(--accent-9) 28%,transparent);border-top:3px solid var(--accent-9);' +
-        'border-radius:var(--r-2);font-size:11px;font-family:var(--font-mono)';
-      node.textContent = x.label;
-      strip.appendChild(node);
-    });
-    if (typeof lucide !== 'undefined') {
-      try { lucide.createIcons({ el: strip }); } catch { lucide.createIcons(); }
-    }
-  }
-
-  function _updateXformList() {
-    const list = document.getElementById('pwiz-steps-list');
-    const none = document.getElementById('pwiz-no-steps');
-    if (!list) return;
-    if (none) none.style.display = _xforms.length ? 'none' : '';
-    list.querySelectorAll('.pwiz-step-row').forEach(r => r.remove());
-    _xforms.forEach((x, i) => {
-      const row = document.createElement('div');
-      row.className = 'pwiz-step-row row';
-      row.style.cssText = 'gap:8px;padding:8px 10px;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--r-2)';
-      row.innerHTML =
-        `<span class="mono muted" style="font-size:11px;width:20px;flex-shrink:0">${i + 1}</span>` +
-        `<span class="chip" style="font-size:11px">${x.kind}</span>` +
-        `<span style="flex:1;font-size:12px">${x.label}</span>` +
-        `<button type="button" class="btn icon ghost sm" title="Remove" style="color:var(--red-9)" data-idx="${i}">` +
-        `<i data-lucide="x" style="width:11px;height:11px"></i></button>`;
-      row.querySelector('[data-idx]').addEventListener('click', () => {
-        _xforms.splice(i, 1);
-        _updateXformStrip();
-        _updateXformList();
-        document.getElementById('pwiz-transforms-field').value = _xforms.map(z => z.kind).join(',');
-      });
-      list.appendChild(row);
-    });
-    if (typeof lucide !== 'undefined') {
-      try { lucide.createIcons({ el: list }); } catch { lucide.createIcons(); }
-    }
-  }
-
-  // Reset wizard when dialog opens
-  document.getElementById('add-pipeline-modal').addEventListener('close', () => {
-    _pwizStep = 1; _xforms.length = 0;
-    _tab(1); _steps(1);
-    _updateXformStrip(); _updateXformList();
-    const f = document.getElementById('pwiz-form');
-    if (f) f.reset();
-    ['pwiz-src-lbl','pwiz-dst-lbl'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = '— none —';
-    });
-  });
-}());
-
-// ── Pipelines table: filter + sort + live status ────────────────────────────
-(function () {
-  let statusFilter = 'all';
-  let sortKey = null;
-  let sortDir = 1;
-
-  function statusClass(s) {
-    if (s === 'running')                     return 'running';
-    if (s === 'queued')                      return 'warning';
-    if (s === 'success' || s === 'succeeded' || s === 'ok') return 'success';
-    if (s === 'error'   || s === 'failed')    return 'error';
-    if (s === 'skipped')                     return 'info';
-    return '';
-  }
-
-  function applyPipeFilters() {
-    const q     = (document.getElementById('f-search').value || '').toLowerCase();
-    const layer = (document.getElementById('f-layer') || {}).value || 'all';
-    let shown = 0;
-    document.querySelectorAll('#pipe-table-body tr.pipe-row').forEach(function (row) {
-      const okStatus = statusFilter === 'all' || row.dataset.status === statusFilter;
-      const okLayer  = layer === 'all' || row.dataset.layer === layer;
-      const okSearch = !q || (row.dataset.search || '').toLowerCase().includes(q);
-      const visible  = okStatus && okLayer && okSearch;
-      row.style.display = visible ? '' : 'none';
-      if (visible) shown++;
-    });
-    const sc = document.getElementById('pipe-shown-count');
-    if (sc) sc.textContent = shown;
-  }
-  globalThis.applyPipeFilters = applyPipeFilters;
-
-  globalThis.setStatusFilter = function (f, btn) {
-    statusFilter = f;
-    document.querySelectorAll('#f-all,#f-running,#f-queued,#f-success,#f-failed,#f-skipped,#f-never').forEach(function (b) { b.classList.remove('active'); });
-    btn.classList.add('active');
-    applyPipeFilters();
-  };
-
-  globalThis.sortPipeTable = function (th) {
-    const key = th.dataset.sortKey;
-    sortDir = (sortKey === key) ? -sortDir : 1;
-    sortKey = key;
-    document.querySelectorAll('#pipe-table th.sortable').forEach(function (h) {
-      h.classList.remove('sort-asc', 'sort-desc');
-    });
-    th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
-
-    const tbody = document.getElementById('pipe-table-body');
-    const rows  = Array.from(tbody.querySelectorAll('tr.pipe-row'));
-    const numeric = key === 'duration' || key === 'rows-out';
-    rows.sort(function (a, b) {
-      const av = a.dataset['sort' + key.replace(/(^|-)([a-z])/g, function (_, __, c) { return c.toUpperCase(); })] || '';
-      const bv = b.dataset['sort' + key.replace(/(^|-)([a-z])/g, function (_, __, c) { return c.toUpperCase(); })] || '';
-      if (numeric) return (parseFloat(av) - parseFloat(bv)) * sortDir;
-      return av.localeCompare(bv) * sortDir;
-    });
-    rows.forEach(function (r) { tbody.appendChild(r); });
-  };
-
-  // ── Live status poll ──────────────────────────────────────────────────────
-  let _pollTimer = null;
-  let _anyRunning = false;
-  function pollStatus() {
-    fetch('/data/pipelines/status')
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (rows) {
-        if (!rows) return;
-        let wasRunning = _anyRunning;
-        _anyRunning = false;
-        rows.forEach(function (p) {
-          if (p.status === 'running') _anyRunning = true;
-          const row = document.querySelector('.pipe-row[data-name=' + JSON.stringify(p.name) + ']');
-          if (!row) return;
-          const running = p.status === 'running';
-          const queued = p.status === 'queued';
-          const failed  = p.status === 'error' || p.status === 'failed';
-          const skipped = p.status === 'skipped';
-          const ok      = p.status === 'success' || p.status === 'succeeded' || p.status === 'ok';
-          row.dataset.status = running ? 'running' : queued ? 'queued' : failed ? 'failed' : skipped ? 'skipped' : ok ? 'success' : 'never';
-
-          const pill = row.querySelector('[data-status-pill]');
-          if (pill) {
-            const sc = statusClass(p.status);
-            pill.className = 'pill' + (sc ? ' ' + sc : '');
-            pill.style.height = '16px'; pill.style.fontSize = '9.5px';
-            let label = running ? 'running' : queued ? 'queued' : failed ? 'failed' : skipped ? 'skipped' : ok ? 'ok' : (p.status || 'never');
-            pill.textContent = label;
-          }
-          const progWrap = row.querySelector('[data-progress-wrap]');
-          if (progWrap) {
-            progWrap.style.display = (running || queued) && p.progress_pct != null ? 'block' : 'none';
-            if (running && p.progress_pct != null) {
-              const bar = progWrap.querySelector('[data-progress-bar]');
-              const label = progWrap.querySelector('[data-progress-label]');
-              if (bar) bar.style.width = p.progress_pct + '%';
-              if (label) label.textContent = p.progress_pct + '% · ' + (p.progress_stage || '');
-            }
-            if (queued && p.queued_position != null) {
-              const label = progWrap.querySelector('[data-progress-label]');
-              if (label) label.textContent = 'queued #' + p.queued_position;
-            }
-          }
-          const lrEl = row.querySelector('[data-last-run-text]');
-          if (lrEl) lrEl.textContent = p.last_run || 'never';
-          const tsEl = row.querySelector('[data-ts]');
-          if (tsEl && p.next_run_at) {
-            tsEl.dataset.ts = p.next_run_at;
-            tsEl.textContent = relativeTime(p.next_run_at);
-          }
+  // Dynamic transform catalog from transform-schema.js
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof TRANSFORM_SCHEMA !== 'undefined') {
+      const cat = document.getElementById('pwiz-transform-catalog');
+      if (cat) {
+        Object.entries(TRANSFORM_SCHEMA).forEach(([name, def]) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn ghost';
+          btn.style.cssText = 'justify-content:flex-start;padding:10px 12px;text-align:left;gap:8px;height:auto;min-height:48px';
+          btn.innerHTML = `<i data-lucide="${def.icon || 'code'}" style="width:16px;height:16px;color:var(--accent-11)"></i>
+            <div><div style="font-weight:500;font-size:var(--text-sm)">${name}</div>
+            <div class="muted" style="font-size:var(--text-xs)">${def.description || ''}</div></div>`;
+          btn.onclick = () => pwizAddTransform(name, def);
+          cat.appendChild(btn);
         });
-        applyPipeFilters();
-        if (wasRunning !== _anyRunning) {
-          clearInterval(_pollTimer);
-          _pollTimer = setInterval(pollStatus, _anyRunning ? 3000 : 15000);
-        }
-      })
-      .catch(function () {});
+        lucide.createIcons();
+      }
+    }
+  });
+
+  globalThis.pwizAddTransform = function (name, def) {
+    _xforms.push({ name, ...def });
+    const list = document.getElementById('pwiz-steps-list');
+    const noSteps = document.getElementById('pwiz-no-steps');
+    if (noSteps) noSteps.style.display = 'none';
+    const item = document.createElement('div');
+    item.className = 'card';
+    item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px';
+    item.innerHTML = `<i data-lucide="${def.icon || 'code'}" style="width:14px;height:14px;color:var(--accent-11)"></i>
+      <div style="flex:1"><div style="font-weight:500;font-size:var(--text-sm)">${name}</div>
+      <div class="muted" style="font-size:var(--text-xs)">${def.description || ''}</div></div>
+      <button type="button" class="btn icon ghost sm" onclick="this.parentElement.remove();_xforms.splice(_xforms.findIndex(x=>x.name=='${name}'),1);if(!_xforms.length)document.getElementById('pwiz-no-steps').style.display='';"><i data-lucide="x" style="width:12px;height:12px"></i></button>`;
+    list.appendChild(item);
+    document.getElementById('pwiz-transforms-field').value = JSON.stringify(_xforms);
+    document.getElementById('pwiz-xform-strip').appendChild(document.createTextNode(' ▸ ' + name));
+    lucide.createIcons();
+  };
+
+  // Preview updates
+  document.getElementById('pwiz-name')?.addEventListener('input', e => {
+    document.querySelector('#pipe-table tbody tr:first-child td:first-child')?.querySelector('.mono')?.textContent?.includes('—') || '';
+  });
+  document.getElementById('pwiz-dest')?.addEventListener('input', e => {
+    // handled inline
+  });
+
+  // Form validation on submit
+  document.getElementById('pwiz-form')?.addEventListener('submit', e => {
+    if (!_xforms.length) {
+      // Allow no transforms - source flows directly to sink
+    }
+  });
+})();
+
+// ── Table filtering & sorting ────────────────────────────────────────────────
+function setStatusFilter(status, btn) {
+  document.querySelectorAll('#f-all, #f-running, #f-queued, #f-success, #f-failed, #f-skipped, #f-never')
+    .forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyPipeFilters();
+}
+
+function applyPipeFilters() {
+  const status = document.querySelector('.chip.active[id^="f-"]')?.id?.replace('f-', '') || 'all';
+  const layer = document.getElementById('f-layer').value;
+  const search = document.getElementById('f-search').value.toLowerCase();
+
+  document.querySelectorAll('#pipe-table-body .pipe-row').forEach(row => {
+    let show = true;
+    if (status !== 'all' && row.dataset.status !== status) show = false;
+    if (layer !== 'all' && row.dataset.layer !== layer) show = false;
+    if (search && !row.dataset.search.toLowerCase().includes(search)) show = false;
+    row.style.display = show ? '' : 'none';
+  });
+
+  const shown = document.querySelectorAll('#pipe-table-body .pipe-row:not([style*="display: none"])').length;
+  document.getElementById('pipe-shown-count').textContent = shown;
+}
+
+function sortPipeTable(th) {
+  const table = document.getElementById('pipe-table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr.pipe-row'));
+  const key = th.dataset.sortKey;
+  const asc = !th.classList.contains('sort-asc');
+
+  table.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+  rows.sort((a, b) => {
+    const av = a.dataset['sort-' + key] || '';
+    const bv = b.dataset['sort-' + key] || '';
+    const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
+    const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
+    const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+    return asc ? cmp : -cmp;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+// ── Pipeline status progress polling ─────────────────────────────────────────
+(function () {
+  function pollProgress() {
+    document.querySelectorAll('[data-status-pill]').forEach(pill => {
+      const row = pill.closest('tr');
+      if (!row) return;
+      const name = row.dataset.name;
+      if (!name) return;
+
+      if (pill.classList.contains('running')) {
+        fetch('/data/pipelines/status')
+          .then(r => r.json())
+          .then(data => {
+            const p = data.find(x => x.name === name);
+            if (p && p.status === 'running') {
+              const bar = row.querySelector('[data-progress-bar]');
+              const label = row.querySelector('[data-progress-label]');
+              if (bar) bar.style.width = Math.min(100, (p.progress || 0) * 100) + '%';
+              if (label) label.textContent = Math.round((p.progress || 0) * 100) + '%';
+            } else if (p) {
+              // Status changed - reload row via HTMX
+              row.style.opacity = '0.5';
+              setTimeout(() => window.location.reload(), 500);
+            }
+          });
+      }
+    });
   }
-  _pollTimer = setInterval(pollStatus, 15000);
-}());
+  setInterval(pollProgress, 3000);
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+});
 </script>
 {% endblock %}

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -59,9 +58,10 @@ def enqueue_pipeline(name: str, triggered_by: str = "manual") -> str:
         logger.info("pipeline queued", pipeline=name, max_concurrent=max_concurrent)
         return "queued"
 
-    # Can start immediately
+    # Can start immediately - get scheduler config for memory check
+    max_concurrent, min_free_mb = jobs._get_scheduler_config(eng)
     db.enqueue_pipeline(name, priority=100, triggered_by=triggered_by)
-    jobs._start_next_queued(db)
+    jobs._start_next_queued(db, max_concurrent, min_free_mb)
     logger.info("pipeline started immediately", pipeline=name)
     return "started"
 
@@ -96,8 +96,9 @@ def mark_pipeline_complete(name: str, success: bool) -> None:
     status = "success" if success else "failed"
     logger.info("pipeline completed", pipeline=name, status=status)
 
-    # Try to start next queued pipeline
-    jobs._start_next_queued(db)
+    # Try to start next queued pipeline, honoring operator-configured concurrency
+    max_concurrent, min_free_mb = jobs._get_scheduler_config(eng)
+    jobs._start_next_queued(db, max_concurrent, min_free_mb)
 
 
 def set_volume_reset_complete(complete: bool = True) -> None:
@@ -123,7 +124,8 @@ async def queue_processor_loop(stop_event: asyncio.Event) -> None:
                 db = jobs._get_studio_db(eng)
                 if db:
                     # Start next queued pipeline if capacity available
-                    jobs._start_next_queued(db)
+                    max_concurrent, min_free_mb = jobs._get_scheduler_config(eng)
+                    jobs._start_next_queued(db, max_concurrent, min_free_mb)
         except Exception as exc:
             logger.error("queue processor error", error=str(exc), exc_info=True)
 
@@ -139,13 +141,15 @@ def get_queued_pipelines() -> list[dict[str, Any]]:
     result = []
     for entry in status["entries"]:
         if entry["status"] in ("queued", "pending"):
-            result.append({
-                "name": entry["pipeline_name"],
-                "status": "queued",
-                "queued_at": entry.get("created_at"),
-                "attempts": entry.get("attempts", 0),
-                "triggered_by": entry.get("triggered_by", "manual"),
-            })
+            result.append(
+                {
+                    "name": entry["pipeline_name"],
+                    "status": "queued",
+                    "queued_at": entry.get("created_at"),
+                    "attempts": entry.get("attempts", 0),
+                    "triggered_by": entry.get("triggered_by", "manual"),
+                }
+            )
     return result
 
 

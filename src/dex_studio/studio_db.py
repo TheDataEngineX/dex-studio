@@ -1622,7 +1622,7 @@ class StudioDb:
             "pipeline_name, status, priority, depends_on, "
             "triggered_by, version, created_at, updated_at"
         )
-        sql = f"INSERT INTO pipeline_queue ({cols}) VALUES(?, 'pending', ?, ?, ?, 0, ?, ?)"
+        sql = f"INSERT INTO pipeline_queue ({cols}) VALUES(?, 'queued', ?, ?, ?, 0, ?, ?)"
         cur = conn.execute(
             sql, [pipeline_name, priority, json.dumps(depends_on or []), triggered_by, now, now]
         )
@@ -1657,7 +1657,8 @@ class StudioDb:
                 OR NOT EXISTS (
                     SELECT 1 FROM json_each(depends_on) dep
                     WHERE dep.value NOT IN (
-                        SELECT pipeline_name FROM pipeline_queue WHERE status = 'success'
+                        SELECT pipeline_name FROM pipeline_queue
+                        WHERE status IN ('success', 'skipped')
                     )
                 )
             )
@@ -1707,20 +1708,31 @@ class StudioDb:
         now = datetime.now(UTC).isoformat()
         conn = self._conn()
 
-        if status in ("success", "failed", "cancelled", "skipped"):
-            sql = (
-                "UPDATE pipeline_queue SET status=?, finished_at=?, error_msg=?, "
-                "run_id=?, updated_at=?, version=version+1 "
-                "WHERE id=? AND version=?"
-            )
-            cur = conn.execute(sql, [status, now, error_msg, run_id, now, queue_id, version])
-        else:
-            sql = (
-                "UPDATE pipeline_queue SET status=?, updated_at=?, version=version+1 "
-                "WHERE id=? AND version=?"
-            )
-            cur = conn.execute(sql, [status, now, queue_id, version])
-        conn.commit()
+        # This connection is thread-local and long-lived (reused for every future
+        # call on this thread, including from the single persistent background
+        # job worker) — a write that raises here (e.g. an invalid `status` value
+        # tripping the pipeline_queue CHECK constraint) would otherwise leave its
+        # implicit transaction open forever, silently locking out every later
+        # writer to this database. Roll back before propagating so the
+        # connection stays usable.
+        try:
+            if status in ("success", "failed", "cancelled", "skipped"):
+                sql = (
+                    "UPDATE pipeline_queue SET status=?, finished_at=?, error_msg=?, "
+                    "run_id=?, updated_at=?, version=version+1 "
+                    "WHERE id=? AND version=?"
+                )
+                cur = conn.execute(sql, [status, now, error_msg, run_id, now, queue_id, version])
+            else:
+                sql = (
+                    "UPDATE pipeline_queue SET status=?, updated_at=?, version=version+1 "
+                    "WHERE id=? AND version=?"
+                )
+                cur = conn.execute(sql, [status, now, queue_id, version])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return cur.rowcount > 0
 
     def get_queue_status(self) -> dict[str, Any]:
@@ -1860,7 +1872,8 @@ class StudioDb:
         cutoff = (datetime.now(UTC) - timedelta(days=keep_days)).isoformat()
         conn = self._conn()
         cur = conn.execute(
-            "DELETE FROM ingested_hashes WHERE ingested_at < ?", [cutoff],
+            "DELETE FROM ingested_hashes WHERE ingested_at < ?",
+            [cutoff],
         )
         conn.commit()
         return cur.rowcount
@@ -1982,6 +1995,13 @@ CREATE INDEX IF NOT EXISTS idx_pq_status_priority
     ON pipeline_queue(status, priority DESC, created_at);
 CREATE INDEX IF NOT EXISTS idx_pq_pipeline_status ON pipeline_queue(pipeline_name, status);
 CREATE INDEX IF NOT EXISTS idx_pq_depends ON pipeline_queue(depends_on);
+
+CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+    pipeline    TEXT PRIMARY KEY,
+    stage       TEXT NOT NULL,
+    run_id      BIGINT,
+    created_at  TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS pipeline_defs (
     id           TEXT PRIMARY KEY,
@@ -3801,8 +3821,7 @@ class PgStudioDb:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cols = (
-                "pipeline_name, status, priority, depends_on, "
-                "triggered_by, created_at, updated_at"
+                "pipeline_name, status, priority, depends_on, triggered_by, created_at, updated_at"
             )
             sql = (
                 f"INSERT INTO pipeline_queue ({cols}) "
@@ -3846,7 +3865,7 @@ class PgStudioDb:
                     "   SELECT 1 FROM jsonb_array_elements_text(depends_on::jsonb) AS dep(d)"
                     "   WHERE NOT EXISTS ("
                     "     SELECT 1 FROM pipeline_queue q2"
-                    "     WHERE q2.pipeline_name = dep.d AND q2.status = 'success'"
+                    "     WHERE q2.pipeline_name = dep.d AND q2.status IN ('success', 'skipped')"
                     "   )"
                     " )"
                     " ORDER BY priority DESC, created_at"
@@ -3920,7 +3939,7 @@ class PgStudioDb:
                     {"s": status, "now": now, "id": queue_id, "ver": version},
                 )
             conn.commit()
-        return cur.rowcount > 0
+            return bool(cur.rowcount > 0)
 
     def get_queue_status(self) -> dict[str, Any]:
         """Get current queue status for monitoring."""
@@ -3987,6 +4006,30 @@ class PgStudioDb:
             conn.commit()
         return requeued
 
+    def cancel_pipeline_in_queue(self, pipeline_name: str) -> bool:
+        """Cancel a pipeline that's pending/queued/running."""
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            # Cancel pending/queued
+            sql = text(
+                "UPDATE pipeline_queue SET status='cancelled', finished_at=:now, "
+                "updated_at=:now, error_msg='cancelled by user' "
+                "WHERE pipeline_name=:name AND status IN ('pending', 'queued')"
+            )
+            cur = conn.execute(sql, {"now": now, "name": pipeline_name})
+
+            # For running, mark cancellation flag (worker checks is_pipeline_cancelled)
+            sql2 = text(
+                "UPDATE pipeline_queue SET error_msg='cancelled by user' "
+                "WHERE pipeline_name=:name AND status='running'"
+            )
+            cur2 = conn.execute(sql2, {"name": pipeline_name})
+
+            conn.commit()
+        return bool(cur.rowcount > 0 or cur2.rowcount > 0)
+
     def release_scheduler_leadership(self) -> None:
         from sqlalchemy import text
 
@@ -4025,8 +4068,7 @@ class PgStudioDb:
         with self._conn() as conn:
             row = conn.execute(
                 text(
-                    "SELECT stage, run_id, created_at "
-                    "FROM pipeline_checkpoints WHERE pipeline = :p"
+                    "SELECT stage, run_id, created_at FROM pipeline_checkpoints WHERE pipeline = :p"
                 ),
                 {"p": pipeline},
             ).fetchone()
@@ -4058,7 +4100,8 @@ class PgStudioDb:
                 {"cutoff": cutoff},
             )
             conn.commit()
-            return result.rowcount
+            return int(result.rowcount)
+
 
 # ── Process-level singleton accessor ─────────────────────────────────────────
 
@@ -4070,7 +4113,7 @@ def _resolve_sqlite_path(eng: Any) -> Path | None:
     """Extract the studio.db path from the engine's project directory."""
     try:
         dex_dir = getattr(eng, "_dex_dir", None)
-        if dex_dir:
+        if isinstance(dex_dir, Path):
             # eng._dex_dir is already the project's `.dex` directory (see
             # DexEngine.__init__: `self._dex_dir = self.project_dir / ".dex"`).
             # Appending ".dex" again here used to produce a doubled
@@ -4078,8 +4121,14 @@ def _resolve_sqlite_path(eng: Any) -> Path | None:
             # `<project>/.dex/studio.db` was never touched, so every
             # start_run/finish_run/acquire_lock call silently wrote to (and
             # read from) an orphaned sibling database instead.
-            return Path(str(dex_dir)) / "studio.db"
-        db_dir = Path(str(getattr(eng, "config_path", "")))
+            return dex_dir / "studio.db"
+        config_path = getattr(eng, "config_path", None)
+        if not isinstance(config_path, (str, Path)):
+            # eng is an unconfigured mock (or otherwise lacks a real path) —
+            # stringifying it here used to `mkdir` a literal
+            # `<MagicMock ...>/studio.db` directory in the cwd.
+            return None
+        db_dir = Path(config_path)
         if db_dir.suffix in (".yaml", ".yml", ".toml"):
             db_dir = db_dir.parent
         return db_dir / ".dex" / "studio.db"
@@ -4122,5 +4171,3 @@ def get_studio_db(eng: Any | None = None) -> StudioDb | PgStudioDb | None:
     _GLOBAL_DB = StudioDb(db_path)
     _GLOBAL_DB_PATH = db_path
     return _GLOBAL_DB
-
-

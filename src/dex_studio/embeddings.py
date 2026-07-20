@@ -9,6 +9,7 @@ the rest of the scheduler state — no separate DuckDB files.
 from __future__ import annotations
 
 import contextlib
+import os
 import time
 from typing import Any
 
@@ -16,6 +17,9 @@ import structlog
 from tqdm import tqdm
 
 log = structlog.get_logger().bind(src="embeddings")
+
+_EMBED_BATCH_SIZE = int(os.getenv("DEX_EMBED_BATCH_SIZE", "16"))
+_EMBED_MAX_ROWS = int(os.getenv("DEX_EMBED_MAX_ROWS", "2000"))
 
 
 def _get_ollama_host(eng: Any) -> str:
@@ -70,9 +74,12 @@ def _load_source_rows(eng: Any, source_table: str, source_col: str) -> tuple[lis
         return [], f"Parquet file not found: {parquet_path}"
     safe_col = source_col.replace('"', '""')
     with duckdb.connect(":memory:") as conn:
+        # DuckDB's read_parquet() has no rowid pseudo-column (unlike SQLite) —
+        # row_number() gives a stable per-build id without assuming any
+        # particular source table has its own primary-key-like column.
         rows = conn.execute(
-            f'SELECT rowid, "{safe_col}" FROM read_parquet($1) '
-            f'WHERE "{safe_col}" IS NOT NULL LIMIT 10000',
+            f'SELECT row_number() OVER () AS rowid, "{safe_col}" FROM read_parquet($1) '
+            f'WHERE "{safe_col}" IS NOT NULL LIMIT {_EMBED_MAX_ROWS}',
             [str(parquet_path)],
         ).fetchall()
     if not rows:
@@ -81,7 +88,7 @@ def _load_source_rows(eng: Any, source_table: str, source_col: str) -> tuple[lis
 
 
 def _embed_all_batched(
-    texts: list[str], model: str, host: str, batch_size: int = 64
+    texts: list[str], model: str, host: str, batch_size: int = _EMBED_BATCH_SIZE
 ) -> tuple[list[list[float]], str]:
     """Embed all texts in batches. Returns (vectors, error)."""
     all_vectors: list[list[float]] = []
@@ -125,7 +132,7 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
     """Build an embedding collection from dex.yaml ai.embeddings config."""
     result: dict[str, Any] = {"collection": collection_name, "status": "error"}
 
-    with contextlib.suppress(Exception):
+    try:
         col_cfg = _resolve_collection_cfg(eng, collection_name)
         if col_cfg is None:
             result["error"] = f"Collection '{collection_name}' not in dex.yaml ai.collections"
@@ -189,6 +196,9 @@ def build_collection(eng: Any, collection_name: str) -> dict[str, Any]:
             "embedding collection built",
             **{k: meta[k] for k in ("collection", "vector_count", "duration_s")},
         )
+    except Exception as exc:
+        log.warning("embedding collection build failed", collection=collection_name, error=str(exc))
+        result["error"] = str(exc)
 
     return result
 

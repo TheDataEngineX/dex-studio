@@ -1,86 +1,81 @@
 {% extends "base.html" %}
 
 {% block title %}Content Explorer — DEX Studio{% endblock %}
+
 {% block page_title %}Content Explorer{% endblock %}
+{% block page_sub %}Recommendations, providers, and cross-source match confidence{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>Movie intelligence</h1>
-    <p class="page-subtitle">Compare recommendation systems, providers, and cross-source identity.</p>
+<div class="animate-fade-in">
+
+<div class="grid" style="grid-template-columns: 380px 1fr; gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="card">
+    <div class="section-h"><h2>Movies</h2></div>
+    <div class="col" style="gap:0;max-height:600px;overflow:auto">
+      {% for m in movies %}
+      <a href="/content/explorer?movie_id={{ m.tmdb_id }}" class="panel-item {{ 'active' if m.tmdb_id == selected_id else '' }}" style="text-align:left;padding:var(--space-3);background:none;border:none;cursor:pointer;transition:background var(--d-fast)" onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background='transparent'">
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:6px;align-items:center">
+            <span class="mono" style="font-weight:500;font-size:var(--text-sm)">{{ m.title }}</span>
+            <span class="muted" style="font-size:var(--text-xs)">{{ m.release_year }}</span>
+          </div>
+          <div class="muted" style="font-size:var(--text-xs)">{{ m.imdb_rating or '—' }}/10</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="flex:1;display:flex;flex-direction:column;gap:var(--space-4)">
+    {% if selected %}
+    <div class="card" style="flex-shrink:0">
+      <div class="section-h"><h2>{{ selected.title }} ({{ selected.release_year }})</h2></div>
+      <div style="padding:var(--space-4);display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3)">
+        <div class="stat" style="text-align:center"><div class="lbl">IMDB</div><div class="val">{{ selected.imdb_rating or '—' }}/10</div></div>
+        <div class="stat" style="text-align:center"><div class="lbl">TMDB Similar</div><div class="val">{{ tmdb_similar | length }}</div></div>
+        <div class="stat" style="text-align:center"><div class="lbl">Own Similar</div><div class="val">{{ own_similar | length }}</div></div>
+        <div class="stat" style="text-align:center"><div class="lbl">Providers</div><div class="val">{{ providers | length }}</div></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:var(--space-4)">
+      <div class="card" style="flex:1">
+        <div class="section-h"><h2>TMDB Similar</h2></div>
+        {% if tmdb_similar %}
+        <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>Title</th><th>Score</th></tr></thead><tbody>{% for s in tmdb_similar %}<tr><td class="mono" style="font-weight:500">{{ s.title }}</td><td class="tnum">{{ s.score }}</td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="film" class="icon"></i><div class="title">No similar movies</div></div>{% endif %}
+      </div>
+
+      <div class="card" style="flex:1">
+        <div class="section-h"><h2>Own Similar (Feature-based)</h2></div>
+        {% if own_similar %}
+        <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>Title</th><th>Score</th></tr></thead><tbody>{% for s in own_similar %}<tr><td class="mono" style="font-weight:500">{{ s.title }}</td><td class="tnum">{{ s.score }}</td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="git-fork" class="icon"></i><div class="title">No feature matches</div></div>{% endif %}
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:var(--space-4)">
+      <div class="card" style="flex:1">
+        <div class="section-h"><h2>Watch Providers</h2></div>
+        {% if providers %}
+        <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>Region</th><th>Provider</th><th>Type</th></tr></thead><tbody>{% for p in providers %}<tr><td class="muted">{{ p.region }}</td><td class="mono" style="font-weight:500">{{ p.provider_name }}</td><td><span class="pill" style="height:18px;font-size:var(--text-xs)">{{ p.availability_type }}</span></td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="tv" class="icon"></i><div class="title">No provider data</div></div>{% endif %}
+      </div>
+
+      <div class="card" style="flex:1">
+        <div class="section-h"><h2>Cross-Source Match Confidence</h2></div>
+        {% if confidence %}
+        <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>IMDB ID</th><th>TMDB ID</th><th>Confidence</th><th>Rate</th><th>Tier</th></tr></thead><tbody>{% for c in confidence %}<tr><td class="mono">{{ c.tconst }}</td><td class="tnum">{{ c.tmdb_id }}</td><td class="tnum">{{ c.match_confidence }}</td><td class="tnum">{{ c.match_rate }}</td><td><span class="pill {{ 'success' if c.confidence_tier == 'high' else 'warning' if c.confidence_tier == 'medium' else 'error' }}" style="height:18px;font-size:var(--text-xs)">{{ c.confidence_tier | upper }}</span></td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="link-2" class="icon"></i><div class="title">No match data</div></div>{% endif %}
+      </div>
+    </div>
   </div>
 </div>
 
-<form method="get" action="/content/explorer" class="card" style="margin-bottom:16px;padding:16px">
-  <label for="movie_id">Movie</label>
-  <select id="movie_id" name="movie_id" onchange="this.form.submit()">
-    {% for movie in movies %}
-    <option value="{{ movie.tmdb_id }}" {{ 'selected' if movie.tmdb_id == selected_id }}>
-      {{ movie.title }}{% if movie.release_year %} ({{ movie.release_year }}){% endif %}
-    </option>
-    {% endfor %}
-  </select>
-</form>
-
-<div class="grid-2" style="gap:16px">
-  <section class="card" style="padding:16px">
-    <h2>TMDB similar</h2>
-    <table>
-      <thead><tr><th>Title</th><th>TMDB score</th></tr></thead>
-      <tbody>
-      {% for row in tmdb_similar %}
-        <tr><td>{{ row.title }}</td><td>{{ row.score }}</td></tr>
-      {% else %}
-        <tr><td colspan="2">No TMDB similarity data loaded.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <section class="card" style="padding:16px">
-    <h2>DataEngineX KNN</h2>
-    <table>
-      <thead><tr><th>Title</th><th>Similarity</th></tr></thead>
-      <tbody>
-      {% for row in own_similar %}
-        <tr><td>{{ row.title }}</td><td>{{ row.score }}</td></tr>
-      {% else %}
-        <tr><td colspan="2">No feature-table recommendations loaded.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
 </div>
+{% endblock %}
 
-<section class="card" style="padding:16px;margin-top:16px">
-  <h2>Watch providers by region</h2>
-  <table>
-    <thead><tr><th>Region</th><th>Provider</th><th>Availability</th></tr></thead>
-    <tbody>
-    {% for row in providers %}
-      <tr><td>{{ row.region }}</td><td>{{ row.provider_name }}</td><td>{{ row.availability_type }}</td></tr>
-    {% else %}
-      <tr><td colspan="3">No provider data loaded.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section class="card" style="padding:16px;margin-top:16px">
-  <h2>Cross-source match confidence</h2>
-  <table>
-    <thead><tr><th>IMDB</th><th>TMDB</th><th>Confidence</th><th>Match rate</th><th>Tier</th></tr></thead>
-    <tbody>
-    {% for row in confidence %}
-      <tr>
-        <td>{{ row.tconst }}</td><td>{{ row.tmdb_id }}</td>
-        <td>{{ row.match_confidence }}</td><td>{{ row.match_rate }}</td>
-        <td>{{ row.confidence_tier }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="5">No cross-source match loaded.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

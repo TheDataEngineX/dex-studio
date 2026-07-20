@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from dex_studio.routers._deps import ReadDep, WriteDep
+from dex_studio.routers._deps import push_toast_safe as push_toast
 
 router = APIRouter(tags=["api"])
 
@@ -376,3 +377,14 @@ def api_quality_contracts(eng: ReadDep) -> JSONResponse:
             }
         )
     return JSONResponse(result)
+
+
+@router.post("/toast", summary="Push a toast notification (for background tasks)")
+def api_toast(request: Request, msg: str, kind: str = "success") -> dict[str, str]:
+    """Push a toast notification via HTMX trigger header.
+
+    Use from background tasks:
+    requests.post(f"{base}/api/toast", params={"msg": "Done!", "kind": "success"})
+    """
+    push_toast(request, msg, kind)
+    return {"status": "ok"}

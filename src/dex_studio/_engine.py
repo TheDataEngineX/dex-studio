@@ -11,6 +11,7 @@ import threading
 from contextlib import suppress
 from pathlib import Path
 
+import duckdb
 from dataenginex.engine import DexEngine
 
 _ENGINE: DexEngine | None = None
@@ -19,9 +20,26 @@ _ENGINE: DexEngine | None = None
 # project-switch requests from racing and leaving a half-initialised singleton.
 _ENGINE_LOCK = threading.Lock()
 
+# Shared DuckDB connection for read-only operations (pool of 1)
+_DUCKDB_CONN: duckdb.DuckDBPyConnection | None = None
+_DUCKDB_LOCK = threading.Lock()
+
 # Project storage directory — only dex.yaml paths are stored here
 USER_PROJECTS_DIR: Path = Path.home() / ".dex-studio" / "projects"
 _CONFIG_FILENAME = "dex.yaml"
+
+
+def get_duckdb() -> duckdb.DuckDBPyConnection:
+    """Return a shared DuckDB connection for read-only operations.
+
+    Reuses a single connection to avoid catalog/parser overhead per query.
+    Thread-safe.
+    """
+    global _DUCKDB_CONN
+    with _DUCKDB_LOCK:
+        if _DUCKDB_CONN is None:
+            _DUCKDB_CONN = duckdb.connect(":memory:")
+        return _DUCKDB_CONN
 
 
 def init_engine(config_path: str | Path) -> DexEngine:

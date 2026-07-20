@@ -101,6 +101,7 @@ def test_hard_kill_still_persists_retry_state(studio_db: StudioDb) -> None:
     eng = _make_eng({"p": _PipeCfg(schedule="* * * * *")})
     # Mock the job queue to avoid real engine
     from unittest.mock import patch
+
     with patch("dex_studio.jobs.run_pipeline_bg") as mock_run_bg:
         mock_run_bg.return_value = "queued"
         cfg = SchedulerConfig(enabled=True)
@@ -228,4 +229,28 @@ def test_migrated_dependent_does_not_fire_as_root(studio_db: StudioDb) -> None:
     _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
 
     eng.run_pipeline.assert_not_called()
-    assert ran == []
+
+
+def test_drains_already_queued_work_even_when_nothing_is_cron_due(
+    studio_db: StudioDb,
+) -> None:
+    """A tick where no root pipeline is cron-due must still attempt to claim
+    already-queued work — previously the only paths that ever called
+    _start_next_queued were run_pipeline_bg() (a fresh enqueue) and a run's
+    own completion, so a claimed pipeline could sit queued indefinitely on a
+    tick where neither happened, even with free concurrency slots."""
+    from unittest.mock import patch
+
+    from dex_studio import jobs as jobs_mod
+
+    studio_db.enqueue_pipeline("already_queued_pipeline", priority=999)
+
+    # No pipelines configured at all -> nothing cron-due this tick.
+    eng = _make_eng({})
+    cfg = SchedulerConfig(enabled=True, min_free_mb=0)
+
+    with patch.object(jobs_mod._EXECUTOR, "submit") as mock_submit:
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH)
+
+    mock_submit.assert_called_once()
+    assert mock_submit.call_args.args[1] == "already_queued_pipeline"

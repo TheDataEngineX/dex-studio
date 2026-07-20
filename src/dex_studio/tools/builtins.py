@@ -8,8 +8,12 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 if TYPE_CHECKING:
     from dex_studio.tools.registry import ToolRegistry
+
+log = structlog.get_logger().bind(src="tools.builtins")
 
 
 def register_builtins(registry: ToolRegistry) -> None:
@@ -118,8 +122,12 @@ def _tool_query(sql: str) -> Any:
         from dataenginex.ai.tools import tool_registry as _dex
 
         return _dex.call("query", sql=sql)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Fallback below can never resolve lakehouse table names (no views
+        # registered on a bare connection) — log the real cause so a lakehouse
+        # query failure doesn't get masked by a confusing "table not found"
+        # from the fallback path instead.
+        log.warning("lakehouse query tool failed, falling back to bare duckdb", error=str(exc))
     import duckdb
 
     with duckdb.connect(":memory:") as conn:
@@ -363,7 +371,7 @@ def _tool_finetune(  # noqa: C901
         with open(artifact_path, "wb") as f:
             pickle.dump(model, f)
 
-        try:
+        with contextlib.suppress(Exception):
             from dex_studio.studio_db import get_studio_db
 
             sdb = get_studio_db(eng)
@@ -376,8 +384,28 @@ def _tool_finetune(  # noqa: C901
                     feature_names=feature_cols,
                     target=target,
                 )
-        except Exception:
-            pass
+
+        with contextlib.suppress(Exception):
+            # Models/Predictions/Promote all read eng.model_registry, not the
+            # studio_db entry above — register there too so a model trained
+            # here is actually usable elsewhere in the app, not just listed
+            # in a Postgres table nothing else reads.
+            from dataenginex.ml.registry import VERSION_AUTO, ModelArtifact
+
+            eng.model_registry.register(
+                ModelArtifact(
+                    name=reg_name,
+                    version=VERSION_AUTO,
+                    artifact_path=str(artifact_path),
+                    metrics={metric_name: round(metric, 4)},
+                    parameters={
+                        "framework": "scikit-learn",
+                        "algorithm": algorithm,
+                        "feature_names": feature_cols,
+                        "target": target,
+                    },
+                )
+            )
 
         result.update(
             {
@@ -456,7 +484,7 @@ def _tool_finetune_embeddings(  # noqa: C901
         models_dir = eng.project_dir / ".dex" / "models" / reg_name
         artifact_path = trainer.save(str(models_dir / f"v{int(time.time())}"))
 
-        try:
+        with contextlib.suppress(Exception):
             from dex_studio.studio_db import get_studio_db
 
             sdb = get_studio_db(eng)
@@ -469,8 +497,24 @@ def _tool_finetune_embeddings(  # noqa: C901
                     feature_names=[text_a_column, text_b_column],
                     target=label_column,
                 )
-        except Exception:
-            pass
+
+        with contextlib.suppress(Exception):
+            from dataenginex.ml.registry import VERSION_AUTO, ModelArtifact
+
+            eng.model_registry.register(
+                ModelArtifact(
+                    name=reg_name,
+                    version=VERSION_AUTO,
+                    artifact_path=artifact_path,
+                    metrics=dict(training_result.metrics),
+                    parameters={
+                        "framework": "sentence-transformers",
+                        "algorithm": f"sentence_transformer_finetune:{loss_type}",
+                        "feature_names": [text_a_column, text_b_column],
+                        "target": label_column,
+                    },
+                )
+            )
 
         result.update(
             {

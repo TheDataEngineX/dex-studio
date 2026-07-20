@@ -72,6 +72,7 @@ def run_quality_check(eng: Any, db: StudioDb | PgStudioDb, pipeline: str) -> Non
         score = res.get("score", 0)
         try:
             from dex_studio.metrics import record_quality_score
+
             record_quality_score(pipeline, score)
         except Exception:
             pass
@@ -82,6 +83,7 @@ def run_quality_check(eng: Any, db: StudioDb | PgStudioDb, pipeline: str) -> Non
                 log.exception("failed to record quality_check_failed alert", pipeline=pipeline)
             try:
                 from dex_studio.metrics import record_quality_failure
+
                 record_quality_failure(pipeline)
             except Exception:
                 pass
@@ -118,6 +120,7 @@ def check_row_reconciliation(
             log.exception("failed to record reconciliation_mismatch alert", pipeline=pipeline)
         try:
             from dex_studio.metrics import record_reconciliation_mismatch
+
             record_reconciliation_mismatch(pipeline)
         except Exception:
             pass

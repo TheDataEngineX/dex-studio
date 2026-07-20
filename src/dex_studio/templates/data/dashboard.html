@@ -1,259 +1,201 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, section_heading, empty_state %}
 
-{% block title %}Data Command Center — DEX Studio{% endblock %}
-{% block page_title %}Data Command Center{% endblock %}
+{% block title %}Dashboard — DEX Studio{% endblock %}
 
-{# Full-bleed so we own all padding like hub.html #}
-{% block content_class %}full-bleed{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_sub %}Pipeline health at a glance · {{ stats.get('total', 0) }} pipelines · {{ stats.get('running', 0) }} running · {{ stats.get('failed', 0) }} failed{% endblock %}
 
-{% block full_bleed %}
-<div style="--domain-color: var(--domain-data)">
+{% block page_actions %}
+<a href="/data/pipelines" class="btn primary">
+  <i data-lucide="workflow" style="width:12px;height:12px"></i> View pipelines
+</a>
+{% endblock %}
 
-{# ── Flow strip — Accent Cards ────────────────────────────────────────────── #}
-<div class="flow-strip">
+{% block content %}
+<div class="animate-fade-in">
 
-  {# 1. Sources #}
-  {% set src_count = source_count %}
-  <a href="/data/sources" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Sources</span>
-      {% if src_count > 0 %}
-        <span class="accent-card-status" title="All sources live" style="color:var(--state-ok)">✓</span>
-      {% else %}
-        <span class="accent-card-status" title="No sources" style="color:var(--state-idle)">ℹ</span>
-      {% endif %}
+{# ── Stats row ────────────────────────────────────────────────────────────── #}
+<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+  <div class="stat">
+    <div class="lbl">
+      <i data-lucide="workflow" style="width:14px;height:14px;color:var(--domain-data)"></i>
+      Pipelines
     </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon">
-        <i data-lucide="link" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">{{ src_count }} / {{ src_count }} live</div>
-        <div class="accent-card-sub">Active connectors</div>
-      </div>
+    <div class="val">{{ stats.get('total', 0) }} <span class="unit">{{ stats.get('running', 0) }} running</span></div>
+    <div class="delta">{{ stats.get('idle', 0) }} idle · {{ stats.get('failed', 0) }} failed</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">
+      <i data-lucide="database" style="width:14px;height:14px;color:var(--domain-data)"></i>
+      Warehouse tables
     </div>
-    <div class="accent-card-widget">
-      {% if src_count > 0 %}
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        {% for lyr in layers[:3] %}
-        <span class="type-pill">{{ lyr.get('name', lyr) if lyr is mapping else lyr }}</span>
-        {% endfor %}
-      </div>
-      {% else %}
-      <span style="font-size:10px;color:var(--text-4)">No sources configured</span>
-      {% endif %}
+    <div class="val">{{ table_count }} <span class="unit">{{ layer_stats | selectattr('layer','equalto','gold') | map(attribute='count') | sum | default(0) }} gold</span></div>
+    <div class="delta">{{ layer_stats | selectattr('layer','equalto','silver') | map(attribute='count') | sum | default(0) }} silver · {{ layer_stats | selectattr('layer','equalto','bronze') | map(attribute='count') | sum | default(0) }} bronze</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">
+      <i data-lucide="shield-check" style="width:14px;height:14px;color:var(--success-9)"></i>
+      Quality score
     </div>
-  </a>
-
-  <span class="flow-chevron">›</span>
-
-  {# 2. Pipelines #}
-  {% set p_total   = stats.get('total', 0) %}
-  {% set p_running = stats.get('running', 0) %}
-  {% set p_failed  = stats.get('failed', 0) %}
-  {% set p_idle    = [p_total - p_running - p_failed, 0] | max %}
-  <a href="/data/pipelines" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Pipelines</span>
-      {% if p_failed > 0 %}
-        <span class="accent-card-status" style="color:var(--state-error)" title="{{ p_failed }} failed">⚠</span>
-      {% elif p_running > 0 %}
-        <span class="accent-card-status" style="color:var(--state-running)" title="{{ p_running }} running">⏱</span>
-      {% elif p_total > 0 %}
-        <span class="accent-card-status" style="color:var(--state-ok)" title="All idle">✓</span>
-      {% else %}
-        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
-      {% endif %}
+    <div class="val">{{ quality_summary.pass_pct }} <span class="unit">pass rate</span></div>
+    <div class="delta {% if quality_summary.failing | length > 0 %}down{% else %}up{% endif %}">{{ quality_summary.failing | length }} table{{ 's' if quality_summary.failing | length != 1 }} failing</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">
+      <i data-lucide="zap" style="width:14px;height:14px;color:var(--domain-intelligence)"></i>
+      Models & Agents
     </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon">
-        <i data-lucide="workflow" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">
-          {% if p_running %}{{ p_running }} running · {% endif %}
-          {{ p_idle }} idle
-          {% if p_failed %} · <span style="color:var(--state-error)">{{ p_failed }} failed</span>{% endif %}
-        </div>
-        <div class="accent-card-sub">{{ p_total }} total pipelines</div>
-      </div>
-    </div>
-    <div class="accent-card-widget">
-      <div class="sparkbar">
-        {% for col in sparkbar_data %}
-        <div class="sparkbar-col {{ col.status }}" style="height:{{ col.get('height', '50') }}%"></div>
-        {% endfor %}
-      </div>
-    </div>
-  </a>
-
-  <span class="flow-chevron">›</span>
-
-  {# 3. Warehouse #}
-  <a href="/data/warehouse" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Warehouse</span>
-      {% if table_count > 0 %}
-      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
-      {% else %}
-      <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
-      {% endif %}
-    </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon">
-        <i data-lucide="layers" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">{{ table_count }} table{{ 's' if table_count != 1 }}</div>
-        <div class="accent-card-sub">Across all layers</div>
-      </div>
-    </div>
-    <div class="accent-card-widget">
-      <div class="tier-dots" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        {% for ls in layer_stats %}
-        {% if ls.count > 0 %}
-        <span class="tier-dot {{ ls.layer }}" title="{{ ls.layer }}: {{ ls.count }} tables"></span>
-        <span style="font-size:9.5px;color:var(--text-4)">{{ ls.count }}</span>
-        {% endif %}
-        {% endfor %}
-        {% if table_count == 0 %}
-        <span style="font-size:10px;color:var(--text-4)">No tables yet</span>
-        {% endif %}
-      </div>
-    </div>
-  </a>
-
-  <span class="flow-chevron">›</span>
-
-  {# 4. Catalog #}
-  <a href="/data/catalog" class="accent-card" style="--card-accent: var(--domain-data); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Catalog</span>
-      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
-    </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon">
-        <i data-lucide="book-open" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">{{ table_count }} entr{{ 'ies' if table_count != 1 else 'y' }}</div>
-        <div class="accent-card-sub">Total catalog entries</div>
-      </div>
-    </div>
-    <div class="accent-card-widget" style="font-size:10px;color:var(--text-4)">
-      {% if table_count == 0 %}No tables indexed{% else %}→ Browse catalog{% endif %}
-    </div>
-  </a>
-
+    <div class="val">{{ (ml_stats.get('models', 0) if ml_stats else 0) }} <span class="unit">{{ (ml_stats.get('experiments', 0) if ml_stats else 0) }} expts</span></div>
+    <div class="delta">{{ (ml_stats.get('agents', 0) if ml_stats else 0) }} agents · {{ (ml_stats.get('tools', 0) if ml_stats else 0) }} tools</div>
+  </div>
 </div>
 
-{# ── Three below-fold panels ─────────────────────────────────────────────── #}
-<div class="hub-grid">
-
-  {# Panel 1: Recent runs #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Recent runs</span>
-      <a href="/data/pipelines" class="hub-panel-link">All pipelines →</a>
+{# ── Activity feed + Pipeline sparkbar ────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns: 1fr 420px; gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="card">
+    <div class="section-h">
+      <h2>Recent Activity</h2>
+      <a href="/system/runs" class="btn ghost sm">View all</a>
     </div>
-    {% if recent_runs %}
-      {% for r in recent_runs[:5] %}
-      <a href="/data/pipelines/{{ r.get('name', '') }}" class="hub-row" style="text-decoration:none">
-        <span class="sdot {{ r.get('status_class', 'idle') }}"></span>
-        <span class="hub-row-name mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.get('name', '—') }}</span>
-        <span class="hub-row-meta dim mono" style="font-size:10px">{{ r.get('duration', '—') }}</span>
-        <span class="hub-row-meta dim" style="font-size:10px">{{ r.get('rows', '—') }} rows</span>
+    {% if activity_feed %}
+    <div class="col" style="gap:0">
+      {% for act in activity_feed[:10] %}
+      <a href="{{ act.href }}" class="card" style="padding:var(--space-3);display:flex;align-items:center;gap:var(--space-3);transition:background var(--d-fast);border:none;background:transparent;box-shadow:none;cursor:pointer"
+         onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background='transparent'">
+        <div style="width:36px;height:36px;border-radius:var(--r-2);background:color-mix(in oklch,var(--domain-{{ act.domain }}) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i data-lucide="{{ act.icon }}" style="width:16px;height:16px;color:var(--domain-{{ act.domain }})"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:var(--text-sm);font-weight:500;color:var(--text)">{{ act.desc }}</div>
+          <div class="muted" style="font-size:var(--text-xs)">{{ act.sub }}</div>
+        </div>
+        <span class="pill {{ 'success' if act.badge == 'OK' else 'error' }}" style="font-size:var(--text-xs);height:18px">{{ act.badge }}</span>
+        <span class="muted" style="font-size:var(--text-xs);font-variant-numeric:tabular-nums">{{ act.time_ago }}</span>
       </a>
       {% endfor %}
+    </div>
     {% else %}
-      <div class="hub-row" style="color:var(--text-4);font-style:italic">No runs yet — run a pipeline to see activity here.</div>
+    <div class="empty-state" style="padding:var(--space-8)">
+      <i data-lucide="activity" class="icon"></i>
+      <div class="title">No recent activity</div>
+      <div class="desc">Run a pipeline to see activity here.</div>
+    </div>
     {% endif %}
   </div>
 
-  {# Panel 2: Warehouse layers #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Warehouse layers</span>
-      <a href="/data/catalog" class="hub-panel-link">Catalog →</a>
+  <div class="card">
+    <div class="section-h">
+      <h2>Pipeline Status</h2>
     </div>
-    {% for ls in layer_stats %}
-    <a href="/data/catalog?layer={{ ls.layer }}" class="hub-row" style="text-decoration:none">
-      <span class="tier-dot {{ ls.layer }}" style="width:8px;height:8px;border-radius:50%;flex-shrink:0"></span>
-      <span class="hub-row-name" style="text-transform:capitalize">{{ ls.layer }}</span>
-      <span class="hub-row-meta">{{ ls.count }} table{{ 's' if ls.count != 1 }}</span>
-      {% if ls.count > 0 %}
-      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok)">PASS</span>
-      {% else %}
-      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--bg-elev);color:var(--text-4)">EMPTY</span>
+    <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+      {% for p in pipelines[:7] %}
+      {% set running = p.status == 'running' %}
+      {% set failed  = p.status in ('error','failed') %}
+      {% set ok      = p.status in ('success','succeeded') %}
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2);background:var(--bg);border-radius:var(--r-2)">
+        <div style="width:24px;height:24px;border-radius:var(--r-1);background:color-mix(in oklch,var(--domain-data) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i data-lucide="workflow" style="width:12px;height:12px;color:var(--domain-data)"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:var(--text-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div>
+          <div class="muted" style="font-size:var(--text-xs)">{{ p.schedule or 'manual' }} · {{ p.last_run or 'never' }}</div>
+        </div>
+        <span class="pill {% if running %}running{% elif failed %}error{% elif ok %}success{% elif skipped %}info{% else %}{% endif %}" style="font-size:var(--text-xs);height:18px">
+          {% if running %}running{% elif failed %}failed{% elif ok %}ok{% elif skipped %}skipped{% else %}never{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+      {% if not pipelines %}
+      <div class="empty-state" style="padding:var(--space-8)">
+        <i data-lucide="workflow" class="icon"></i>
+        <div class="title">No pipelines</div>
+        <div class="desc">Create your first pipeline to get started.</      </div>
       {% endif %}
-    </a>
-    {% else %}
-    <div class="hub-row" style="color:var(--text-4);font-style:italic">No warehouse tables yet</div>
-    {% endfor %}
-  </div>
-
-  {# Panel 3: Quality #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Quality</span>
-      <a href="/data/quality" class="hub-panel-link">Details →</a>
     </div>
-    <div class="hub-row" style="border-bottom:1px solid var(--border)">
-      <span style="font-size:11px;color:var(--text-3)">Overall score</span>
-      <span style="flex:1"></span>
-      <span class="mono" style="font-size:13px;font-weight:600;color:{{ 'var(--state-ok)' if quality_summary.pass_pct != '—' else 'var(--text-3)' }}">{{ quality_summary.pass_pct }}</span>
+  </div>
+</div>
+
+{# ── Layer cards + Quality failing ────────────────────────────────────────── #}
+<div class="grid" style="grid-template-columns: repeat(3, 1fr) 380px; gap:var(--space-4); margin-bottom:var(--space-6)">
+  {% for lyr in layer_stats %}
+  <div class="card" style="border-left:3px solid {% if lyr.layer == 'bronze' %}#d4a843{% elif lyr.layer == 'silver' %}#b8c0cc{% else %}#e8c547{% endif %}">
+    <div class="row" style="justify-content:space-between;margin-bottom:var(--space-2)">
+      <span class="cap" style="color:{% if lyr.layer == 'bronze' %}#d4a843{% elif lyr.layer == 'silver' %}#b8c0cc{% else %}#e8c547{% endif %}">{{ lyr.layer }}</span>
+      <span class="tnum" style="font-size:var(--text-lg);font-weight:600">{{ lyr.count }}</span>
+    </div>
+    <div class="muted" style="font-size:var(--text-sm)">tables · {% if lyr.size_gb %}{{ lyr.size_gb }} GB{% else %}—{% endif %}</div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <div class="section-h">
+      <h2>Failing Quality Checks</h2>
     </div>
     {% if quality_summary.failing %}
-      {% for f in quality_summary.failing[:4] %}
-      <a href="/data/quality" class="hub-row" style="text-decoration:none">
-        <span class="sdot error"></span>
-        <span class="hub-row-name mono" style="font-size:11px">{{ f.table }}</span>
-        <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-error) 12%,transparent);color:var(--state-error)">{{ f.score }}</span>
-      </a>
-      {% endfor %}
-    {% else %}
-      <div class="hub-row" style="color:var(--text-4);font-style:italic">
-        {% if quality_summary.pass_pct == '—' %}No quality checks run yet{% else %}All checks passing{% endif %}
+    <div class="col" style="gap:var(--space-2);max-height:280px;overflow:auto">
+      {% for f in quality_summary.failing[:8] %}
+      <div class="card" style="padding:var(--space-3);background:color-mix(in oklch,var(--error-9) 8%,transparent);border-color:color-mix(in oklch,var(--error-9) 20%,transparent)">
+        <div class="row" style="justify-content:space-between">
+          <span class="mono" style="font-size:var(--text-sm)">{{ f.table }}</span>
+          <span class="pill error" style="font-size:var(--text-xs);height:18px">{{ f.score }}</span>
+        </div>
       </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:var(--space-8)">
+      <i data-lucide="check-circle-2" class="icon" style="color:var(--success-9)"></i>
+      <div class="title">All checks passing</div>
+      <div class="desc">No failing quality checks.</div>
+    </div>
     {% endif %}
   </div>
-
 </div>
 
-{# ── Activity feed ────────────────────────────────────────────────────────── #}
-<div class="hub-feed">
-  <div class="hub-feed-head">
-    <span class="hub-feed-title">Data activity</span>
-    <a href="/data/pipelines" style="font-size:10.5px;color:var(--text-4);text-decoration:none">All pipelines →</a>
+{# ── Quick actions ────────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="section-h">
+    <h2>Quick Actions</h2>
   </div>
-  {% if activity_feed %}
-    {% for ev in activity_feed %}
-    <a href="{{ ev.href }}" class="feed-row ev-{{ ev.domain }}" style="text-decoration:none">
-      <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-{{ ev.domain }}) 10%,transparent);
-                                    color:var(--domain-{{ ev.domain }})">
-        <i data-lucide="{{ ev.icon }}" style="width:12px;height:12px"></i>
-      </div>
-      <div class="feed-body">
-        <div class="feed-desc">{{ ev.desc }}</div>
-        <div class="feed-sub">{{ ev.sub }}</div>
-      </div>
-      <div class="feed-right">
-        <span class="feed-badge">{{ ev.badge }}</span>
-        <span class="feed-time">{{ ev.time_ago }}</span>
-      </div>
+  <div class="grid grid-4" style="gap:var(--space-3)">
+    <a href="/data/pipelines" class="card" style="padding:var(--space-4);text-align:center;transition:transform var(--d-fast),box-shadow var(--d-fast)"
+       onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+       onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+      <i data-lucide="plus-circle" style="width:28px;height:28px;color:var(--accent-11);margin-bottom:var(--space-2)"></i>
+      <div style="font-weight:500;font-size:var(--text-sm)">New Pipeline</div>
+      <div class="muted" style="font-size:var(--text-xs);margin-top:2px">Create bronze→gold flow</div>
     </a>
-    {% endfor %}
-  {% else %}
-    <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
-      No recent activity. Run a pipeline to see events here.
-    </div>
-  {% endif %}
+    <a href="/data/sources" class="card" style="padding:var(--space-4);text-align:center;transition:transform var(--d-fast),box-shadow var(--d-fast)"
+       onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+       onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+      <i data-lucide="database" style="width:28px;height:28px;color:var(--domain-data);margin-bottom:var(--space-2)"></i>
+      <div style="font-weight:500;font-size:var(--text-sm)">Add Source</div>
+      <div class="muted" style="font-size:var(--text-xs);margin-top:2px">Connect data source</div>
+    </a>
+    <a href="/data/sql" class="card" style="padding:var(--space-4);text-align:center;transition:transform var(--d-fast),box-shadow var(--d-fast)"
+       onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+       onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+      <i data-lucide="terminal" style="width:28px;height:28px;color:var(--info-9);margin-bottom:var(--space-2)"></i>
+      <div style="font-weight:500;font-size:var(--text-sm)">SQL Query</div>
+      <div class="muted" style="font-size:var(--text-xs);margin-top:2px">Run ad-hoc queries</div>
+    </a>
+    <a href="/intelligence/playground" class="card" style="padding:var(--space-4);text-align:center;transition:transform var(--d-fast),box-shadow var(--d-fast)"
+       onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+       onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+      <i data-lucide="message-square" style="width:28px;height:28px;color:var(--domain-intelligence);margin-bottom:var(--space-2)"></i>
+      <div style="font-weight:500;font-size:var(--text-sm)">AI Playground</div>
+      <div class="muted" style="font-size:var(--text-xs);margin-top:2px">Chat over your data</div>
+    </a>
+  </div>
 </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+});
+</script>
 {% endblock %}

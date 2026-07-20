@@ -6,30 +6,53 @@ All metrics are process-level — no external dependencies beyond prometheus_cli
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram
+from prometheus_client.metrics import MetricWrapperBase
+
+
+def _register[M: MetricWrapperBase](
+    cls: type[M], name: str, *args: object, **kwargs: object
+) -> M:
+    """Create a metric, reusing the existing collector if *name* is already registered.
+
+    dex-studio's app factory can run more than once in a process (e.g. under
+    dev tooling that re-imports the app module), which re-executes this
+    module's top-level code. prometheus_client's default registry raises
+    ValueError on a second registration of the same metric name — reusing the
+    already-registered collector makes (re-)import idempotent instead.
+    """
+    existing = REGISTRY._names_to_collectors.get(name)  # noqa: SLF001
+    if existing is not None:
+        return existing  # type: ignore[return-value]
+    return cls(name, *args, **kwargs)  # type: ignore[call-arg, arg-type]
+
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
 
-PIPELINE_RUNS = Counter(
+PIPELINE_RUNS = _register(
+    Counter,
     "dex_pipeline_runs_total",
     "Total pipeline runs",
     ["pipeline", "status", "layer"],
 )
 
-PIPELINE_DURATION = Histogram(
+PIPELINE_DURATION = _register(
+    Histogram,
     "dex_pipeline_duration_seconds",
     "Pipeline execution duration in seconds",
     ["pipeline", "layer"],
     buckets=(10, 30, 60, 120, 300, 600, 1800, 3600, 7200),
 )
 
-PIPELINE_ROWS_INPUT = Counter(
+PIPELINE_ROWS_INPUT = _register(
+    Counter,
     "dex_pipeline_rows_input_total",
     "Total rows read by pipeline",
     ["pipeline", "layer"],
 )
 
-PIPELINE_ROWS_OUTPUT = Counter(
+PIPELINE_ROWS_OUTPUT = _register(
+    Counter,
     "dex_pipeline_rows_output_total",
     "Total rows written by pipeline",
     ["pipeline", "layer"],
@@ -37,19 +60,22 @@ PIPELINE_ROWS_OUTPUT = Counter(
 
 # ── Data quality ──────────────────────────────────────────────────────────────
 
-QUALITY_SCORE = Gauge(
+QUALITY_SCORE = _register(
+    Gauge,
     "dex_data_quality_score",
     "Latest quality score for pipeline output",
     ["pipeline", "layer"],
 )
 
-QUALITY_CHECKS_FAILED = Counter(
+QUALITY_CHECKS_FAILED = _register(
+    Counter,
     "dex_quality_checks_failed_total",
     "Quality checks that scored below threshold",
     ["pipeline"],
 )
 
-RECONCILIATION_MISMATCHES = Counter(
+RECONCILIATION_MISMATCHES = _register(
+    Counter,
     "dex_reconciliation_mismatches_total",
     "Row count reconciliation mismatches",
     ["pipeline"],
@@ -57,20 +83,23 @@ RECONCILIATION_MISMATCHES = Counter(
 
 # ── Queue / concurrency ───────────────────────────────────────────────────────
 
-QUEUE_DEPTH = Gauge(
+QUEUE_DEPTH = _register(
+    Gauge,
     "dex_pipeline_queue_depth",
     "Number of pipelines in queue",
     ["status"],
 )
 
-RUNNING_PIPELINES = Gauge(
+RUNNING_PIPELINES = _register(
+    Gauge,
     "dex_running_pipelines",
     "Number of pipelines currently executing",
 )
 
 # ── Ingestion / dedup ─────────────────────────────────────────────────────────
 
-DEDUPLICATIONS = Counter(
+DEDUPLICATIONS = _register(
+    Counter,
     "dex_ingestion_deduplicated_total",
     "Rows skipped by content-hash dedup",
     ["source"],
@@ -116,6 +145,20 @@ def record_quality_score(pipeline: str, score: float, layer: str = "") -> None:
     if not layer:
         layer = _guess_layer(pipeline)
     QUALITY_SCORE.labels(pipeline=pipeline, layer=layer).set(score)
+
+
+def get_quality_score(pipeline: str) -> float | None:
+    """Read back the score `record_quality_score` last set for *pipeline*, if any.
+
+    Uses the public `collect()` API rather than `.labels()` — calling `.labels()`
+    to read a value would silently create a new 0.0-valued child series for a
+    pipeline that has never actually been scored.
+    """
+    for metric in QUALITY_SCORE.collect():
+        for sample in metric.samples:
+            if sample.labels.get("pipeline") == pipeline:
+                return sample.value
+    return None
 
 
 def record_quality_failure(pipeline: str) -> None:

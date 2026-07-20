@@ -1,430 +1,470 @@
 {% extends "base.html" %}
 
 {% block title %}SQL Console — DEX Studio{% endblock %}
-{% block content_class %}full-bleed{% endblock %}
 
-{% block full_bleed %}
-<div style="display:flex;flex-direction:column;height:100%;min-height:0">
+{% block page_title %}SQL Console{% endblock %}
+{% block page_sub %}Ad-hoc query editor · DuckDB engine{% endblock %}
 
-  {# ── Tab strip ────────────────────────────────────────────────────────── #}
-  <div style="border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;flex-shrink:0;height:38px;background:var(--bg-elev)">
-    <div class="row" style="gap:0">
-      {% set sql_tabs = [
-        {'name': 'untitled-1.sql', 'dirty': true},
-      ] %}
-      {% for t in sql_tabs %}
-      <button class="sql-tab {{ 'active' if loop.first }}"
-              onclick="switchSqlTab(this, {{ loop.index0 }})"
-              style="padding:8px 12px;gap:8px;border-right:1px solid var(--border);{{ 'border-left:1px solid var(--border);' if loop.first }}background:{{ 'var(--bg)' if loop.first else 'transparent' }};border-bottom:{{ '1px solid var(--bg)' if loop.first else 'none' }};margin-bottom:-1px;font-size:12px;border-top:none;display:flex;align-items:center;cursor:default;white-space:nowrap">
-        <i data-lucide="code" style="width:11px;height:11px;opacity:.4"></i>
-        <span class="mono">{{ t.name }}</span>
-        {% if t.get('dirty') %}<span style="width:5px;height:5px;border-radius:999px;background:var(--amber-9);flex-shrink:0"></span>{% endif %}
-        <i data-lucide="x" style="width:11px;height:11px;opacity:.35;margin-left:2px"></i>
-      </button>
-      {% endfor %}
+{% block page_actions %}
+<button class="btn primary" onclick="runQuery()">
+  <i data-lucide="play" style="width:12px;height:12px"></i> Run (Ctrl+Enter)
+</button>
+<button class="btn ghost" onclick="formatSQL()">
+  <i data-lucide="align-left" style="width:12px;height:12px"></i> Format
+</button>
+<button class="btn ghost" onclick="clearEditor()">
+  <i data-lucide="trash-2" style="width:12px;height:12px"></i> Clear
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+{# ── Editor + Results layout ──────────────────────────────────────────────── #}
+<div style="display:grid;grid-template-columns:1fr;gap:var(--space-4);height:calc(100vh - 220px)">
+
+  {# Editor panel #}
+  <div class="card card-bare" style="display:flex;flex-direction:column;height:100%;min-height:0">
+    <div style="padding:var(--space-3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div class="row" style="gap:var(--space-2)">
+        <span class="cap">Editor</span>
+        <span class="layer-chip sql">SQL</span>
+      </div>
+      <div class="row" style="gap:var(--space-1)">
+        <span class="muted" style="font-size:var(--text-xs)" id="sql-status">Ready</span>
+        <div class="div-x" style="height:16px"></div>
+        <span class="kbd">Ctrl+Enter</span>
+      </div>
     </div>
-    <button class="btn icon ghost sm" style="margin-left:6px">
-      <i data-lucide="plus" style="width:12px;height:12px"></i>
-    </button>
-    <div style="flex:1"></div>
-    <div class="row" style="gap:6px">
-      <select class="input" style="width:130px;height:26px;font-size:11.5px;font-family:var(--font-mono)">
-        <option value="duckdb" selected>DuckDB · local</option>
-        <option value="iceberg">Iceberg REST</option>
-        <option value="postgres">Postgres · prod</option>
-      </select>
-      <button class="btn sm ghost">
-        <i data-lucide="history" style="width:11px;height:11px"></i> History
-      </button>
-      <button class="btn sm ghost">
-        <i data-lucide="download" style="width:11px;height:11px"></i> Save
-      </button>
-      <form id="sql-run-form" method="post" action="/data/sql/execute" style="display:inline">
-        <button type="submit" class="btn sm primary" id="sql-run-btn">
-          <i data-lucide="play" style="width:11px;height:11px"></i> Run
-          <span class="kbd kbd-inv">⌘↵</span>
-        </button>
-      </form>
+
+    <div class="editor" style="flex:1;min-height:0;display:flex;flex-direction:column;border:none;background:transparent;box-shadow:none;padding:0">
+      <div class="ed-toolbar" style="height:34px;padding:0 10px;display:flex;align-items:center;gap:8px;background:var(--bg-elev);border-bottom:1px solid var(--border);font-size:var(--text-xs);border-radius:var(--r-2) var(--r-2) 0 0">
+        <div class="row" style="gap:6px">
+          <i data-lucide="database" style="width:12px;height:12px;color:var(--domain-data)"></i>
+          <span class="mono" id="sql-db-label" style="color:var(--text-2)">main</span>
+        </div>
+        <span style="flex:1"></span>
+        <div class="row" style="gap:6px;color:var(--text-4);font-size:var(--text-xs)">
+          <span id="sql-cursor-pos">Ln 1, Col 1</span>
+          <span id="sql-selection-info" style="display:none"></span>
+        </div>
+      </div>
+      <div class="ed-body" style="flex:1;min-height:0;display:grid;grid-template-columns:44px 1fr;background:var(--bg);border-radius:0 0 var(--r-2) var(--r-2)">
+        <div class="gutter" id="sql-gutter" style="text-align:right;padding:12px 8px 12px 0;color:var(--text-4);user-select:none;background:var(--bg);border-right:1px solid var(--border)"></div>
+        <textarea id="sql-editor" class="code" spellcheck="false"
+                  style="padding:12px 14px;color:var(--text);white-space:pre;overflow:auto;font-family:var(--font-mono);font-size:13px;line-height:1.6;background:var(--bg);border:none;resize:none;outline:none"
+                  placeholder="SELECT * FROM bronze.movies LIMIT 10;">
+SELECT * FROM bronze.movies LIMIT 10;
+</textarea>
+      </div>
+    </div>
+
+    <div class="ed-status" style="height:24px;padding:0 10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:10.5px;color:var(--text-3);background:var(--bg-elev);font-family:var(--font-mono);border-radius:0 0 var(--r-2) var(--r-2)">
+      <span id="sql-result-info">No results</span>
+      <span style="flex:1"></span>
+      <span id="sql-last-run" style="font-variant-numeric:tabular-nums">—</span>
     </div>
   </div>
 
-  {# ── Main split: schema rail + editor+results ─────────────────────────── #}
-  <div id="sql-main-split" style="flex:1;display:grid;grid-template-columns:220px 1fr;min-height:0;overflow:hidden">
-
-    {# ── Schema explorer (collapsible) ────────────────────────────────────── #}
-    <aside id="sql-schema-rail" style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--bg)">
-      <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center">
-        <div class="input-icon" style="flex:1">
-          <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
-          <input id="schema-filter" class="input" placeholder="Filter tables…" style="font-size:11.5px;height:26px"
-                 oninput="schemaFilter(this.value)">
-        </div>
-        <button class="btn icon ghost sm" title="Collapse sidebar" onclick="toggleSchemaSidebar()"
-                id="schema-toggle-btn">
-          <i data-lucide="panel-left-close" style="width:12px;height:12px"></i>
+  {# Results panel #}
+  <div class="card card-bare" style="display:flex;flex-direction:column;height:100%;min-height:0" id="sql-results-panel">
+    <div style="padding:var(--space-3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div class="row" style="gap:var(--space-2)">
+        <span class="cap">Results</span>
+        <span id="sql-result-badge" class="pill" style="display:none;font-size:var(--text-xs)"></span>
+      </div>
+      <div class="row" style="gap:var(--space-2)">
+        <select class="input sm" id="sql-results-format" style="height:26px;font-size:11px;width:auto" onchange="renderResults()">
+          <option value="table">Table</option>
+          <option value="json">JSON</option>
+          <option value="csv">CSV</option>
+        </select>
+        <button class="btn icon ghost sm" onclick="copyResults()" title="Copy results">
+          <i data-lucide="copy" style="width:12px;height:12px"></i>
+        </button>
+        <button class="btn icon ghost sm" onclick="downloadResults()" title="Download CSV">
+          <i data-lucide="download" style="width:12px;height:12px"></i>
         </button>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:6px 0" id="schema-tree">
-        {% for layer in ['bronze', 'silver', 'gold'] %}
-        <div class="schema-section" style="margin-bottom:6px" data-layer="{{ layer }}">
-          <div class="row" style="padding:6px 10px;gap:6px">
-            <i data-lucide="chevron-down" style="width:11px;height:11px;opacity:.4"></i>
-            <span class="layer-chip {{ layer }}" style="height:16px;font-size:9.5px">{{ layer }}</span>
-          </div>
-          {% for t in catalog_entries | default([]) | selectattr('layer', 'equalto', layer) %}
-          <div class="schema-row row schema-table-row" data-table="{{ t.name }}" data-layer="{{ layer }}"
-               style="cursor:pointer" onclick="insertTableName('{{ t.name }}')">
-            <i data-lucide="table" style="width:10px;height:10px;opacity:.4"></i>
-            <span class="mono" style="flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</span>
-            <span class="mono dim" style="font-size:9.5px">{{ t.column_count }}c</span>
-          </div>
-          {% else %}
-          <div class="schema-row row muted" style="font-size:11px;padding-left:16px">no tables yet</div>
-          {% endfor %}
-        </div>
-        {% endfor %}
+    </div>
+
+    <div style="flex:1;overflow:auto;padding:var(--space-3)" id="sql-results-container">
+      <div class="empty-state" style="padding:var(--space-12);height:100%;display:flex;flex-direction:column;justify-content:center">
+        <i data-lucide="terminal" class="icon"></i>
+        <div class="title">No results yet</div>
+        <div class="desc">Run a query to see results here.</div>
       </div>
-    </aside>
+    </div>
+  </div>
 
-    {# Collapsed sidebar toggle button — shown when sidebar is hidden #}
-    <button id="schema-expand-btn" onclick="toggleSchemaSidebar()"
-            title="Show schema sidebar"
-            style="display:none;position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:10;
-                   width:20px;height:48px;border:none;border-right:1px solid var(--border);
-                   background:var(--bg-elev);cursor:pointer;color:var(--text-4);
-                   border-radius:0 4px 4px 0">
-      <i data-lucide="panel-left-open" style="width:11px;height:11px"></i>
-    </button>
+</div>
 
-    {# ── Editor + results split ─────────────────────────────────────────── #}
-    <div style="display:grid;grid-template-rows:1fr 1fr;min-height:0">
+{# ── Query History Sidebar ─────────────────────────────────────────────────── #}
+<div class="card" style="margin-top:var(--space-4);max-height:200px">
+  <div class="section-h">
+    <h2>Query History</h2>
+    <button class="btn ghost sm" onclick="clearHistory()">Clear</button>
+  </div>
+  <div id="sql-history-list" style="max-height:140px;overflow:auto">
+    <div class="empty-state" style="padding:var(--space-6)">
+      <div class="desc">No queries yet. Run a query to add to history.</div>
+    </div>
+  </div>
+</div>
 
-      {# ── Code editor ──────────────────────────────────────────────────── #}
-      <div class="editor" style="border-radius:0;border:none;border-bottom:1px solid var(--border);min-height:0;display:flex;flex-direction:column">
-        <div class="ed-body" style="flex:1;min-height:0">
-          <div class="gutter" id="sql-gutter"></div>
-          <textarea
-            id="sql-editor"
-            name="query"
-            form="sql-run-form"
-            spellcheck="false"
-            autocorrect="off"
-            autocapitalize="off"
-            style="flex:1;resize:none;border:none;outline:none;background:transparent;color:var(--text);font-family:var(--font-mono);font-size:12.5px;line-height:1.65;padding:0 12px;tab-size:2;width:100%;box-sizing:border-box;overflow:auto"
-          >{{ default_sql | e }}</textarea>
-        </div>
-        <div class="ed-status">
-          <span id="ed-pos">Ln 1, Col 1</span>
-          <span>·&nbsp; DuckDB</span>
-          <span class="row" style="margin-left:auto;gap:6px">
-            <i data-lucide="check" style="width:11px;height:11px;color:var(--green-9)"></i>
-            ready
-          </span>
-        </div>
-      </div>
+</div>
 
-      {# ── Results pane ─────────────────────────────────────────────────── #}
-      <div style="display:flex;flex-direction:column;min-height:0;background:var(--bg)">
-        <div class="row" style="padding:0 14px;height:34px;border-bottom:1px solid var(--border);gap:0;flex-shrink:0">
-          {% set _rc = sql_results | length if sql_results else 0 %}
-          {% for tab in [
-            {'id': 'results', 'label': 'Results',  'count': _rc if _rc else ''},
-            {'id': 'chart',   'label': 'Chart',    'count': ''},
-            {'id': 'history', 'label': 'History',  'count': ''},
-            {'id': 'explain', 'label': 'EXPLAIN',  'count': ''},
-          ] %}
-          <button class="tab {{ 'active' if loop.first }}" data-result-tab="{{ tab.id }}"
-                  onclick="switchResultTab('{{ tab.id }}', this)"
-                  style="padding:8px 12px;font-size:12px;background:none;border:none;cursor:pointer">
-            {{ tab.label }}
-            {% if tab.count %}<span class="count">{{ tab.count }}</span>{% endif %}
-          </button>
-          {% endfor %}
-          <div style="flex:1"></div>
-          <span class="dim mono" style="font-size:11px" id="sql-stat">
-            {%- if exec_ms is not none -%}{{ "%.0f"|format(exec_ms) }} ms · {{ sql_results | length }} rows{%- else -%}ready{%- endif -%}
-          </span>
-          <button class="btn sm ghost" style="margin-left:10px">
-            <i data-lucide="download" style="width:10px;height:10px"></i> CSV
-          </button>
-          <button class="btn icon ghost sm">
-            <i data-lucide="copy" style="width:10px;height:10px"></i>
-          </button>
-        </div>
+{# ── Quick table browser modal ────────────────────────────────────────────── #}
+<dialog class="modal modal-lg" id="table-browser-modal">
+  <div class="modal-header">
+    <h3>Insert Table</h3>
+    <button class="btn icon ghost sm" onclick="this.closest('dialog').close()"><i data-lucide="x" style="width:14px;height:14px"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="input-icon" style="margin-bottom:var(--space-3);width:100%">
+      <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
+      <input class="input" id="table-search" placeholder="Search tables…" style="height:32px" oninput="filterTableBrowser()">
+    </div>
+    <div id="table-browser-list" style="max-height:400px;overflow:auto"></div>
+  </div>
+</dialog>
 
-        <div style="flex:1;overflow:auto;min-height:0">
-
-          {# Results tab #}
-          <div id="result-pane-results">
-            {% if sql_results %}
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th style="width:28px"></th>
-                  {% for col in sql_columns | default([]) %}
-                  <th>{{ col }}</th>
-                  {% endfor %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in sql_results %}
-                <tr>
-                  <td class="dim mono" style="font-size:10px">{{ loop.index }}</td>
-                  {% for col in sql_columns %}
-                  <td class="mono">{{ row.get(col, "") if row.get(col) is not none else "" }}</td>
-                  {% endfor %}
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% else %}
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:40px;color:var(--gray-9)">
-              <i data-lucide="play-circle" style="width:28px;height:28px;margin-bottom:10px;opacity:.4"></i>
-              <div style="font-size:13px;font-weight:500;margin-bottom:4px">Run a query to see results</div>
-              <div style="font-size:12px">Press <kbd style="font-family:var(--font-mono);background:var(--gray-3);padding:1px 6px;border-radius:4px">⌘↵</kbd> or click Run</div>
-            </div>
-            {% endif %}
-          </div>
-
-          {# Chart tab — dynamic bar chart from query results #}
-          <div id="result-pane-chart" style="display:none;padding:16px">
-            <div class="row" style="margin-bottom:12px;gap:10px">
-              <span class="cap">x-axis</span>
-              <select class="input" id="chart-x" style="width:150px;font-size:11.5px;height:24px" onchange="renderChart()">
-                {% for col in sql_columns %}<option>{{ col }}</option>{% endfor %}
-              </select>
-              <span class="cap" style="margin-left:12px">y-axis</span>
-              <select class="input" id="chart-y" style="width:150px;font-size:11.5px;height:24px" onchange="renderChart()">
-                {% for col in sql_columns %}<option {{ 'selected' if col in ['weighted_rating','imdb_rating'] }}>{{ col }}</option>{% endfor %}
-              </select>
-              <span class="cap" style="margin-left:12px">kind</span>
-              <div class="row" style="gap:0;border:1px solid var(--border);border-radius:4px;overflow:hidden">
-                <button class="btn sm primary" id="chart-bar" style="border-radius:0;height:24px;padding:0 8px" onclick="setChartKind('bar',this)">bar</button>
-                <button class="btn sm ghost"   id="chart-line" style="border-radius:0;height:24px;padding:0 8px;border-left:1px solid var(--border)" onclick="setChartKind('line',this)">line</button>
-              </div>
-              <div style="flex:1"></div>
-            </div>
-            <div class="col" id="chart-body" style="gap:4px">
-              {% if sql_results and sql_columns | length >= 2 %}
-                {% set x_col = sql_columns[0] %}
-                {% set y_col = sql_columns[-1] %}
-                {% set max_y = namespace(v=0.01) %}
-                {% for row in sql_results[:10] %}{% set yv = row.get(y_col, 0) | float %}{% if yv > max_y.v %}{% set max_y.v = yv %}{% endif %}{% endfor %}
-                {% for row in sql_results[:10] %}
-                {% set yv = row.get(y_col, 0) | float %}
-                {% set pct = (yv / max_y.v * 100) | round(1) %}
-                <div class="row" style="gap:10px;font-size:11.5px">
-                  <span class="mono" style="width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0" title="{{ row.get(x_col, '') }}">{{ row.get(x_col, '') }}</span>
-                  <div style="flex:1;position:relative;height:18px;background:var(--bg-elev-2);border-radius:3px">
-                    <div style="position:absolute;inset:2px auto 2px 2px;width:calc({{ pct }}% - 4px);background:linear-gradient(90deg,var(--accent-9),var(--accent-7));border-radius:2px"></div>
-                  </div>
-                  <span class="mono tnum dim" style="width:40px;text-align:right">{{ yv | round(2) }}</span>
-                </div>
-                {% endfor %}
-              {% else %}
-              <div class="muted" style="font-size:12px;padding:20px 0">Run a query to see a chart.</div>
-              {% endif %}
-            </div>
-          </div>
-
-          {# History tab — example moviedex queries #}
-          <div id="result-pane-history" style="display:none">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th style="width:110px">When</th>
-                  <th style="width:60px"></th>
-                  <th>Query</th>
-                  <th class="num">Rows</th>
-                  <th class="num">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for h in [
-                  {'t':'just now',  'ok':true,  'rows':'20',    'dur':'9 ms',   'q':'SELECT title, release_year, genres, imdb_rating, vote_count, weighted_rating FROM gold_top_movies ORDER BY global_rank LIMIT 20'},
-                  {'t':'15m ago',   'ok':true,  'rows':'2,518', 'dur':'12 ms',  'q':'SELECT genre, decade, avg_rating, count FROM gold_genre_trends ORDER BY popularity_index DESC LIMIT 50'},
-                  {'t':'42m ago',   'ok':true,  'rows':'12,675','dur':'34 ms',  'q':'SELECT director_name, avg_rating, movies_directed, career_span FROM gold_director_stats ORDER BY avg_rating DESC LIMIT 20'},
-                  {'t':'1h ago',    'ok':true,  'rows':'100',   'dur':'21 ms',  'q':'SELECT * FROM silver_movies WHERE imdb_rating > 8.0 ORDER BY vote_count DESC LIMIT 100'},
-                  {'t':'2h ago',    'ok':false, 'rows':'0',     'dur':'—',      'q':'SELECT * FROM gold_top_moviess LIMIT 10'},
-                  {'t':'3h ago',    'ok':true,  'rows':'—',     'dur':'2 ms',   'q':'DESCRIBE silver_movies'},
-                  {'t':'yesterday', 'ok':true,  'rows':'8',     'dur':'5 ms',   'q':'SELECT genres, COUNT(*) cnt FROM silver_movies WHERE imdb_rating > 7 GROUP BY genres ORDER BY cnt DESC LIMIT 8'},
-                ] %}
-                <tr>
-                  <td class="dim mono" style="font-size:11px">{{ h.t }}</td>
-                  <td>
-                    {% if h.ok %}
-                    <i data-lucide="check" style="width:12px;height:12px;color:var(--green-9)"></i>
-                    {% else %}
-                    <i data-lucide="x" style="width:12px;height:12px;color:var(--red-9)"></i>
-                    {% endif %}
-                  </td>
-                  <td class="mono" style="font-size:11.5px;color:var(--text-2);max-width:480px;overflow:hidden;text-overflow:ellipsis">{{ h.q }}</td>
-                  <td class="num mono dim">{{ h.rows }}</td>
-                  <td class="num mono dim">{{ h.dur }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-          {# EXPLAIN tab — moviedex query plan #}
-          <div id="result-pane-explain" style="display:none;padding:16px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-2);line-height:1.7">
-            <div class="muted" style="margin-bottom:12px;font-size:11px">query plan · DuckDB</div>
-            {% for step in [
-              {'depth':0, 'name':'TOP_N',         'info':'n=20, ORDER BY global_rank',                                                  'time':'0.1 ms'},
-              {'depth':1, 'name':'PROJECTION',    'info':'title, release_year, genres, imdb_rating, vote_count, weighted_rating',       'time':'0.2 ms'},
-              {'depth':2, 'name':'PARQUET_SCAN',  'info':'gold_top_movies · 616,915 rows · 27.2 MB · row-group pruning: 0 skipped',    'time':'7.8 ms'},
-            ] %}
-            <div class="row" style="gap:10px;padding-left:{{ step.depth * 16 }}px">
-              <span style="color:var(--text-4)">└─</span>
-              <span style="color:var(--accent-11);font-weight:500">{{ step.name }}</span>
-              <span class="dim">{{ step.info }}</span>
-              <span style="margin-left:auto;color:var(--green-9)">{{ step.time }}</span>
-            </div>
-            {% endfor %}
-            <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);color:var(--text-3)">
-              Total: {{ "%.0f"|format(exec_ms) if exec_ms else '—' }} ms · DuckDB in-process · 0 spilled
-            </div>
-          </div>
-
-        </div>{# scroll container #}
-      </div>{# results pane #}
-    </div>{# editor+results grid #}
-  </div>{# main split #}
-</div>{# full-bleed wrapper #}
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ── SQL Editor ──────────────────────────────────────────────────────────────
 (function () {
-  const ta     = document.getElementById('sql-editor');
+  const editor = document.getElementById('sql-editor');
   const gutter = document.getElementById('sql-gutter');
+  const resultsContainer = document.getElementById('sql-results-container');
+  const statusEl = document.getElementById('sql-status');
+  const resultInfo = document.getElementById('sql-result-info');
+  const lastRun = document.getElementById('sql-last-run');
+  const cursorPos = document.getElementById('sql-cursor-pos');
+  const resultBadge = document.getElementById('sql-result-badge');
+  const historyList = document.getElementById('sql-history-list');
 
+  let queryHistory = JSON.parse(localStorage.getItem('dex-sql-history') || '[]');
+  let lastResults = null;
+
+  // Line numbers
   function updateGutter() {
-    if (!ta || !gutter) return;
-    const lines = ta.value.split('\n').length;
-    gutter.innerHTML = Array.from({ length: lines }, (_, i) => `<div>${i + 1}</div>`).join('');
+    const lines = editor.value.split('\n').length;
+    gutter.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
+    gutter.scrollTop = editor.scrollTop;
   }
 
-  function updatePos() {
-    const pos = document.getElementById('ed-pos');
-    if (!pos || !ta) return;
-    const before = ta.value.slice(0, ta.selectionStart);
-    const lines  = before.split('\n');
-    pos.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+  editor.addEventListener('input', updateGutter);
+  editor.addEventListener('scroll', () => { gutter.scrollTop = editor.scrollTop; });
+
+  // Cursor position
+  editor.addEventListener('keyup', updateCursor);
+  editor.addEventListener('click', updateCursor);
+
+  function updateCursor() {
+    const text = editor.value.substring(0, editor.selectionStart);
+    const lines = text.split('\n');
+    const line = lines.length;
+    const col = lines[lines.length - 1].length + 1;
+    cursorPos.textContent = `Ln ${line}, Col ${col}`;
+
+    if (editor.selectionStart !== editor.selectionEnd) {
+      const selText = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+      const selLines = selText.split('\n').length;
+      document.getElementById('sql-selection-info').textContent = ` · Sel: ${selLines} line${selLines !== 1 ? 's' : ''}`;
+      document.getElementById('sql-selection-info').style.display = '';
+    } else {
+      document.getElementById('sql-selection-info').style.display = 'none';
+    }
   }
 
-  if (ta) {
-    ta.addEventListener('input', updateGutter);
-    ta.addEventListener('keyup', updatePos);
-    ta.addEventListener('click', updatePos);
+  // Run query
+  async function runQuery() {
+    const sql = editor.value.trim();
+    if (!sql) return;
 
-    // Tab key inserts two spaces instead of moving focus
-    ta.addEventListener('keydown', e => {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const s = ta.selectionStart;
-        const v = ta.value;
-        ta.value = v.slice(0, s) + '  ' + v.slice(ta.selectionEnd);
-        ta.selectionStart = ta.selectionEnd = s + 2;
-        updateGutter();
-        updatePos();
+    statusEl.textContent = 'Running…';
+    statusEl.style.color = 'var(--accent-11)';
+    resultBadge.style.display = 'none';
+
+    const start = performance.now();
+    let duration = 0;
+    try {
+      const response = await fetch('/data/sql/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'HX-Request': 'true',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: new URLSearchParams({ query: sql })
+      });
+
+      duration = performance.now() - start;
+      const html = await response.text();
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-    });
+
+      resultsContainer.innerHTML = html;
+      lucide.createIcons();
+
+      const dataEl = document.getElementById('sql-result-data');
+      if (dataEl) {
+        lastResults = JSON.parse(dataEl.textContent);
+        statusEl.textContent = 'Success';
+        statusEl.style.color = 'var(--success-9)';
+        resultBadge.textContent = `${lastResults.row_count} rows · ${duration.toFixed(0)}ms`;
+        resultBadge.className = 'pill success';
+        resultBadge.style.display = 'inline-flex';
+        resultInfo.textContent = `${lastResults.row_count} rows · ${lastResults.columns.length} columns`;
+        lastRun.textContent = new Date().toLocaleTimeString();
+        addToHistory(sql, lastResults.row_count, duration, true);
+      } else {
+        // Query ran but the server reported an error inside the rendered partial.
+        lastResults = null;
+        statusEl.textContent = 'Error';
+        statusEl.style.color = 'var(--error-9)';
+        resultBadge.style.display = 'none';
+        resultInfo.textContent = 'Query failed';
+        lastRun.textContent = new Date().toLocaleTimeString();
+        addToHistory(sql, 0, duration, false, 'Query error');
+      }
+    } catch (err) {
+      lastResults = null;
+      statusEl.textContent = 'Error';
+      statusEl.style.color = 'var(--error-9)';
+      resultBadge.textContent = err.message;
+      resultBadge.className = 'pill error';
+      resultBadge.style.display = 'inline-flex';
+      resultInfo.textContent = 'Query failed';
+      lastRun.textContent = new Date().toLocaleTimeString();
+
+      resultsContainer.innerHTML = `
+        <div class="card" style="background:color-mix(in oklch,var(--error-9) 8%,transparent);border-color:color-mix(in oklch,var(--error-9) 20%,transparent)">
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:var(--space-3)">
+            <i data-lucide="alert-circle" style="width:16px;height:16px;color:var(--error-9);flex-shrink:0;margin-top:1px"></i>
+            <div>
+              <div style="font-weight:600;font-size:var(--text-sm);color:var(--error-9)">Query Error</div>
+              <div class="mono" style="font-size:var(--text-xs);margin-top:4px;white-space:pre-wrap;color:var(--text-2)">${err.message}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+      addToHistory(sql, 0, duration, false, err.message);
+    }
   }
 
-  // Ensure textarea value is included in form submission (form attribute
-  // association isn't handled by all tools/HTMX serialization)
-  const sqlForm = document.getElementById('sql-run-form');
-  if (sqlForm) {
-    sqlForm.addEventListener('submit', function () {
-      const ta = document.getElementById('sql-editor');
-      if (!ta) return;
-      const existing = document.getElementById('sql-query-ghost');
-      if (existing) existing.remove();
-      const ghost = document.createElement('input');
-      ghost.type = 'hidden';
-      ghost.id = 'sql-query-ghost';
-      ghost.name = 'query';
-      ghost.value = ta.value;
-      this.appendChild(ghost);
+  // Render results
+  function renderResults() {
+    if (!lastResults) return;
+
+    const format = document.getElementById('sql-results-format').value;
+    const { rows, columns, row_count } = lastResults;
+
+    if (format === 'json') {
+      resultsContainer.innerHTML = `<pre class="mono" style="font-size:11px;white-space:pre-wrap;overflow:auto;max-height:500px">${JSON.stringify(rows, null, 2)}</pre>`;
+      return;
+    }
+
+    if (format === 'csv') {
+      const header = columns.join(',');
+      const csvRows = rows.map(r => columns.map(c => {
+        const v = r[c];
+        return typeof v === 'string' && (v.includes(',') || v.includes('"')) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(','));
+      resultsContainer.innerHTML = `<pre class="mono" style="font-size:11px;white-space:pre-wrap;overflow:auto;max-height:500px">${[header, ...csvRows].join('\n')}</pre>`;
+      return;
+    }
+
+    // Table format
+    if (!rows.length) {
+      resultsContainer.innerHTML = '<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="table-2" class="icon"></i><div class="title">No rows returned</div></div>';
+      lucide.createIcons();
+      return;
+    }
+
+    let html = '<div style="overflow:auto"><table class="tbl" style="font-size:var(--text-xs)"><thead><tr>';
+    columns.forEach(c => { html += `<th>${c}</th>`; });
+    html += '</tr></thead><tbody>';
+
+    rows.slice(0, 500).forEach(row => {
+      html += '<tr>';
+      columns.forEach(c => {
+        const v = row[c];
+        let display = v === null || v === undefined ? '<span class="muted">NULL</span>' : String(v);
+        if (display.length > 100) display = display.slice(0, 97) + '…';
+        html += `<td title="${String(v).replace(/"/g, '"')}">${display}</td>`;
+      });
+      html += '</tr>';
     });
+    html += '</tbody></table></div>';
+
+    if (row_count > 500) {
+      html += `<div style="margin-top:var(--space-3);padding:var(--space-2);background:var(--bg-elev);border-radius:var(--r-2);font-size:var(--text-xs);color:var(--text-3)">Showing 500 of ${row_count} rows</div>`;
+    }
+
+    resultsContainer.innerHTML = html;
+    lucide.createIcons();
   }
 
-  // ⌘↵ / Ctrl↵ to run
-  document.addEventListener('keydown', e => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+  // Query history
+  function addToHistory(sql, rows, duration, success, error) {
+    const entry = { sql, rows, duration, success, error, timestamp: Date.now() };
+    queryHistory.unshift(entry);
+    if (queryHistory.length > 50) queryHistory.pop();
+    localStorage.setItem('dex-sql-history', JSON.stringify(queryHistory));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    if (!queryHistory.length) {
+      historyList.innerHTML = '<div class="empty-state" style="padding:var(--space-6)"><div class="desc">No queries yet. Run a query to add to history.</div></div>';
+      return;
+    }
+    historyList.innerHTML = queryHistory.map((h, i) => `
+      <button class="btn ghost" style="width:100%;justify-content:flex-start;gap:var(--space-2);padding:var(--space-2);text-align:left;border-radius:var(--r-1);border:1px solid transparent" 
+              onclick="insertFromHistory(${i})"
+              onmouseenter="this.style.borderColor='var(--border)'" onmouseleave="this.style.borderColor='transparent'">
+        <span class="${h.success ? 'pill success' : 'pill error'}" style="font-size:var(--text-xs);height:16px">${h.success ? 'OK' : 'ERR'}</span>
+        <span class="mono" style="font-size:var(--text-xs);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.sql.slice(0, 80)}${h.sql.length > 80 ? '…' : ''}</span>
+        <span class="muted" style="font-size:var(--text-xs);font-variant-numeric:tabular-nums">${h.duration.toFixed(0)}ms · ${h.rows} rows</span>
+      </button>
+    `).join('');
+  }
+
+  function clearHistory() {
+    queryHistory = [];
+    localStorage.removeItem('dex-sql-history');
+    renderHistory();
+  }
+
+  window.insertFromHistory = function(i) {
+    editor.value = queryHistory[i].sql;
+    updateGutter();
+    updateCursor();
+    document.getElementById('table-browser-modal').close();
+  };
+
+  window.runQuery = runQuery;
+  window.renderResults = renderResults;
+
+  window.formatSQL = function() {
+    // Simple formatting - could use sql-formatter library
+    const formatted = editor.value
+      .replace(/\s+/g, ' ')
+      .replace(/ (SELECT|FROM|WHERE|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|GROUP BY|ORDER BY|LIMIT|OFFSET|UNION|WITH|AS|ON|AND|OR|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TABLE|INDEX|VIEW)/gi, '\n$1')
+      .replace(/,/g, ',\n  ');
+    editor.value = formatted.trim();
+    updateGutter();
+  };
+
+  window.clearEditor = function() {
+    editor.value = '';
+    updateGutter();
+    updateCursor();
+  };
+
+  window.copyResults = function() {
+    if (!lastResults) return;
+    navigator.clipboard.writeText(JSON.stringify(lastResults.rows, null, 2));
+    showToast('Results copied to clipboard', 'success');
+  };
+
+  window.downloadResults = function() {
+    if (!lastResults) return;
+    const { rows, columns } = lastResults;
+    const header = columns.join(',');
+    const csvRows = rows.map(r => columns.map(c => {
+      const v = r[c];
+      return typeof v === 'string' && (v.includes(',') || v.includes('"')) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    }).join(','));
+    const csv = [header, ...csvRows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `query-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Keyboard shortcuts
+  editor.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      document.getElementById('sql-run-btn')?.click();
+      runQuery();
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+      editor.selectionStart = editor.selectionEnd = start + 2;
+      updateGutter();
     }
   });
 
-  // Switch result tabs
-  globalThis.switchResultTab = function (id, btn) {
-    document.querySelectorAll('[data-result-tab]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    ['results', 'chart', 'history', 'explain'].forEach(t => {
-      const el = document.getElementById('result-pane-' + t);
-      if (el) el.style.display = t === id ? '' : 'none';
-    });
-  };
+  // Table browser
+  async function loadTableBrowser() {
+    const list = document.getElementById('table-browser-list');
+    list.innerHTML = '<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="loader" class="icon" style="animation:spin 1s linear infinite"></i><div class="desc">Loading tables…</div></div>';
 
-  // Switch SQL editor tabs
-  globalThis.switchSqlTab = function (btn, idx) {
-    document.querySelectorAll('.sql-tab').forEach(b => {
-      b.classList.remove('active');
-      b.style.background = 'transparent';
-      b.style.borderBottom = 'none';
-    });
-    btn.classList.add('active');
-    btn.style.background = 'var(--bg)';
-    btn.style.borderBottom = '1px solid var(--bg)';
-  };
-
-  updateGutter();
-  updatePos();
-
-  // ── Schema sidebar toggle ───────────────────────────────────────────────
-  let _sidebarOpen = true;
-  globalThis.toggleSchemaSidebar = function () {
-    const rail = document.getElementById('sql-schema-rail');
-    const split = document.getElementById('sql-main-split');
-    const expandBtn = document.getElementById('schema-expand-btn');
-    _sidebarOpen = !_sidebarOpen;
-    if (split) {
-      split.style.gridTemplateColumns = _sidebarOpen ? '220px 1fr' : '0 1fr';
+    try {
+      const res = await fetch('/data/sql/tables');
+      const data = await res.json();
+      renderTableBrowser(data);
+    } catch (e) {
+      list.innerHTML = `<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="alert-circle" class="icon" style="color:var(--error-9)"></i><div class="title">Failed to load tables</div><div class="desc">${e.message}</div></div>`;
     }
-    if (rail) rail.style.display = _sidebarOpen ? '' : 'none';
-    if (expandBtn) expandBtn.style.display = _sidebarOpen ? 'none' : '';
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+
+  function renderTableBrowser(tables) {
+    const list = document.getElementById('table-browser-list');
+    if (!tables.length) {
+      list.innerHTML = '<div class="empty-state" style="padding:var(--space-8)"><i data-lucide="table-2" class="icon"></i><div class="title">No tables found</div></div>';
+      return;
+    }
+    list.innerHTML = tables.map(t => `
+      <button class="btn ghost" style="width:100%;justify-content:flex-start;gap:var(--space-2);padding:var(--space-2) var(--space-3);text-align:left;border-radius:var(--r-1);border:1px solid transparent"
+              onclick="insertTable('${t.layer}.${t.name}')"
+              onmouseenter="this.style.borderColor='var(--border)'" onmouseleave="this.style.borderColor='transparent'">
+        <i data-lucide="table-2" style="width:14px;height:14px;color:var(--domain-data)"></i>
+        <span class="mono" style="font-size:var(--text-sm);flex:1">${t.layer}.${t.name}</span>
+        <span class="layer-chip ${t.layer}" style="font-size:var(--text-xs)">${t.layer}</span>
+        <span class="muted" style="font-size:var(--text-xs)">${t.rows || 0} rows · ${t.columns || 0} cols</span>
+      </button>
+    `).join('');
+  }
+
+  window.filterTableBrowser = function() {
+    const search = document.getElementById('table-search').value.toLowerCase();
+    document.querySelectorAll('#table-browser-list button').forEach(btn => {
+      const text = btn.textContent.toLowerCase();
+      btn.style.display = text.includes(search) ? '' : 'none';
+    });
   };
 
-  // ── Schema filter ───────────────────────────────────────────────────────
-  globalThis.schemaFilter = function (q) {
-    const lq = q.toLowerCase();
-    document.querySelectorAll('.schema-table-row').forEach(function (row) {
-      const name = (row.dataset.table || '').toLowerCase();
-      row.style.display = !lq || name.includes(lq) ? '' : 'none';
-    });
-    document.querySelectorAll('.schema-section').forEach(function (sec) {
-      const visible = Array.from(sec.querySelectorAll('.schema-table-row')).some(
-        r => r.style.display !== 'none'
-      );
-      sec.style.display = !lq || visible ? '' : 'none';
-    });
+  window.insertTable = function(table) {
+    const cursor = editor.selectionStart;
+    editor.value = editor.value.slice(0, cursor) + table + editor.value.slice(cursor);
+    editor.selectionStart = editor.selectionEnd = cursor + table.length;
+    updateGutter();
+    updateCursor();
+    document.getElementById('table-browser-modal').close();
   };
 
-  // ── Insert table name into editor ───────────────────────────────────────
-  globalThis.insertTableName = function (name) {
-    const ta = document.getElementById('sql-editor');
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const v = ta.value;
-    const insert = name;
-    ta.value = v.slice(0, s) + insert + v.slice(ta.selectionEnd);
-    ta.selectionStart = ta.selectionEnd = s + insert.length;
-    ta.focus();
-  };
+  // Initialize
+  document.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+    updateGutter();
+    updateCursor();
+    renderHistory();
+    loadTableBrowser();
+  });
 })();
 </script>
 {% endblock %}

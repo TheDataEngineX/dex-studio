@@ -9,7 +9,8 @@ project:
 scheduler:
   enabled: true
   timezone: UTC
-  max_concurrent_pipelines: 1  # ponytail: 1 at a time — TMDB pipelines OOM at 3 concurrent
+  max_concurrent_pipelines: 1
+  min_free_mb: 3072
   retry:
     max_attempts: 3
     backoff_seconds: 120
@@ -21,6 +22,7 @@ scheduler:
     gold_tmdb_enriched_movies:
       trigger_ml_retrain: true
       ml_experiment: content_recommender
+      trigger_ai_index_refresh: true
     gold_movie_features:
       trigger_ml_retrain: true
       ml_experiment: rating_predictor
@@ -109,6 +111,8 @@ data:
         requests_per_second: 40.0
         redis_url: ${REDIS_URL:-}
         redis_password: ${REDIS_PASSWORD:-}
+        since_source_path: .dex/lakehouse/bronze/bronze_tmdb_movie_changes
+        since_column: id
     tmdb_discover_tv:
       type: rest
       url: https://api.themoviedb.org/3/discover/tv
@@ -173,7 +177,11 @@ data:
         security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
         username: ${KAFKA_USERNAME:-}
         password: ${KAFKA_PASSWORD:-}
-        timeout_seconds: 3
+        # Each pipeline run is a fresh consumer instance joining the group —
+        # group-join/partition-assignment alone can take several seconds, so
+        # this needs real headroom beyond the producer's 3s (no coordination
+        # needed there). 3s here silently returned 0 records every time.
+        timeout_seconds: 20
     kafka_wiki_edits_producer:
       type: kafka
       connection:
@@ -195,7 +203,9 @@ data:
         security_protocol: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
         username: ${KAFKA_USERNAME:-}
         password: ${KAFKA_PASSWORD:-}
-        timeout_seconds: 3
+        # Same reasoning as kafka_tmdb_changes_consumer above: group-join on a
+        # fresh consumer instance needs real headroom, not the producer's 3s.
+        timeout_seconds: 20
   pipelines:
     bronze_titles:
       source: imdb_titles
@@ -364,17 +374,25 @@ data:
       source: bronze_titles
       transforms:
       - type: sql
-        sql: "SELECT\n  t.tconst                                         AS movie_id,\n\
-          \  t.primaryTitle                                   AS title,\n  t.originalTitle\
-          \                                  AS original_title,\n  TRY_CAST(t.startYear\
-          \      AS INTEGER)           AS release_year,\n  TRY_CAST(t.runtimeMinutes\
-          \ AS INTEGER)           AS runtime_min,\n  t.genres,\n  TRY_CAST(r.averageRating\
-          \  AS DOUBLE)            AS imdb_rating,\n  TRY_CAST(r.numVotes       AS\
-          \ BIGINT)            AS vote_count,\n  (TRY_CAST(t.startYear AS INTEGER)\
-          \ / 10) * 10   AS decade\nFROM _data t\nLEFT JOIN bronze_ratings r ON t.tconst\
-          \ = r.tconst\nWHERE\n  t.titleType = 'movie'\n  AND t.isAdult  = '0'\n \
-          \ AND t.startYear IS NOT NULL\n  AND TRY_CAST(t.startYear AS INTEGER) BETWEEN\
-          \ 1902 AND 2025\n"
+        sql: |
+          SELECT
+            t.tconst                                         AS movie_id,
+            t.primaryTitle                                   AS title,
+            t.originalTitle                                  AS original_title,
+            TRY_CAST(t.startYear      AS INTEGER)           AS release_year,
+            TRY_CAST(t.runtimeMinutes AS INTEGER)           AS runtime_min,
+            t.genres,
+            TRY_CAST(r.averageRating  AS DOUBLE)            AS imdb_rating,
+            TRY_CAST(r.numVotes       AS BIGINT)            AS vote_count,
+            (TRY_CAST(t.startYear AS INTEGER) / 10) * 10   AS decade
+          FROM _data t
+          LEFT JOIN bronze_ratings r
+            ON t.tconst = r.tconst AND r._dex_is_current
+          WHERE
+            t.titleType = 'movie'
+            AND t.isAdult  = '0'
+            AND t.startYear IS NOT NULL
+            AND TRY_CAST(t.startYear AS INTEGER) BETWEEN 1902 AND 2025
       quality:
         completeness: 0.75
         uniqueness:
@@ -389,14 +407,22 @@ data:
       source: bronze_titles
       transforms:
       - type: sql
-        sql: "SELECT\n  t.tconst                                AS series_id,\n  t.primaryTitle\
-          \                          AS title,\n  t.titleType                    \
-          \         AS series_type,\n  TRY_CAST(t.startYear AS INTEGER)        AS\
-          \ start_year,\n  TRY_CAST(t.endYear   AS INTEGER)        AS end_year,\n\
-          \  t.genres,\n  TRY_CAST(r.averageRating AS DOUBLE)     AS imdb_rating,\n\
-          \  TRY_CAST(r.numVotes      AS BIGINT)     AS vote_count\nFROM _data t\n\
-          LEFT JOIN bronze_ratings r ON t.tconst = r.tconst\nWHERE\n  t.titleType\
-          \ IN ('tvSeries', 'tvMiniSeries')\n  AND t.isAdult = '0'\n"
+        sql: |
+          SELECT
+            t.tconst                                AS series_id,
+            t.primaryTitle                           AS title,
+            t.titleType                              AS series_type,
+            TRY_CAST(t.startYear AS INTEGER)        AS start_year,
+            TRY_CAST(t.endYear   AS INTEGER)        AS end_year,
+            t.genres,
+            TRY_CAST(r.averageRating AS DOUBLE)     AS imdb_rating,
+            TRY_CAST(r.numVotes      AS BIGINT)     AS vote_count
+          FROM _data t
+          LEFT JOIN bronze_ratings r
+            ON t.tconst = r.tconst AND r._dex_is_current
+          WHERE
+            t.titleType IN ('tvSeries', 'tvMiniSeries')
+            AND t.isAdult = '0'
       quality:
         completeness: 0.7
         uniqueness:
@@ -516,6 +542,7 @@ data:
       - bronze_tmdb_movie_details
     gold_genre_trends:
       source: bronze_tmdb_movie_details
+      on_failure: skip
       transforms:
       - type: sql
         sql: "WITH genre_expanded AS (\n  SELECT\n    (CAST(SUBSTR(CAST(d.release_date\
@@ -625,6 +652,7 @@ data:
       - gold_director_stats
     gold_watch_provider_coverage:
       source: silver_watch_providers_by_region
+      on_failure: skip
       transforms:
       - type: sql
         sql: "SELECT\n  media_type,\n  region,\n  provider_name,\n  COUNT(DISTINCT\
@@ -655,19 +683,21 @@ data:
       depends_on:
       - silver_entity_resolution
     gold_keyword_trends:
-      source: bronze_tmdb_movie_keywords
+      source: bronze_tmdb_movie_details
+      on_failure: skip
       depends_on:
-      - bronze_tmdb_movie_keywords
       - bronze_tmdb_movie_details
       transforms:
       - type: sql
-        sql: "SELECT\n  keyword.name AS keyword,\n  (CAST(SUBSTR(CAST(d.release_date\
-          \ AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10\n    AS decade,\n  COUNT(DISTINCT\
-          \ k.id) AS title_count,\n  ROUND(AVG(CAST(d.popularity AS DOUBLE)), 3) AS\
-          \ avg_popularity\nFROM _data k\nINNER JOIN bronze_tmdb_movie_details d ON\
-          \ k.id = d.id\nWHERE keyword.name IS NOT NULL AND d.release_date IS NOT\
-          \ NULL\nGROUP BY keyword.name, decade\nORDER BY title_count DESC, avg_popularity\
-          \ DESC\n"
+        sql: "WITH keyword_expanded AS (\n  SELECT\n    (CAST(SUBSTR(CAST(d.release_date\
+          \ AS VARCHAR), 1, 4) AS INTEGER) / 10) * 10 AS decade,\n    json_extract_string(kw,\
+          \ '$.name') AS keyword_name,\n    CAST(d.popularity AS DOUBLE) AS popularity\n\
+          \  FROM _data d,\n  LATERAL (SELECT * FROM json_each(to_json(d.keywords))\
+          \ -> '$.keywords') AS kw(keyword)\n  WHERE d.keywords IS NOT NULL\n    AND\
+          \ d.release_date IS NOT NULL\n)\nSELECT\n  keyword_name,\n  decade,\n  COUNT(*)\
+          \ AS title_count,\n  ROUND(AVG(popularity), 3) AS avg_popularity\nFROM keyword_expanded\n\
+          WHERE keyword_name IS NOT NULL\nGROUP BY keyword_name, decade\nORDER BY title_count\
+          \ DESC, avg_popularity DESC\n"
       quality:
         completeness: 0.8
       destination: gold_keyword_trends
@@ -748,8 +778,10 @@ data:
       schedule: '*/5 * * * *'
     bronze_tmdb_movie_details:
       source: tmdb_movie_details
+      on_failure: stale
       depends_on:
       - bronze_tmdb_movie_ids
+      - bronze_tmdb_movie_changes
       transforms:
       - type: filter
         condition: id IS NOT NULL
@@ -762,120 +794,9 @@ data:
         layer: bronze
         format: delta
       schedule: 0 3 * * *
-    bronze_tmdb_movie_credits:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: credits.cast
-          alias: credit
-      quality:
-        completeness: 0.8
-      destination: bronze_tmdb_movie_credits
-      target:
-        layer: bronze
-        format: delta
-      schedule: 0 4 * * *
-    bronze_tmdb_movie_crew:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: credits.crew
-          alias: credit
-      quality:
-        completeness: 0.8
-      destination: bronze_tmdb_movie_crew
-      target:
-        layer: bronze
-        format: delta
-      schedule: 2 4 * * *
-    bronze_tmdb_movie_keywords:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: keywords.keywords
-          alias: keyword
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_movie_keywords
-      target:
-        layer: bronze
-        format: delta
-      schedule: 4 4 * * *
-    bronze_tmdb_movie_reviews:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: reviews.results
-          alias: review
-      quality:
-        completeness: 0.2
-      destination: bronze_tmdb_movie_reviews
-      target:
-        layer: bronze
-        format: delta
-      schedule: 6 4 * * *
-    bronze_tmdb_movie_images:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: images.posters
-          alias: image
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_movie_images
-      target:
-        layer: bronze
-        format: delta
-      schedule: 8 4 * * *
-    bronze_tmdb_movie_videos:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: videos.results
-          alias: video
-      quality:
-        completeness: 0.3
-      destination: bronze_tmdb_movie_videos
-      target:
-        layer: bronze
-        format: delta
-      schedule: 10 4 * * *
-    bronze_tmdb_movie_similar:
-      source: bronze_tmdb_movie_details
-      depends_on:
-      - bronze_tmdb_movie_details
-      transforms:
-      - type: explode
-        options:
-          column: similar.results
-          alias: similar_title
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_movie_similar
-      target:
-        layer: bronze
-        format: delta
-      schedule: 12 4 * * *
     bronze_tmdb_movie_watch_providers:
       source: bronze_tmdb_movie_details
+      on_failure: stale
       depends_on:
       - bronze_tmdb_movie_details
       transforms:
@@ -908,6 +829,131 @@ data:
         layer: bronze
         format: delta
       schedule: 15 4 * * *
+    bronze_tmdb_movie_credits:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.cast
+          alias: credit
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_credits
+      target:
+        layer: bronze
+        format: delta
+      schedule: 5 5 * * *
+    bronze_tmdb_movie_crew:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.crew
+          alias: credit
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_crew
+      target:
+        layer: bronze
+        format: delta
+      schedule: 10 5 * * *
+    bronze_tmdb_movie_keywords:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: keywords.keywords
+          alias: keyword
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_keywords
+      target:
+        layer: bronze
+        format: delta
+      schedule: 15 5 * * *
+    bronze_tmdb_movie_reviews:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: sql
+        # silver_tmdb_review_similarity_pairs re-derives its pairs from the raw
+        # "reviews" struct (LATERAL json_each over d.reviews), so this bronze
+        # step must keep "reviews" intact rather than exploding it away — the
+        # plain `explode` transform drops its top-level column on the way out,
+        # which would break that downstream pipeline. Alias the results list
+        # as "review" without unnesting so row count and the raw nested field
+        # both survive.
+        sql: |
+          SELECT *, reviews.results AS review FROM _data
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_reviews
+      target:
+        layer: bronze
+        format: delta
+      schedule: 20 5 * * *
+    bronze_tmdb_movie_images:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: images.posters
+          alias: image
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_images
+      target:
+        layer: bronze
+        format: delta
+      schedule: 25 5 * * *
+    bronze_tmdb_movie_videos:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: videos.results
+          alias: video
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_videos
+      target:
+        layer: bronze
+        format: delta
+      schedule: 30 5 * * *
+    bronze_tmdb_movie_similar:
+      source: bronze_tmdb_movie_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_movie_details
+      transforms:
+      - type: explode
+        options:
+          column: similar.results
+          alias: similar_title
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_movie_similar
+      target:
+        layer: bronze
+        format: delta
+      schedule: 35 5 * * *
     bronze_tmdb_tv_ids:
       source: tmdb_discover_tv
       transforms:
@@ -927,6 +973,7 @@ data:
       schedule: 30 2 * * *
     bronze_tmdb_tv_details:
       source: tmdb_tv_details
+      on_failure: stale
       depends_on:
       - bronze_tmdb_tv_ids
       transforms:
@@ -941,120 +988,9 @@ data:
         layer: bronze
         format: delta
       schedule: 30 3 * * *
-    bronze_tmdb_tv_credits:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: credits.cast
-          alias: credit
-      quality:
-        completeness: 0.8
-      destination: bronze_tmdb_tv_credits
-      target:
-        layer: bronze
-        format: delta
-      schedule: 30 4 * * *
-    bronze_tmdb_tv_crew:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: credits.crew
-          alias: credit
-      quality:
-        completeness: 0.8
-      destination: bronze_tmdb_tv_crew
-      target:
-        layer: bronze
-        format: delta
-      schedule: 32 4 * * *
-    bronze_tmdb_tv_keywords:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: keywords.results
-          alias: keyword
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_tv_keywords
-      target:
-        layer: bronze
-        format: delta
-      schedule: 34 4 * * *
-    bronze_tmdb_tv_reviews:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: reviews.results
-          alias: review
-      quality:
-        completeness: 0.2
-      destination: bronze_tmdb_tv_reviews
-      target:
-        layer: bronze
-        format: delta
-      schedule: 36 4 * * *
-    bronze_tmdb_tv_images:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: images.posters
-          alias: image
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_tv_images
-      target:
-        layer: bronze
-        format: delta
-      schedule: 38 4 * * *
-    bronze_tmdb_tv_videos:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: videos.results
-          alias: video
-      quality:
-        completeness: 0.3
-      destination: bronze_tmdb_tv_videos
-      target:
-        layer: bronze
-        format: delta
-      schedule: 40 4 * * *
-    bronze_tmdb_tv_similar:
-      source: bronze_tmdb_tv_details
-      depends_on:
-      - bronze_tmdb_tv_details
-      transforms:
-      - type: explode
-        options:
-          column: similar.results
-          alias: similar_title
-      quality:
-        completeness: 0.5
-      destination: bronze_tmdb_tv_similar
-      target:
-        layer: bronze
-        format: delta
-      schedule: 42 4 * * *
     bronze_tmdb_tv_watch_providers:
       source: bronze_tmdb_tv_details
+      on_failure: stale
       depends_on:
       - bronze_tmdb_tv_details
       transforms:
@@ -1080,6 +1016,125 @@ data:
         layer: bronze
         format: delta
       schedule: 44 4 * * *
+    bronze_tmdb_tv_credits:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.cast
+          alias: credit
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_credits
+      target:
+        layer: bronze
+        format: delta
+      schedule: 40 5 * * *
+    bronze_tmdb_tv_crew:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: credits.crew
+          alias: credit
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_crew
+      target:
+        layer: bronze
+        format: delta
+      schedule: 45 5 * * *
+    bronze_tmdb_tv_keywords:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: keywords.results
+          alias: keyword
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_keywords
+      target:
+        layer: bronze
+        format: delta
+      schedule: 50 5 * * *
+    bronze_tmdb_tv_reviews:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: reviews.results
+          alias: review
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_reviews
+      target:
+        layer: bronze
+        format: delta
+      schedule: 55 5 * * *
+    bronze_tmdb_tv_images:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: images.posters
+          alias: image
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_images
+      target:
+        layer: bronze
+        format: delta
+      schedule: 5 6 * * *
+    bronze_tmdb_tv_videos:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: videos.results
+          alias: video
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_videos
+      target:
+        layer: bronze
+        format: delta
+      schedule: 10 6 * * *
+    bronze_tmdb_tv_similar:
+      source: bronze_tmdb_tv_details
+      on_failure: stale
+      depends_on:
+      - bronze_tmdb_tv_details
+      transforms:
+      - type: explode
+        options:
+          column: similar.results
+          alias: similar_title
+      quality:
+        completeness: 0.5
+      destination: bronze_tmdb_tv_similar
+      target:
+        layer: bronze
+        format: delta
+      schedule: 15 6 * * *
     silver_entity_resolution:
       source: bronze_titles
       depends_on:
@@ -1111,33 +1166,25 @@ data:
       target:
         layer: silver
     silver_unified_cast_crew:
-      source: bronze_principals
+      source: bronze_tmdb_movie_details
       depends_on:
       - bronze_principals
       - bronze_names
-      - bronze_tmdb_movie_credits
-      - bronze_tmdb_movie_crew
+      - bronze_tmdb_movie_details
       - silver_entity_resolution
       transforms:
       - type: sql
-        sql: "-- Pragmatic union, not a fuzzy-name dedup: IMDB and TMDB cast rows\n\
-          -- are kept side by side (source column) rather than merged into one\n--\
-          \ identity per person. Cross-source person matching (e.g. TMDB\n-- person\
-          \ id <-> IMDB nconst) is out of scope here \u2014 known\n-- limitation,\
-          \ revisit if a unified per-person view is needed.\nSELECT\n  p.tconst  \
-          \                  AS resolved_title_id,\n  n.primaryName              \
-          \  AS person_name,\n  p.category                   AS role,\n  'imdb'  \
-          \                     AS source\nFROM _data p\nLEFT JOIN bronze_names n\
-          \ ON p.nconst = n.nconst\nWHERE n.primaryName IS NOT NULL\nUNION ALL\nSELECT\n\
-          \  er.tconst                   AS resolved_title_id,\n  c.credit.name  \
-          \              AS person_name,\n  c.credit.character            AS role,\n\
-          \  'tmdb'                       AS source\nFROM bronze_tmdb_movie_credits\
-          \ c\nINNER JOIN silver_entity_resolution er ON c.id = er.tmdb_id\nWHERE\
-          \ c.credit.name IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst            \
-          \       AS resolved_title_id,\n  c.credit.name               AS person_name,\n\
-          \  c.credit.job                AS role,\n  'tmdb'                      AS\
-          \ source\nFROM bronze_tmdb_movie_crew c\nINNER JOIN silver_entity_resolution\
-          \ er ON c.id = er.tmdb_id\nWHERE c.credit.name IS NOT NULL\n"
+        sql: "SELECT\n  p.tconst                            AS resolved_title_id,\n\
+          \  n.primaryName                       AS person_name,\n  p.category      \
+          \                     AS role,\n  'imdb'                          AS source\n\
+          FROM bronze_principals p\nLEFT JOIN bronze_names n ON p.nconst = n.nconst\n\
+          INNER JOIN silver_movies sm ON p.tconst = sm.movie_id\nWHERE n.primaryName\
+          \ IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst               AS resolved_title_id,\n\
+          \  cast_member.name       AS person_name,\n  cast_member.character  AS role,\n\
+          \  'tmdb'                 AS source\nFROM _data d\nCROSS JOIN LATERAL (SELECT\
+          \ * FROM json_each(to_json(d.credits)) -> '$.cast') AS cm(cast_member)\n\
+          INNER JOIN silver_entity_resolution er ON d.id = er.tmdb_id\nWHERE cast_member.name\
+          \ IS NOT NULL\n"
       quality:
         completeness: 0.7
       destination: silver_unified_cast_crew
@@ -1216,41 +1263,73 @@ data:
       target:
         layer: silver
     silver_tv_unified_cast_crew:
-      source: bronze_tmdb_tv_credits
+      source: bronze_tmdb_tv_details
       depends_on:
-      - bronze_tmdb_tv_credits
-      - bronze_tmdb_tv_crew
+      - bronze_tmdb_tv_details
       - silver_tv_entity_resolution
       transforms:
       - type: sql
-        sql: "SELECT\n  er.tconst AS resolved_title_id,\n  c.credit.name AS person_name,\n\
-          \  c.credit.character AS role,\n  'cast' AS credit_type\nFROM _data c\n\
-          INNER JOIN silver_tv_entity_resolution er ON c.id = er.tmdb_id\nWHERE c.credit.name\
-          \ IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst AS resolved_title_id,\n  c.credit.name\
-          \ AS person_name,\n  c.credit.job AS role,\n  'crew' AS credit_type\nFROM\
-          \ bronze_tmdb_tv_crew c\nINNER JOIN silver_tv_entity_resolution er ON c.id\
-          \ = er.tmdb_id\nWHERE c.credit.name IS NOT NULL\n"
+        sql: "SELECT\n  er.tconst AS resolved_title_id,\n  cast_member.name AS person_name,\n\
+          \  cast_member.character AS role,\n  'cast' AS credit_type\nFROM _data d\n\
+          CROSS JOIN LATERAL (SELECT * FROM json_each(to_json(d.credits)) -> '$.cast')\
+          \ AS cm(cast_member)\nINNER JOIN silver_tv_entity_resolution er ON d.id =\
+          \ er.tmdb_id\nWHERE cast_member.name IS NOT NULL\nUNION ALL\nSELECT\n  er.tconst\
+          \ AS resolved_title_id,\n  crew_member.name AS person_name,\n  crew_member.job\
+          \ AS role,\n  'crew' AS credit_type\nFROM _data d\nCROSS JOIN LATERAL (SELECT\
+          \ * FROM json_each(to_json(d.credits)) -> '$.crew') AS cr(crew_member)\n\
+          INNER JOIN silver_tv_entity_resolution er ON d.id = er.tmdb_id\nWHERE crew_member.name\
+          \ IS NOT NULL\n"
       quality:
         completeness: 0.7
       destination: silver_tv_unified_cast_crew
       target:
         layer: silver
     silver_tmdb_review_similarity_pairs:
-      source: bronze_tmdb_movie_reviews
+      source: bronze_tmdb_movie_details
       depends_on:
-      - bronze_tmdb_movie_reviews
+      - bronze_tmdb_movie_details
       transforms:
       - type: sql
-        sql: "WITH reviews AS (\n  SELECT\n    id AS tmdb_id,\n    review.id AS review_id,\n\
-          \    review.content AS content\n  FROM _data\n  WHERE review.content IS\
-          \ NOT NULL\n    AND LENGTH(review.content) >= 40\n),\npositive_pairs AS\
-          \ (\n  SELECT\n    a.content AS review_text_a,\n    b.content AS review_text_b,\n\
-          \    1.0::DOUBLE AS similarity_label\n  FROM reviews a\n  INNER JOIN reviews\
-          \ b\n    ON a.tmdb_id = b.tmdb_id AND a.review_id < b.review_id\n),\nnegative_pairs\
-          \ AS (\n  SELECT\n    a.content AS review_text_a,\n    b.content AS review_text_b,\n\
-          \    0.0::DOUBLE AS similarity_label\n  FROM reviews a\n  INNER JOIN reviews\
-          \ b\n    ON a.tmdb_id < b.tmdb_id\n   AND ABS(HASH(a.review_id, b.review_id))\
-          \ % 25 = 0\n)\nSELECT * FROM positive_pairs\nUNION ALL\nSELECT * FROM negative_pairs\n"
+        # Pre-existing bug fix: json_each() returns a (key, value, ...) row
+        # set, not a single scalar — aliasing it as a 1-column rv(review_obj)
+        # and dotting into review_obj.id/.content never worked (ParserException
+        # on the misplaced "-> '$.results'", then a binder error once that was
+        # fixed). Extract fields from rv.value with json_extract_string
+        # instead, matching the je.key/je.value convention already used by
+        # the watch_providers pipelines above.
+        sql: |
+          WITH reviews AS (
+            SELECT
+              d.id AS tmdb_id,
+              json_extract_string(rv.value, '$.id') AS review_id,
+              json_extract_string(rv.value, '$.content') AS content
+            FROM _data d,
+            LATERAL (SELECT * FROM json_each(to_json(d.reviews) -> '$.results')) AS rv
+            WHERE json_extract_string(rv.value, '$.content') IS NOT NULL
+              AND LENGTH(json_extract_string(rv.value, '$.content')) >= 40
+          ),
+          positive_pairs AS (
+            SELECT
+              a.content AS review_text_a,
+              b.content AS review_text_b,
+              1.0::DOUBLE AS similarity_label
+            FROM reviews a
+            INNER JOIN reviews b
+              ON a.tmdb_id = b.tmdb_id AND a.review_id < b.review_id
+          ),
+          negative_pairs AS (
+            SELECT
+              a.content AS review_text_a,
+              b.content AS review_text_b,
+              0.0::DOUBLE AS similarity_label
+            FROM reviews a
+            INNER JOIN reviews b
+              ON a.tmdb_id < b.tmdb_id
+             AND ABS(HASH(a.review_id, b.review_id)) % 25 = 0
+          )
+          SELECT * FROM positive_pairs
+          UNION ALL
+          SELECT * FROM negative_pairs
       quality:
         completeness: 0.95
         custom_sql: SELECT COUNT(*) >= 10 FROM _data
@@ -1432,6 +1511,7 @@ ml:
 ai:
   llm:
     provider: ollama
+    host: ${OLLAMA_HOST:-http://localhost:11434}
     model: qwen3:8b
     fallback: llama3.2
     options:

@@ -475,6 +475,7 @@ def _run_due_pipelines(
         if _should_fire(name, pipe_cfg, db, now):
             # Use the job queue system which respects max_concurrent
             from dex_studio import jobs
+
             result = jobs.run_pipeline_bg(name, triggered_by="scheduler")
             if result in ("started", "queued"):
                 in_flight += 1
@@ -482,6 +483,14 @@ def _run_due_pipelines(
                     ran_cb(name)
 
     _maybe_run_compaction(eng, db, now)
+
+    # Unconditional queue drain: the loop above only enqueues newly cron-due
+    # roots. On a tick where none are due, nothing else was going to attempt
+    # to claim already-queued work (that only happened as a side effect of
+    # run_pipeline_bg() enqueuing something new, or a run completing) — so a
+    # claimed, even top-priority pipeline could sit queued indefinitely with
+    # free concurrency slots sitting idle.
+    jobs.drain_queue(db, cfg.max_concurrent, cfg.min_free_mb)
 
     return _compute_next_tick(db, dag, pipelines, now)
 
@@ -567,6 +576,8 @@ def get_scheduler_status(eng: Any, app: Any) -> dict[str, Any]:
         "paused": paused,
         "running": running,
         "tick_s": _MAX_TICK_S,
+        "max_concurrent": sched_cfg.max_concurrent,
+        "min_free_mb": sched_cfg.min_free_mb,
         "pipelines": pipelines_out,
         "dead_letter": dead,
         "locked": locked,

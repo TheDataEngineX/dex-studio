@@ -283,14 +283,14 @@ def onboarding_page(request: Request) -> HTMLResponse:
 
 
 @router.post("/onboarding/open")
-def onboarding_open(
+async def onboarding_open(
     request: Request,
     config_path: Annotated[str, Form()],
     is_example: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    verify_csrf(request)
+    await verify_csrf(request)
     path = config_path.strip()
     if not path:
         request.session["onboarding_error"] = "Enter or select a path to a dex.yaml file."
@@ -317,14 +317,14 @@ def onboarding_open(
 
 
 @router.post("/onboarding/create")
-def onboarding_create(
+async def onboarding_create(
     request: Request,
     project_name: Annotated[str, Form()] = "",
     project_path: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    verify_csrf(request)
+    await verify_csrf(request)
     import re as _re
 
     name = _re.sub(r"[\x00-\x1f\x7f]", "", project_name.strip())[:64] or "my-project"
@@ -521,8 +521,8 @@ def auth_callback(request: Request, code: str = "", state: str = "") -> Redirect
 
 
 @router.post("/logout")
-def logout_route(request: Request) -> RedirectResponse:
-    verify_csrf(request)
+async def logout_route(request: Request) -> RedirectResponse:
+    await verify_csrf(request)
     log.info("user logged out", ip=request.client.host if request.client else "unknown")
     logout(request)
     return RedirectResponse("/login", status_code=303)

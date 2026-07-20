@@ -1,138 +1,80 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state, metric_card %}
 
-{% block title %}Predictions — Intelligence — DEX Studio{% endblock %}
+{% block title %}Predictions — DEX Studio{% endblock %}
+
 {% block page_title %}Predictions{% endblock %}
-{% block page_sub %}Run a model on your own inputs and get an instant prediction{% endblock %}
+{% block page_sub %}Run inference against registered models{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-intelligence)">
+<div class="animate-fade-in">
 
-{# ── Metric strip ── #}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-  {{ metric_card("Models available", model_names | length, "brain", "violet", "registered") }}
-  {{ metric_card("Selected model", selected_model or "—", "zap", "violet", "active") }}
-</div>
-
-{# ── Model selector pills ── #}
-{% if model_names %}
-<div class="row" style="gap:6px;margin-bottom:16px;flex-wrap:wrap" id="int-model-pill-bar">
-  {% for m in model_names %}
-  <button class="chip {{ 'active' if m == selected_model else '' }}"
-          onclick="intSwitchModel('{{ m }}', this)">
-    {{ m }}
-  </button>
-  {% endfor %}
-</div>
-{% endif %}
-
-{# ── Two-column layout ── #}
-<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;align-items:start">
-
-  {# ── Left: form ── #}
-  <div class="card bare" style="overflow:hidden" x-data="intPredictForm()">
-    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
-      <div class="row" style="gap:8px">
-        <span class="glyph accent" style="width:22px;height:22px;background:color-mix(in oklch,var(--domain-intelligence) 15%,transparent)">
-          <i data-lucide="sliders-horizontal" style="width:11px;height:11px;color:var(--domain-intelligence)"></i>
-        </span>
-        <span style="font-weight:600;font-size:13px">Input features</span>
-        <span class="muted" style="font-size:11px;margin-left:auto" x-text="(meta[model] ? meta[model].features.length : 0) + ' features'"></span>
+<div class="card">
+  <div class="section-h"><h2>Run Prediction</h2></div>
+  <div style="padding:var(--space-4)">
+    <form hx-post="/intelligence/predictions/run" hx-target="#prediction-result" hx-swap="innerHTML">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="grid grid-2" style="gap:var(--space-4);margin-bottom:var(--space-4)">
+        <div class="col" style="gap:6px">
+          <label class="cap" for="pred-model">Model</label>
+          <select name="model" id="pred-model" class="input" required>
+            {% for m in model_names %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col" style="gap:6px">
+          <label class="cap" for="pred-input">Input JSON</label>
+        </div>
       </div>
+      <textarea name="input_json" id="pred-input" class="input" rows="6"
+                style="font-family:var(--font-mono);font-size:var(--text-xs);width:100%;margin-bottom:var(--space-3)"
+                placeholder='{"feature1": 1.0, "feature2": "value"}' required></textarea>
+      <button type="submit" class="btn primary">
+        <i data-lucide="zap" style="width:14px;height:14px"></i> Run Prediction
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Result</h2></div>
+  <div id="prediction-result" style="padding:var(--space-4)">
+    {% if prediction is not none %}
+    <div class="stat" style="text-align:center;padding:var(--space-6);background:var(--bg-elev);border-radius:var(--r-3)">
+      <div class="lbl">{{ prediction_label }}</div>
+      <div class="val" style="font-size:var(--text-3xl)">{{ prediction }}{{ prediction_unit }}</div>
+      <div class="muted">{{ prediction_context }}</div>
     </div>
-
-    {% if model_names %}
-    <div style="padding:12px 14px">
-
-      {# Model description banner #}
-      <div class="card" style="padding:8px 12px;margin-bottom:12px;
-           background:color-mix(in oklch,var(--domain-intelligence) 6%,transparent);
-           border-color:color-mix(in oklch,var(--domain-intelligence) 20%,transparent)">
-        <div style="display:flex;gap:8px;align-items:flex-start">
-          <i data-lucide="info" style="width:12px;height:12px;color:var(--domain-intelligence);margin-top:1px;flex-shrink:0"></i>
-          <span class="muted" style="font-size:11px;line-height:1.5"
-                x-text="meta[model] ? meta[model].description : 'Select a model to see its description.'"></span>
-        </div>
-      </div>
-
-      <form hx-post="/intelligence/predictions/run"
-            hx-target="#result-panel"
-            hx-swap="innerHTML"
-            hx-on::after-settle="document.getElementById('result-panel').scrollIntoView({behavior:'smooth',block:'nearest'})">
-        <input type="hidden" name="model" id="int-model-input" :value="model">
-        <input type="hidden" name="input_json" :value="JSON.stringify(values)">
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;max-height:300px;overflow-y:auto;padding:2px;margin-bottom:14px">
-          <template x-for="f in (meta[model] ? meta[model].features : [])" :key="f">
-            <label style="display:flex;flex-direction:column;gap:2px">
-              <span class="mono" style="font-size:10px;color:var(--text-3)" x-text="f"></span>
-              <input type="number" step="0.1" class="input" style="height:28px;font-size:12px" x-model.number="values[f]">
-            </label>
-          </template>
-        </div>
-
-        <div class="row" style="gap:8px">
-          <button type="button" class="btn ghost sm" @click="reset()" style="height:30px">
-            <i data-lucide="rotate-ccw" style="width:11px;height:11px"></i> Reset
-          </button>
-          <button type="submit" class="btn primary sm" style="flex:1;height:30px">
-            <i data-lucide="zap" style="width:11px;height:11px"></i> Run prediction
-          </button>
-        </div>
-      </form>
+    {% elif error %}
+    <div class="card" style="padding:var(--space-4);background:color-mix(in oklch,var(--error-9) 8%,transparent);border-color:color-mix(in oklch,var(--error-9) 20%,transparent)">
+      <div style="color:var(--error-9);font-weight:600;margin-bottom:8px">Error</div>
+      <pre class="mono" style="font-size:var(--text-xs);white-space:pre-wrap">{{ error }}</pre>
+    </div>
+    {% elif output %}
+    <div class="card" style="padding:var(--space-4);background:var(--bg-elev);border-radius:var(--r-3)">
+      <div class="muted" style="font-size:var(--text-xs);margin-bottom:8px">Raw output</div>
+      <pre class="mono" style="font-size:var(--text-xs);white-space:pre-wrap;overflow:auto;max-height:300px">{{ output }}</pre>
     </div>
     {% else %}
-    <div style="padding:16px">
-      {{ empty_state("brain", "No models available", "Register a model first to run predictions.") }}
+    <div class="empty-state" style="padding:var(--space-12)">
+      <i data-lucide="zap" class="icon"></i>
+      <div class="title">Ready to predict</div>
+      <div class="desc">Select a model, provide input features, and click Run Prediction.</div>
     </div>
     {% endif %}
   </div>
-
-  {# ── Right: result panel ── #}
-  <div class="card bare" style="overflow:hidden">
-    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
-      <div class="row" style="gap:8px">
-        <span class="glyph accent" style="width:22px;height:22px;background:color-mix(in oklch,var(--domain-intelligence) 15%,transparent)">
-          <i data-lucide="bar-chart-2" style="width:11px;height:11px;color:var(--domain-intelligence)"></i>
-        </span>
-        <span style="font-weight:600;font-size:13px">Result</span>
-      </div>
-    </div>
-    <div style="padding:14px" id="result-panel">
-      {% include "intelligence/prediction_result.html" %}
-    </div>
-  </div>
-
 </div>
+
+{% if model_desc %}
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Model Info</h2></div>
+  <div style="padding:var(--space-4)">{{ model_desc }}</div>
+</div>
+{% endif %}
 
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  function intPredictForm() {
-    const META = {{ model_meta_json | default('{}') | safe }};
-    return {
-      meta: META,
-      model: {{ selected_model | tojson }},
-      values: {},
-      init() { this.reset(); },
-      reset() {
-        const m = this.meta[this.model];
-        this.values = m ? Object.assign({}, m.defaults) : {};
-      },
-    };
-  }
-
-  globalThis.intSwitchModel = function (name, btn) {
-    document.querySelectorAll('#int-model-pill-bar .chip').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    const panel = document.querySelector('[x-data*="intPredictForm"]');
-    if (panel && panel._x_dataStack) {
-      try { panel._x_dataStack[0].model = name; panel._x_dataStack[0].reset(); } catch (e) {}
-    }
-    const hiddenInput = document.getElementById('int-model-input');
-    if (hiddenInput) hiddenInput.value = name;
-  };
+document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });
 </script>
 {% endblock %}

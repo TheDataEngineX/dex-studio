@@ -1,35 +1,51 @@
+{# ── SQL Results (HTMX partial) ───────────────────────────────────────────── #}
+{% if not error %}
+<script type="application/json" id="sql-result-data">{{ {"columns": sql_columns, "rows": sql_results, "row_count": sql_results | length, "exec_ms": exec_ms} | tojson }}</script>
+{% endif %}
 {% if error %}
-<div class="card" style="padding:12px 14px;border-color:var(--red-6);background:color-mix(in oklch,var(--red-9) 6%,transparent)">
-  <p style="font-family:var(--font-mono);font-size:12px;color:var(--red-11);margin:0">{{ error }}</p>
-</div>
-{% elif sql_results %}
-<div class="card bare" style="overflow:auto">
-  <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-    <span style="font-size:12px;color:var(--text-3)">{{ sql_results|length }} row{{ "s" if sql_results|length != 1 else "" }}</span>
-    {% if exec_ms is not none %}<span style="font-size:11px;color:var(--text-4)">{{ "%.1f"|format(exec_ms) }}ms</span>{% endif %}
+<div class="card" style="background:color-mix(in oklch,var(--error-9) 8%,transparent);border-color:color-mix(in oklch,var(--error-9) 20%,transparent);padding:var(--space-3)">
+  <div class="row" style="gap:var(--space-2);align-items:flex-start">
+    <i data-lucide="x-circle" style="width:16px;height:16px;color:var(--error-9);flex-shrink:0;margin-top:1px"></i>
+    <pre class="mono" style="flex:1;font-size:var(--text-xs);color:var(--error-9);white-space:pre-wrap;margin:0">{{ error }}</pre>
   </div>
-  <table class="dex-table" style="width:100%;min-width:400px">
-    <thead>
-      <tr>{% for col in sql_columns %}<th>{{ col }}</th>{% endfor %}</tr>
-    </thead>
-    <tbody>
-      {% for row in sql_results %}
-      <tr>
-        {% for col in sql_columns %}
-        {% set cv = row.get(col) %}
-        {% if cv is none %}
-        <td class="mono" style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gray-8);font-style:italic">NULL</td>
-        {% else %}
-        <td class="mono" style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
-        {% endif %}
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </div>
-{% elif exec_ms is not none %}
-<div class="card" style="padding:12px 14px;border-color:var(--green-6)">
-  <p style="font-size:12px;color:var(--green-11);margin:0">Query executed — no rows returned ({{ "%.1f"|format(exec_ms) }}ms)</p>
+{% elif sql_columns %}
+<div class="card card-bare">
+  <div style="padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span class="pill success" style="font-size:var(--text-xs);height:18px">{{ sql_results | length }} rows</span>
+    <span class="muted" style="font-size:var(--text-xs);font-variant-numeric:tabular-nums">{{ exec_ms | round(1) }}ms</span>
+  </div>
+  <div style="overflow:auto;max-height:60vh">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead>
+        <tr>
+          {% for col in sql_columns %}
+          <th>{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sql_results %}
+        <tr>
+          {% for col in sql_columns %}
+          <td class="mono" style="font-size:var(--text-xs);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ row[col] | tojson }}">
+            {{ row[col] }}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card" style="padding:var(--space-4);text-align:center;color:var(--text-3)">
+  <i data-lucide="check-circle-2" style="width:24px;height:24px;margin-bottom:var(--space-2);color:var(--success-9)"></i>
+  <div>Query executed successfully</div>
+  <div class="muted" style="font-size:var(--text-xs);margin-top:4px">No results returned</div>
 </div>
 {% endif %}
+
+<script>
+lucide.createIcons();
+</script>

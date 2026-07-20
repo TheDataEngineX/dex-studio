@@ -15,11 +15,11 @@
       Last pipeline run {{ recent_runs[0].get('started', 'recently') if recent_runs[0] is mapping else recent_runs[0].age | default('recently') }} ·
     {% endif %}
     {% if health_status in ('ok', 'healthy') %}
-      <span style="color:var(--state-ok)">Engine healthy</span>
+      <span style="color:var(--success-9)">Engine healthy</span>
     {% elif health_status == 'degraded' %}
-      <span style="color:var(--state-warn)">Engine degraded</span>
+      <span style="color:var(--warning-9)">Engine degraded</span>
     {% else %}
-      <span style="color:var(--state-error)">Engine error</span>
+      <span style="color:var(--error-9)">Engine error</span>
     {% endif %}
   </p>
 </div>
@@ -34,9 +34,9 @@
     <div class="accent-card-head">
       <span class="accent-card-domain">Sources</span>
       {% if src_live > 0 %}
-        <span class="accent-card-status" title="All sources live" style="color:var(--state-ok)">✓</span>
+        <span class="accent-card-status" title="All sources live" style="color:var(--success-9)">✓</span>
       {% else %}
-        <span class="accent-card-status" title="No sources" style="color:var(--state-idle)">ℹ</span>
+        <span class="accent-card-status" title="No sources" style="color:var(--text-4)">ℹ</span>
       {% endif %}
     </div>
     <div class="accent-card-body">
@@ -72,13 +72,13 @@
     <div class="accent-card-head">
       <span class="accent-card-domain">Pipelines</span>
       {% if p_failed > 0 %}
-        <span class="accent-card-status" style="color:var(--state-error)" title="{{ p_failed }} failed">⚠</span>
+        <span class="accent-card-status" style="color:var(--error-9)" title="{{ p_failed }} failed">⚠</span>
       {% elif p_running > 0 %}
-        <span class="accent-card-status" style="color:var(--state-running)" title="{{ p_running }} running">⏱</span>
+        <span class="accent-card-status" style="color:var(--accent-9)" title="{{ p_running }} running">⏱</span>
       {% elif p_total > 0 %}
-        <span class="accent-card-status" style="color:var(--state-ok)" title="All idle">✓</span>
+        <span class="accent-card-status" style="color:var(--success-9)" title="All idle">✓</span>
       {% else %}
-        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+        <span class="accent-card-status" style="color:var(--text-4)">ℹ</span>
       {% endif %}
     </div>
     <div class="accent-card-body">
@@ -89,7 +89,7 @@
         <div class="accent-card-primary">
           {% if p_running %}{{ p_running }} running · {% endif %}
           {{ p_idle }} idle
-          {% if p_failed %} · <span style="color:var(--state-error)">{{ p_failed }} failed</span>{% endif %}
+          {% if p_failed %} · <span style="color:var(--error-9)">{{ p_failed }} failed</span>{% endif %}
         </div>
         <div class="accent-card-sub">{{ p_total }} total pipelines</div>
       </div>
@@ -112,7 +112,7 @@
     <div class="accent-card-bar"></div>
     <div class="accent-card-head">
       <span class="accent-card-domain">Catalog</span>
-      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+      <span class="accent-card-status" style="color:var(--success-9)">✓</span>
     </div>
     <div class="accent-card-body">
       <div class="accent-card-icon">
@@ -139,18 +139,18 @@
 
   {# 4. ML #}
   {% set ml_count = model_count %}
-  <a href="/intelligence/models" class="accent-card" style="--card-accent: var(--domain-ml); text-decoration:none">
+  <a href="/intelligence/models" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
     <div class="accent-card-bar"></div>
     <div class="accent-card-head">
       <span class="accent-card-domain">ML</span>
       {% if ml_count > 0 %}
-        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+        <span class="accent-card-status" style="color:var(--success-9)">✓</span>
       {% else %}
-        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+        <span class="accent-card-status" style="color:var(--text-4)">ℹ</span>
       {% endif %}
     </div>
     <div class="accent-card-body">
-      <div class="accent-card-icon" style="color:var(--domain-ml);background:color-mix(in oklch,var(--domain-ml) 10%,transparent)">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
         <i data-lucide="brain" style="width:16px;height:16px"></i>
       </div>
       <div class="accent-card-metric">
@@ -167,18 +167,18 @@
 
   {# 5. AI #}
   {% set ai_count = agent_count %}
-  <a href="/intelligence/playground" class="accent-card" style="--card-accent: var(--domain-ai); text-decoration:none">
+  <a href="/intelligence/playground" class="accent-card" style="--card-accent: var(--domain-intelligence); text-decoration:none">
     <div class="accent-card-bar"></div>
     <div class="accent-card-head">
       <span class="accent-card-domain">AI</span>
       {% if ai_count > 0 %}
-        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+        <span class="accent-card-status" style="color:var(--success-9)">✓</span>
       {% else %}
-        <span class="accent-card-status" style="color:var(--state-idle)">ℹ</span>
+        <span class="accent-card-status" style="color:var(--text-4)">ℹ</span>
       {% endif %}
     </div>
     <div class="accent-card-body">
-      <div class="accent-card-icon" style="color:var(--domain-ai);background:color-mix(in oklch,var(--domain-ai) 10%,transparent)">
+      <div class="accent-card-icon" style="color:var(--domain-intelligence);background:color-mix(in oklch,var(--domain-intelligence) 10%,transparent)">
         <i data-lucide="bot" style="width:16px;height:16px"></i>
       </div>
       <div class="accent-card-metric">
@@ -200,9 +200,9 @@
     <div class="accent-card-head">
       <span class="accent-card-domain">Ops</span>
       {% if sys_ok %}
-        <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
+        <span class="accent-card-status" style="color:var(--success-9)">✓</span>
       {% else %}
-        <span class="accent-card-status" style="color:var(--state-warn)">⚠</span>
+        <span class="accent-card-status" style="color:var(--warning-9)">⚠</span>
       {% endif %}
     </div>
     <div class="accent-card-body">
@@ -210,7 +210,7 @@
         <i data-lucide="settings-2" style="width:16px;height:16px"></i>
       </div>
       <div class="accent-card-metric">
-        <div class="accent-card-primary" style="color:{{ 'var(--state-ok)' if sys_ok else 'var(--state-warn)' }}">
+        <div class="accent-card-primary" style="color:{{ 'var(--success-9)' if sys_ok else 'var(--warning-9)' }}">
           {{ 'Nominal' if sys_ok else 'Degraded' }}
         </div>
         <div class="accent-card-sub">All components</div>
@@ -219,7 +219,7 @@
     <div class="accent-card-widget">
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         {% for comp in components[:4] %}
-        <span style="display:inline-flex;align-items:center;gap:2px;font-size:9.5px;color:{{ 'var(--state-ok)' if comp.ok else 'var(--state-error)' }}">
+        <span style="display:inline-flex;align-items:center;gap:2px;font-size:9.5px;color:{{ 'var(--success-9)' if comp.ok else 'var(--error-9)' }}">
           <i data-lucide="{{ 'check-circle' if comp.ok else 'x-circle' }}" style="width:10px;height:10px"></i>
           {{ comp.name }}
         </span>
@@ -264,7 +264,7 @@
       <span class="tier-dot {{ ls.layer }}" style="width:8px;height:8px;border-radius:50%;flex-shrink:0"></span>
       <span class="hub-row-name" style="text-transform:capitalize">{{ ls.layer }}</span>
       <span class="hub-row-meta">{{ ls.count }} tables</span>
-      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok)">PASS</span>
+      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--success-9) 12%,transparent);color:var(--success-9)">PASS</span>
     </a>
     {% else %}
     <div class="hub-row" style="color:var(--text-4);font-style:italic">No tables yet</div>
@@ -282,8 +282,8 @@
       <span class="sdot {{ 'ok' if comp.ok else 'error' }}"></span>
       <span class="hub-row-name">{{ comp.name }}</span>
       <span style="font-size:10px;padding:1px 6px;border-radius:3px;
-                   background:color-mix(in oklch,{{ 'var(--state-ok)' if comp.ok else 'var(--state-error)' }} 12%,transparent);
-                   color:{{ 'var(--state-ok)' if comp.ok else 'var(--state-error)' }}">
+                   background:color-mix(in oklch,{{ 'var(--success-9)' if comp.ok else 'var(--error-9)' }} 12%,transparent);
+                   color:{{ 'var(--success-9)' if comp.ok else 'var(--error-9)' }}">
         {{ 'OK' if comp.ok else 'ERROR' }}
       </span>
     </a>
@@ -293,7 +293,7 @@
     <a href="/system/status" class="hub-row">
       <span class="sdot ok"></span>
       <span class="hub-row-name">Scheduler</span>
-      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--state-ok) 12%,transparent);color:var(--state-ok)">OK</span>
+      <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--success-9) 12%,transparent);color:var(--success-9)">OK</span>
     </a>
   </div>
 

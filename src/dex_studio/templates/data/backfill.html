@@ -1,117 +1,277 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block title %}Backfill — Ingest — DEX Studio{% endblock %}
+{% block title %}Backfill — DEX Studio{% endblock %}
 
 {% block page_title %}Backfill{% endblock %}
-{% block page_sub %}reset ingestion watermarks · re-ingest historical data · clear dedup state{% endblock %}
+{% block page_sub %}{{ pipelines | length }} pipeline{{ 's' if pipelines | length != 1 }} · {{ incomplete_batches | length }} incomplete batch{{ 'es' if incomplete_batches | length != 1 }}{% endblock %}
+
+{% block page_actions %}
+<button class="btn primary" onclick="document.getElementById('start-backfill-modal').showModal()">
+  <i data-lucide="play" style="width:12px;height:12px"></i> Start Backfill
+</button>
+{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
+<div class="animate-fade-in">
 
-  {# ── Metric strip ── #}
+{# ── Pipeline Selection ────────────────────────────────────────────────────── #}
+<div class="card" style="margin-bottom:var(--space-6)">
+  <div class="section-h">
+    <h2>Select Pipeline</h2>
+  </div>
   {% if pipelines %}
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-    {{ metric_card("Pipelines", pipelines | length, "workflow", "indigo") }}
-    {{ metric_card("With Watermark", pipelines | selectattr('watermark') | list | length, "droplets", "blue") }}
-    {{ metric_card("No Watermark", pipelines | rejectattr('watermark') | list | length, "minus-circle", "indigo", "fresh ingest") }}
+  <div class="grid grid-4" style="gap:var(--space-3)">
+    {% for p in pipelines %}
+    <div class="card" style="padding:var(--space-3);transition:transform var(--d-fast),box-shadow var(--d-fast);cursor:pointer"
+         onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+         onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'"
+         onclick="selectPipeline('{{ p.pipeline }}', this)">
+      <div class="row" style="justify-content:space-between;margin-bottom:var(--space-2)">
+        <span class="layer-chip {{ 'gold' if p.pipeline.startswith('gold_') else 'silver' if p.pipeline.startswith('silver_') else 'bronze' if p.pipeline.startswith('bronze_') else '' }}">{{ p.pipeline.split('_')[0] | upper }}</span>
+      </div>
+      <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:var(--space-1)">{{ p.pipeline }}</div>
+      <div class="muted" style="font-size:var(--text-xs)">{{ p.source }} → {{ p.watermark or 'no watermark' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)">
+    <i data-lucide="rewind" class="icon"></i>
+    <div class="title">No pipelines configured</div>
+    <div class="desc">Create pipelines to run backfills.</div>
   </div>
   {% endif %}
+</div>
 
-  {# ── Resume banner (interrupted batch — e.g. process crashed mid-backfill) ── #}
-  {% if incomplete_batches %}
-  <div class="card" style="margin-bottom:20px;border-color:var(--red-6);background:color-mix(in oklch,var(--red-9) 6%,transparent)">
-    <div style="padding:12px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <i data-lucide="rotate-ccw" style="width:15px;height:15px;color:var(--red-9);flex-shrink:0;margin-top:1px"></i>
-        <div style="font-size:12px;line-height:1.6;color:var(--red-11)">
-          <strong>{{ incomplete_batches | length }} interrupted backfill batch{{ 'es' if incomplete_batches | length != 1 else '' }} found.</strong>
-          A previous "Backfill all" run didn't finish (crash or restart) — pipelines that already
-          succeeded won't be re-run.
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        {% for batch_id in incomplete_batches %}
-        <form method="post" action="/data/backfill/all/resume/{{ batch_id }}">
-          <button class="btn sm" style="font-size:11px;height:26px;padding:0 10px;color:var(--red-9);border-color:var(--red-6)">
-            <i data-lucide="play" style="width:11px;height:11px"></i> Resume batch {{ batch_id[:8] }}
-          </button>
-        </form>
-        {% endfor %}
-      </div>
+{# ── Backfill Configuration ────────────────────────────────────────────────── #}
+<div id="backfill-config" class="card" style="margin-bottom:var(--space-6);display:none">
+  <div class="section-h">
+    <h2>Backfill: <span id="bf-pipeline-name" class="mono"></span></h2>
+  </div>
+  <div class="grid grid-3" style="gap:var(--space-3);margin-bottom:var(--space-4)">
+    <div class="col" style="gap:4px">
+      <label class="cap" for="bf-start">Start Date *</label>
+      <input class="input" id="bf-start" name="start" type="datetime-local" required>
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="bf-end">End Date *</label>
+      <input class="input" id="bf-end" name="end" type="datetime-local" required>
+    </div>
+    <div class="col" style="gap:4px">
+      <label class="cap" for="bf-mode">Mode</label>
+      <select class="input" id="bf-mode" name="mode">
+        <option value="full">Full re-ingestion</option>
+        <option value="incremental">Incremental (from watermark)</option>
+      </select>
     </div>
   </div>
-  {% endif %}
+  <form method="post" action="/data/backfill/start" style="display:flex;gap:var(--space-2);justify-content:flex-end">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="pipeline" id="bf-pipeline-input">
+    <input type="hidden" name="start" id="bf-start-input">
+    <input type="hidden" name="end" id="bf-end-input">
+    <input type="hidden" name="mode" id="bf-mode-input">
+    <button type="button" class="btn ghost" onclick="document.getElementById('backfill-config').style.display='none'">Cancel</button>
+    <button type="submit" class="btn primary" onclick="submitBackfill()">
+      <i data-lucide="play" style="width:12px;height:12px"></i> Start Backfill
+    </button>
+  </form>
+</div>
 
-  {# ── Warning ── #}
-  <div class="card" style="margin-bottom:20px;border-color:var(--amber-6);background:color-mix(in oklch,var(--amber-9) 6%,transparent)">
-    <div style="padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
-      <i data-lucide="alert-triangle" style="width:15px;height:15px;color:var(--amber-9);flex-shrink:0;margin-top:1px"></i>
-      <div style="font-size:12px;line-height:1.6;color:var(--amber-11)">
-        <strong>Backfill resets the watermark cursor and dedup hashes for the source.</strong>
-        The next pipeline run will re-ingest <em>all</em> historical data from that source.
-        For large sources this may take a significant amount of time and storage.
-      </div>
-    </div>
+{# ── Incomplete Batches ────────────────────────────────────────────────────── #}
+{% if incomplete_batches %}
+<div class="card" style="margin-bottom:var(--space-6)">
+  <div class="section-h">
+    <h2>Incomplete Batches</h2>
+    <span class="pill warning" style="font-size:var(--text-xs);height:18px">{{ incomplete_batches | length }} pending</span>
   </div>
-
-  {# ── Pipeline table ── #}
-  <div class="card bare" style="overflow:hidden">
-    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-      <h2 style="font-size:13px">Pipelines</h2>
-      {% if pipelines %}
-      <form method="post" action="/data/backfill/all/trigger" onsubmit="return confirm('Backfill ALL {{ pipelines | length }} pipelines? This re-ingests all historical data for every source.');">
-        <button class="btn sm" style="font-size:11px;height:26px;padding:0 10px">
-          <i data-lucide="history" style="width:11px;height:11px"></i> Backfill all
-        </button>
-      </form>
-      {% endif %}
-    </div>
-    <table class="dex-table">
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
       <thead>
         <tr>
+          <th>Batch ID</th>
           <th>Pipeline</th>
-          <th>Source</th>
-          <th>Current watermark</th>
-          <th style="text-align:right;width:140px">Action</th>
+          <th>Start</th>
+          <th>End</th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Created</th>
         </tr>
       </thead>
       <tbody>
-        {% for p in pipelines %}
+        {% for b in incomplete_batches %}
         <tr>
-          <td class="mono" style="font-size:12px;font-weight:500">{{ p.pipeline }}</td>
-          <td class="muted mono" style="font-size:12px">{{ p.source or '—' }}</td>
+          <td class="mono">{{ b.batch_id }}</td>
+          <td class="mono">{{ b.pipeline }}</td>
+          <td class="mono dim">{{ b.start_ts | fmt_ts_iso | fmt_ts }}</td>
+          <td class="mono dim">{{ b.end_ts | fmt_ts_iso | fmt_ts }}</td>
+          <td><span class="pill {{ 'running' if b.status == 'running' else 'warning' }}" style="font-size:var(--text-xs);height:18px">{{ b.status }}</span></td>
           <td>
-            {% if p.watermark %}
-            <span class="mono" style="font-size:12px;color:var(--accent-11)">
-              {{ p.watermark | fmt_ts_iso }}
-            </span>
-            {% else %}
-            <span class="muted" style="font-size:12px">no watermark</span>
-            {% endif %}
+            <div class="progress thin" style="width:120px">
+              <i style="width:{{ b.progress * 100 }}%"></i>
+            </div>
+            <span class="mono dim" style="font-size:var(--text-xs)">{{ (b.progress * 100) | round(1) }}%</span>
           </td>
-          <td style="text-align:right">
-            <form method="post" action="/data/backfill/{{ p.pipeline }}/trigger"
-                  onsubmit="event.preventDefault();dexConfirm(this,'Queue backfill for {{ p.pipeline }}?','The next pipeline run will re-ingest <strong>all</strong> historical data from source: <code>{{ p.source or 'n/a' }}</code>. This cannot be undone.')">
-              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px;color:var(--amber-9);border-color:var(--amber-6)">
-                <i data-lucide="rewind" style="width:11px;height:11px"></i> Queue backfill
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="4">
-            {% call empty_state("database", "No pipelines configured.", "Add a data source and configure a pipeline to enable backfill.") %}
-            <a href="/data/sources" class="btn primary" style="text-decoration:none;margin-top:16px">
-              <i data-lucide="database" style="width:13px;height:13px"></i> Add a data source
-            </a>
-            {% endcall %}
-          </td>
+          <td class="mono dim" style="font-size:var(--text-xs)">{{ b.created_at | fmt_ts_iso | fmt_ts }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endif %}
+
+{# ── Backfill History ──────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="section-h">
+    <h2>Backfill History</h2>
+  </div>
+  {% if incomplete_batches or (jobs is defined and jobs | length > 0) %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead>
+        <tr>
+          <th>Batch ID</th>
+          <th>Pipeline</th>
+          <th>Range</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Duration</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in (incomplete_batches + (jobs if jobs is defined else [])) %}
+        <tr>
+          <td class="mono">{{ b.batch_id }}</td>
+          <td class="mono">{{ b.pipeline }}</td>
+          <td class="mono dim">{{ b.start_ts | fmt_ts_iso | fmt_ts }} → {{ b.end_ts | fmt_ts_iso | fmt_ts }}</td>
+          <td><span class="layer-chip {{ 'gold' if b.mode == 'full' else 'silver' }}">{{ b.mode }}</span></td>
+          <td>
+            <span class="pill {% if b.status == 'completed' %}success{% elif b.status == 'running' %}running{% elif b.status == 'failed' %}error{% else %}warning{% endif %}" style="font-size:var(--text-xs);height:18px">
+              {{ b.status }}
+            </span>
+          </td>
+          <td>
+            <div class="progress thin" style="width:100px">
+              <i style="width:{{ (b.progress * 100) | round(1) }}%"></i>
+            </div>
+          </td>
+          <td class="mono dim" style="font-size:var(--text-xs)">{{ b.duration_ms | default('—') }}ms</td>
+          <td class="mono dim" style="font-size:var(--text-xs)">{{ b.created_at | fmt_ts_iso | fmt_ts }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)">
+    <i data-lucide="history" class="icon"></i>
+    <div class="title">No backfill runs yet</div>
+    <div class="desc">Start a backfill to see history here.</    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Start Backfill Modal ──────────────────────────────────────────────────── #}
+<dialog class="modal modal-md" id="start-backfill-modal">
+  <div class="modal-header">
+    <h3>Start Backfill</h3>
+    <button class="btn icon ghost sm" onclick="this.closest('dialog').close()"><i data-lucide="x" style="width:14px;height:14px"></i></button>
+  </div>
+  <div class="modal-body">
+    <div class="col" style="gap:var(--space-3)">
+      <div class="col" style="gap:4px">
+        <label class="cap">Pipeline</label>
+        <select class="input" id="modal-pipeline" required>
+          <option value="">Select pipeline...</option>
+          {% for p in pipelines %}
+          <option value="{{ p.pipeline }}">{{ p.pipeline }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="grid grid-2" style="gap:var(--space-3)">
+        <div class="col" style="gap:4px">
+          <label class="cap" for="modal-start">Start Date *</label>
+          <input class="input" id="modal-start" name="start" type="datetime-local" required>
+        </div>
+        <div class="col" style="gap:4px">
+          <label class="cap" for="modal-end">End Date *</label>
+          <input class="input" id="modal-end" name="end" type="datetime-local" required>
+        </div>
+      </div>
+      <div class="col" style="gap:4px">
+        <label class="cap" for="modal-mode">Mode</label>
+        <select class="input" id="modal-mode" name="mode">
+          <option value="full">Full re-ingestion</option>
+          <option value="incremental">Incremental (from watermark)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn ghost" onclick="document.getElementById('start-backfill-modal').close()">Cancel</button>
+    <button class="btn primary" onclick="submitModalBackfill()">
+      <i data-lucide="play" style="width:12px;height:12px"></i> Start Backfill
+    </button>
+  </div>
+</dialog>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+  
+  // Set default dates to last 7 days
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  document.querySelectorAll('input[type="datetime-local"]').forEach(input => {
+    if (!input.value) {
+      input.value = weekAgo.toISOString().slice(0, 16);
+    }
+  });
+});
+
+let selectedPipeline = null;
+
+function selectPipeline(name, el) {
+  selectedPipeline = name;
+  document.querySelectorAll('#backfill-config .card').forEach(c => c.style.borderColor = '');
+  if (el) el.style.borderColor = 'var(--accent-9)';
+  
+  document.getElementById('bf-pipeline-name').textContent = name;
+  document.getElementById('bf-pipeline-input').value = name;
+  document.getElementById('backfill-config').style.display = '';
+  document.getElementById('backfill-config').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function submitBackfill() {
+  document.getElementById('bf-start-input').value = document.getElementById('bf-start').value;
+  document.getElementById('bf-end-input').value = document.getElementById('bf-end').value;
+  document.getElementById('bf-mode-input').value = document.getElementById('bf-mode').value;
+  document.querySelector('#backfill-config form').submit();
+}
+
+function submitModalBackfill() {
+  const pipeline = document.getElementById('modal-pipeline').value;
+  if (!pipeline) return alert('Select a pipeline');
+  
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/data/backfill/start';
+  form.innerHTML = `
+    <input type="hidden" name="_csrf" value="${document.querySelector('meta[name="csrf-token"]').content}">
+    <input type="hidden" name="pipeline" value="${pipeline}">
+    <input type="hidden" name="start" value="${document.getElementById('modal-start').value}">
+    <input type="hidden" name="end" value="${document.getElementById('modal-end').value}">
+    <input type="hidden" name="mode" value="${document.getElementById('modal-mode').value}">
+  `;
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
 {% endblock %}

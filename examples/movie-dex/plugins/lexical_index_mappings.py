@@ -109,7 +109,9 @@ def configure_indices() -> None:
         if health["status"] in ("yellow", "green"):
             ensure_indices(client)
         else:
-            logger.info("elasticsearch unavailable; index mapping setup deferred", status=health["status"])
+            logger.info(
+                "elasticsearch unavailable; index mapping setup deferred", status=health["status"]
+            )
     except Exception as exc:
         logger.warning("elasticsearch mapping setup skipped", error=str(exc))
 

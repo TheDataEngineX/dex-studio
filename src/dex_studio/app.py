@@ -27,7 +27,7 @@ from dex_studio.logging_setup import (
     log_format,
     setup_logging,
 )
-from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, fmt_ts_iso, status_color
+from dex_studio.utils import fmt_bytes, fmt_cron, fmt_intword, fmt_ts, fmt_ts_iso, status_color
 
 # ── Logging — configured centrally in dex_studio.logging_setup ───────────────
 setup_logging()
@@ -64,6 +64,7 @@ def make_templates() -> Jinja2Templates:
     t.env.filters["fmt_ts_iso"] = fmt_ts_iso
     t.env.filters["fmt_cron"] = fmt_cron
     t.env.filters["fmt_bytes"] = fmt_bytes
+    t.env.filters["intword"] = fmt_intword
     t.env.filters["status_color"] = status_color
     t.env.globals["enumerate"] = enumerate
     t.env.globals["zip"] = zip
@@ -367,6 +368,10 @@ def create_app() -> FastAPI:
 
     _register_exception_handlers(app)
     _add_middlewares(app)
+
+    from dex_studio.otel_setup import setup_otel
+
+    setup_otel(app)
 
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)

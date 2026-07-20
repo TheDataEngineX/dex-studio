@@ -39,6 +39,11 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+def _push_pipeline_toast(eng: Any, name: str, status: str, error_msg: str) -> None:
+    """No-op placeholder — toasts now handled via StudioStore."""
+    pass
+
+
 def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
     """Global safety net: log any exception a background thread would otherwise
     swallow silently (e.g. one raised after a ThreadPoolExecutor future's
@@ -87,7 +92,7 @@ _RUN_TIMEOUT_S = 3_600      # release pipeline from running after 1h
 _PIPELINE_TIMEOUT_S = 7_200  # hard timeout for a single pipeline run
 
 # Thread pool for pipeline execution (1 worker = 1 concurrent max)
-_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dex-job")
+_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="dex-job")
 
 
 def _available_mb() -> int:
@@ -440,7 +445,7 @@ def _trigger_dependents(eng: Any, completed_name: str, db: StudioDb | PgStudioDb
             base = lake_root / pipe_cfg.destination
         parquet = base.with_suffix(".parquet").exists()
         delta = base.with_suffix(".delta").exists()
-        return base.exists() or parquet or delta
+        return bool(base.exists() or parquet or delta)
 
     for dep in downstream_of(completed_name, dag):
         if dep not in pipelines:
@@ -465,7 +470,7 @@ def _trigger_dependents(eng: Any, completed_name: str, db: StudioDb | PgStudioDb
 def _get_lake_root(eng: Any) -> Path:
     """Get the absolute lakehouse path from the engine."""
     if hasattr(eng, "pipeline_runner") and hasattr(eng.pipeline_runner, "_data_dir"):
-        return eng.pipeline_runner._data_dir
+        return Path(eng.pipeline_runner._data_dir)
     config_path = getattr(eng, "config_path", None)
     if config_path:
         return Path(config_path).parent / ".dex" / "lakehouse"
@@ -487,7 +492,11 @@ def _enqueue_all_pipelines(
     if not pipelines:
         return 0
 
-    dag = _build_dependency_graph(eng)
+    db = _get_studio_db(eng)  # type: ignore[assignment]
+    if db is None:
+        return 0
+    db_: StudioDb | PgStudioDb = db
+    dag = _build_dependency_graph(eng, db_)
     # Validate DAG
     topological_order(dag)
 
@@ -656,7 +665,32 @@ def run_pipeline_bg(name: str, triggered_by: str = "manual", eng: Any | None = N
     return "started"
 
 
-def _start_next_queued(db: StudioDb | PgStudioDb) -> None:
+def _get_scheduler_config(eng: Any) -> tuple[int, int]:
+    """Return (max_concurrent, min_free_mb) from engine config or defaults."""
+    try:
+        scheduler = getattr(eng.config, "scheduler", None)
+        if scheduler is not None:
+            return int(scheduler.max_concurrent), int(scheduler.min_free_mb)
+    except Exception:
+        pass
+    return _MAX_CONCURRENT, _MIN_FREE_MB
+
+
+def drain_queue(db: StudioDb | PgStudioDb, max_concurrent: int, min_free_mb: int) -> None:
+    """Drain queued pipelines until no more can be started (concurrency/memory)."""
+    for _ in range(max_concurrent):
+        status = db.get_queue_status()
+        queued = status["by_status"].get("queued", 0)
+        if queued == 0:
+            break
+        _start_next_queued(db, max_concurrent, min_free_mb)
+
+
+def _start_next_queued(
+    db: StudioDb | PgStudioDb,
+    max_concurrent: int | None = None,
+    min_free_mb: int | None = None,
+) -> None:
     """Start the next queued pipeline if concurrency slot and memory available."""
     # Purge stale running entries first — prevents zombie slots from blocking
     _purge_stale(db)
@@ -664,21 +698,25 @@ def _start_next_queued(db: StudioDb | PgStudioDb) -> None:
     # Check running count
     status = db.get_queue_status()
     running = status["by_status"].get("running", 0)
-    if running >= _MAX_CONCURRENT:
+    if max_concurrent is None:
+        max_concurrent = _MAX_CONCURRENT
+    if running >= max_concurrent:
         return
 
     # Check memory before claiming — prevents OOM kills from large IMDB/TMDB datasets
     free_mb = _available_mb()
-    if free_mb < _MIN_FREE_MB:
+    if min_free_mb is None:
+        min_free_mb = _MIN_FREE_MB
+    if free_mb < min_free_mb:
         logger.warning(
             "skipping queue claim: low memory",
             free_mb=free_mb,
-            threshold_mb=_MIN_FREE_MB,
+            threshold_mb=min_free_mb,
         )
         return
 
     # Claim next
-    claimed = db.claim_next_queued(_MAX_CONCURRENT)
+    claimed = db.claim_next_queued(max_concurrent)
     if claimed:
         logger.info(
             "claimed pipeline from queue",
@@ -690,19 +728,22 @@ def _start_next_queued(db: StudioDb | PgStudioDb) -> None:
 
 def _init_pipeline_run(
     eng: Any, name: str, claimed: dict[str, Any]
-) -> tuple[Any | None, int | None]:
-    """Initialize pipeline run with DB connection and start_run. Returns (sdb, run_id)."""
+) -> tuple[Any | None, int | None, bool]:
+    """Init pipeline run: acquire lock, start_run. Returns (sdb, run_id, lock_acquired)."""
     from dex_studio.studio_db import get_studio_db
 
     sdb = None
     run_id: int | None = None
+    lock_acquired = False
     try:
         sdb = get_studio_db(eng)
         if sdb is not None:
-            run_id = sdb.start_run(name, triggered_by=claimed.get("triggered_by", "manual"))
+            lock_acquired = sdb.acquire_lock(name)
+            if lock_acquired:
+                run_id = sdb.start_run(name, triggered_by=claimed.get("triggered_by", "manual"))
     except Exception:
         logger.exception("failed to init studio_db for pipeline", pipeline=name)
-    return sdb, run_id
+    return sdb, run_id, lock_acquired
 
 
 def _execute_pipeline(
@@ -793,30 +834,57 @@ def _run(name: str, claimed: dict[str, Any]) -> None:
     try:
         eng = get_engine()
         if eng is not None:
-            sdb, run_id = _init_pipeline_run(eng, name, claimed)
+            sdb, run_id, lock_acquired = _init_pipeline_run(eng, name, claimed)
 
-            # Check for cancellation before running
-            if is_pipeline_cancelled(name, sdb):
+            if not lock_acquired:
+                status = "queued"
+                error_msg = "pipeline locked by another run"
+                logger.info("pipeline already locked — will retry later", pipeline=name)
+            elif is_pipeline_cancelled(name, sdb):
                 status = "cancelled"
                 error_msg = "Pipeline cancelled by user"
                 logger.info("pipeline cancelled before execution", pipeline=name)
             else:
-                result = _execute_pipeline(eng, name, sdb, run_id)
-                status, error_msg, rows_input, rows_output = result
+                status, error_msg, rows_input, rows_output = _execute_pipeline(
+                    eng, name, sdb, run_id
+                )
 
     except Exception as exc:  # noqa: BLE001 — background worker must never crash the pool
         error_msg = str(exc)
         logger.error("background pipeline failed", pipeline=name, error=error_msg, exc_info=True)
     finally:
         duration_s = time.monotonic() - start_time
-        if sdb is not None and run_id is not None:
+        _finalize_run(
+            sdb, run_id, name, status, error_msg,
+            rows_input, rows_output, duration_s, claimed, lock_acquired
+        )
+        _schedule_next_queued()
+
+def _finalize_run(
+    sdb: Any | None,
+    run_id: int | None,
+    name: str,
+    status: str,
+    error_msg: str,
+    rows_input: int,
+    rows_output: int,
+    duration_s: float,
+    claimed: dict[str, Any],
+    lock_acquired: bool,
+) -> None:
+    """Finalize a pipeline run: release lock, record metrics, update queue status."""
+    if sdb is not None and lock_acquired:
+        with contextlib.suppress(Exception):
+            sdb.release_lock(name)
+
+    if sdb is not None:
+        if lock_acquired and run_id is not None:
             _finalize_pipeline_run(
                 sdb, run_id, name, status, error_msg,
                 rows_input, rows_output, duration_s,
             )
-
-            # Update queue status
-            db = _get_studio_db(eng)
+            from dex_studio._engine import get_engine
+            db = _get_studio_db(get_engine())
             if db:
                 db.mark_queue_status(
                     claimed["id"],
@@ -825,12 +893,25 @@ def _run(name: str, claimed: dict[str, Any]) -> None:
                     run_id,
                     claimed["version"],
                 )
+        elif not lock_acquired:
+            from dex_studio._engine import get_engine
+            db = _get_studio_db(get_engine())
+            if db:
+                db.mark_queue_status(
+                    claimed["id"],
+                    "queued",
+                    "pipeline locked by another run",
+                    None,
+                    claimed["version"],
+                )
 
-    # Start next queued pipeline
-    db = _get_studio_db(get_engine())
+def _schedule_next_queued() -> None:
+    """Start next queued pipeline if capacity available."""
+    from dex_studio._engine import get_engine
+    eng = get_engine()
+    db = _get_studio_db(eng)
     if db:
         _start_next_queued(db)
-        # Update queue depth metrics
         try:
             from dex_studio.metrics import update_queue_depth
             qs = db.get_queue_status()

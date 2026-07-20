@@ -1,46 +1,35 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Traces — System — DEX Studio{% endblock %}
+{% block title %}Traces — DEX Studio{% endblock %}
+
 {% block page_title %}Traces{% endblock %}
-{% block page_sub %}Recent engine trace events{% endblock %}
+{% block page_sub %}Structured trace viewer · Level: {{ level }}{% endblock %}
 
 {% block page_actions %}
-<form method="get" action="" class="row" style="gap:6px">
-  <select name="level" onchange="this.form.submit()"
-          style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-2);padding:4px 8px;font-size:12px;color:var(--text);cursor:pointer">
-    {% for lvl in levels %}
-    <option value="{{ lvl }}" {% if level == lvl %}selected{% endif %}>{{ lvl }}</option>
-    {% endfor %}
-  </select>
-</form>
+<select class="input" id="level-select" style="width:auto" onchange="window.location.href='/system/traces?level='+this.value">
+  {% for l in levels %}<option value="{{ l }}" {% if l == level %}selected{% endif %}>{{ l }}</option>{% endfor %}
+</select>
 {% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
-  <div class="card bare">
-    {% if entries %}
-    <table class="dex-table">
-      <thead>
-        <tr>
-          <th style="width:150px">Timestamp</th>
-          <th style="width:70px">Level</th>
-          <th>Message</th>
-        </tr>
-      </thead>
+<div class="animate-fade-in" style="--domain-color: var(--domain-system)">
+
+<div class="card" style="overflow:hidden">
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-xs);margin:0">
+      <thead style="position:sticky;top:0;background:var(--bg-elev);z-index:1"><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
       <tbody>
-        {% for e in entries %}
-        <tr>
-          <td class="mono muted" style="font-size:10px;white-space:nowrap">{{ e.ts }}</td>
-          <td><span class="dex-log-badge dex-log-{{ e.level.lower() }}">{{ e.level }}</span></td>
-          <td class="mono" style="font-size:11.5px">{{ e.msg }}</td>
-        </tr>
+        {% for r in entries %}
+        <tr><td class="mono" style="font-size:11px;white-space:nowrap">{{ r.ts }}</td><td><span class="pill {{ 'error' if r.level == 'ERROR' else 'warning' if r.level == 'WARNING' else 'info' if r.level == 'INFO' else 'success' }}" style="font-size:10px;height:16px">{{ r.level }}</span></td><td class="mono" style="font-size:11px;white-space:pre-wrap;max-width:800px;overflow:hidden;text-overflow:ellipsis">{{ r.msg }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    {{ empty_state("activity", "No traces", "No log entries match the current filter.") }}
-    {% endif %}
   </div>
 </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

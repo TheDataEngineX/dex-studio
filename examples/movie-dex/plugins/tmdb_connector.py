@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import math
-import time
 import threading
+import time
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
@@ -83,6 +83,8 @@ class TmdbConnector(BaseConnector):
         redis_url: str = "",
         redis_password: str = "",
         redis_rate_key: str = "dex:tmdb:rate-slot",
+        since_source_path: str = "",
+        since_column: str = "",
         **kwargs: Any,
     ) -> None:
         if max_concurrency < 1:
@@ -104,6 +106,8 @@ class TmdbConnector(BaseConnector):
         self._redis_url = (redis_url or "").strip()
         self._redis_password = redis_password
         self._redis_rate_key = redis_rate_key
+        self._since_source_path = Path(since_source_path) if since_source_path else None
+        self._since_column = since_column
         self._connected = False
         self._redis: Any = None
         self._local_rate_lock: asyncio.Lock | None = None
@@ -163,7 +167,37 @@ class TmdbConnector(BaseConnector):
             table = pa.Table.from_pylist(records or []).select([self._id_column])
         else:
             table = pq.read_table(str(self._id_source_path), columns=[self._id_column])
-        return list(dict.fromkeys(int(v) for v in table.column(self._id_column).to_pylist()))
+        all_ids = list(dict.fromkeys(int(v) for v in table.column(self._id_column).to_pylist()))
+
+        # ponytail: incremental pull — intersect with since_source (e.g. changes table)
+        # to only re-fetch IDs that actually changed since last run.
+        if self._since_source_path and self._since_source_path.exists():
+            since_ids = self._load_since_ids()
+            if since_ids is not None:
+                all_ids = [i for i in all_ids if i in since_ids]
+                logger.info("tmdb incremental filter", remaining=len(all_ids))
+
+        return all_ids
+
+    def _load_since_ids(self) -> set[int] | None:
+        """Load IDs from since_source_path for incremental filtering."""
+        try:
+            path = self._since_source_path
+            if path is None:
+                return None
+            if path.is_dir() and (path / "_delta_log").exists():
+                records = DeltaStorage(base_path=str(path.parent)).read(path.name)
+                col = self._since_column or "id"
+                table = pa.Table.from_pylist(records or []).select([col])
+            else:
+                col = self._since_column or "id"
+                table = pq.read_table(str(path), columns=[col])
+            return set(int(v) for v in table.column(col).to_pylist())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "tmdb since_source read failed — falling back to full pull", error=str(exc)
+            )
+            return None
 
     async def _wait_for_local_rate_slot(self) -> None:
         if self._local_rate_lock is None:

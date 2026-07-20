@@ -8,6 +8,7 @@ import datetime
 import os
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any
@@ -17,7 +18,6 @@ import structlog
 from fastapi import APIRouter, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from dex_studio import _json
 from dex_studio.flow import build_nodes
 from dex_studio.jobs import is_pipeline_running, queue_all_pipelines_bg, run_pipeline_bg
 from dex_studio.routers._deps import (
@@ -28,6 +28,8 @@ from dex_studio.routers._deps import (
     flash,
     render,
 )
+from dex_studio.routers._deps import push_toast_safe as push_toast
+from dex_studio.routers.intelligence import _get_tool_registry
 from dex_studio.studio_db import get_studio_db
 from dex_studio.utils import fmt_cron, fmt_ts, fmt_ts_iso
 
@@ -89,8 +91,11 @@ def _build_dashboard_recent_runs(eng: Any) -> list[dict[str, Any]]:
                         "name": pipe_name,
                         "pipeline": pipe_name,
                         "status": (
-                            "success" if st == "success"
-                            else "skipped" if st == "skipped" else "error"
+                            "success"
+                            if st == "success"
+                            else "skipped"
+                            if st == "skipped"
+                            else "error"
                         ),
                         "status_class": (
                             "ok" if st == "success" else "info" if st == "skipped" else "error"
@@ -201,6 +206,24 @@ def data_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
     recent_runs = _build_dashboard_recent_runs(eng)
     activity_feed = _build_activity_feed(recent_runs)
     quality_summary = _build_quality_summary(eng)
+    # ML stats for dashboard
+    model_names = eng.model_registry.list_models()
+    production_count = 0
+    for mname in model_names:
+        with contextlib.suppress(Exception):
+            latest = eng.model_registry.get_latest(mname)
+            if latest and str(latest.stage.value) == "production":
+                production_count += 1
+    experiment_count = 0
+    if eng.tracker:
+        with contextlib.suppress(Exception):
+            experiment_count = len(eng.tracker.list_experiments() or [])
+    ml_stats = {
+        "models": len(model_names),
+        "experiments": experiment_count,
+        "agents": len(eng.agents),
+        "tools": len(_get_tool_registry(eng).list_tools()),
+    }
     ctx = base_ctx(request) | {
         "stats": stats,
         "source_count": len(sources),
@@ -211,6 +234,8 @@ def data_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:
         "recent_runs": recent_runs,
         "activity_feed": activity_feed,
         "quality_summary": quality_summary,
+        "ml_stats": ml_stats,
+        "pipelines": _build_pipeline_rows(eng)[:7],
         "active_tab": "data",
     }
     return render(request, "data/dashboard.html", ctx)
@@ -559,10 +584,12 @@ def _build_pipeline_rows(eng: Any) -> list[dict[str, Any]]:
     rows = []
     sdb = get_studio_db(eng)
     active_runs = _active_db_runs(sdb)
-    
-    # Get queued pipelines
+
+    # Get queued pipelines (ordered — position is 1-based index into this list)
     from dex_studio import jobs
-    queued = set(jobs.queued_pipelines())
+
+    queued_order = jobs.queued_pipelines()
+    queued = set(queued_order)
 
     for name, cfg in (eng.config.data.pipelines or {}).items():
         dest = str(cfg.destination or name)
@@ -572,8 +599,10 @@ def _build_pipeline_rows(eng: Any) -> list[dict[str, Any]]:
         status = _live_running_override(eng, name, snap["status"])
 
         # Check if queued
+        queued_position = None
         if name in queued:
             status = "queued"
+            queued_position = queued_order.index(name) + 1
 
         last_run = fmt_ts(snap["last_run_ts"])
         if last_run == "—":
@@ -592,6 +621,7 @@ def _build_pipeline_rows(eng: Any) -> list[dict[str, Any]]:
                 "source": str(cfg.source or ""),
                 "destination": dest,
                 "steps": _pipeline_steps(cfg),
+                "queued_position": queued_position,
             }
         )
     return rows
@@ -653,7 +683,15 @@ def _sparkbar_for_pipeline(eng: Any, name: str) -> list[dict[str, str]]:
         with contextlib.suppress(Exception):
             for r in sdb.get_runs(name, limit=7):
                 st = r.get("status", "")
-                sc = "ok" if st == "success" else "skip" if st == "skipped" else "fail"
+                sc = (
+                    "ok"
+                    if st == "success"
+                    else "skip"
+                    if st == "skipped"
+                    else "running"
+                    if st == "running"
+                    else "fail"
+                )
                 bars.append({"status": sc, "height": "70"})
     if not bars:
         with contextlib.suppress(Exception):
@@ -719,16 +757,21 @@ async def pipelines_ws(websocket: WebSocket) -> None:
                 continue
 
             from dex_studio import jobs
+
             rows = []
             for r in _build_pipeline_rows(eng):
                 progress = jobs.get_progress(r["name"]) if r["status"] == "running" else None
-                rows.append({
-                    "name": r["name"],
-                    "status": r["status"],
-                    "last_run": r["last_run"],
-                    "progress_pct": round(100 * progress[1] / progress[2]) if progress else None,
-                    "progress_stage": progress[0] if progress else None,
-                })
+                rows.append(
+                    {
+                        "name": r["name"],
+                        "status": r["status"],
+                        "last_run": r["last_run"],
+                        "progress_pct": round(100 * progress[1] / progress[2])
+                        if progress
+                        else None,
+                        "progress_stage": progress[0] if progress else None,
+                    }
+                )
             await websocket.send_json({"pipelines": rows})
             await asyncio.sleep(2)
     except WebSocketDisconnect:
@@ -815,7 +858,15 @@ def _build_sparkbar(eng: Any, name: str) -> list[dict[str, str]]:
     sparkbar = []
     for tr in trend_runs:
         st = tr.get("status", "")
-        sc = "ok" if st == "success" else "skip" if st == "skipped" else "fail"
+        sc = (
+            "ok"
+            if st == "success"
+            else "skip"
+            if st == "skipped"
+            else "running"
+            if st == "running"
+            else "fail"
+        )
         sparkbar.append({"status": sc, "height": "70"})
     while len(sparkbar) < 7:
         sparkbar.insert(0, {"status": "empty", "height": "30"})
@@ -900,6 +951,7 @@ def run_pipeline(request: Request, _: WriteDep, name: str) -> RedirectResponse:
     status = run_pipeline_bg(name)
     if status == "started":
         flash(request, f"Pipeline '{name}' started — refresh in a moment for results.")
+        push_toast(request, f"Pipeline '{name}' started.", "success")
     elif status == "running":
         flash(request, f"Pipeline '{name}' is already running.", "warning")
     elif status == "low_memory":
@@ -1054,25 +1106,19 @@ def _pipeline_dest_meta(name: str, cfg: Any) -> tuple[str, int, str | None]:
     return layer, scd_type, pk
 
 
-def _pipeline_quality_score(eng: Any, name: str, cfg: Any) -> float | None:
+def _pipeline_quality_score(name: str) -> float | None:
     """Quality score for this pipeline's own output table only.
 
-    Scoped to a single table via quality_check_table() rather than
-    quality_check_all_tables() — the latter re-scans every catalog table
-    (including tens-of-millions-of-row bronze sources) on every pipeline
-    detail page load, which is both wasteful and, for large sources, has
-    crashed the process outright.
+    Reads the score `run_checks.run_quality_check()` already recorded after
+    the pipeline's last run, instead of calling quality_check_table() live on
+    every page load — that runs a full completeness/uniqueness scan, which
+    for tens-of-millions-of-row bronze sources (e.g. bronze_principals) is
+    slow enough to blow well past normal page-render budgets.
     """
-    target = getattr(cfg, "target", None) or {}
-    layer = _infer_pipeline_layer(name, target)
-    dest = str(getattr(cfg, "destination", None) or name)
-    try:
-        res = eng.quality_check_table(f"{layer}.{dest}")
-        if res:
-            return float(round(res.get("score", 0) * 100))
-    except Exception:
-        log.exception("quality check failed for pipeline detail", pipeline=name)
-    return None
+    from dex_studio.metrics import get_quality_score
+
+    score = get_quality_score(name)
+    return float(round(score * 100)) if score is not None else None
 
 
 def _pipeline_is_stale(last_run_raw: Any) -> bool:
@@ -1152,7 +1198,7 @@ def pipeline_detail(request: Request, eng: ReadDep, name: str) -> HTMLResponse:
         next_run=_next_run_iso(cfg.schedule or "", last_run_raw),
     )
     # Quality score for pipeline output table, and freshness (stale if last run > 24h or none)
-    quality_score = _pipeline_quality_score(eng, name, cfg)
+    quality_score = _pipeline_quality_score(name)
     is_stale = _pipeline_is_stale(last_run_raw)
     ctx = base_ctx(request) | {
         "pipeline_name": name,
@@ -1279,11 +1325,10 @@ def _build_source_data(eng: Any) -> dict[str, Any]:
 @router.get("/sources", response_class=HTMLResponse)
 def sources(request: Request, eng: ReadDep) -> HTMLResponse:
     rows = _build_source_rows(eng)
-    source_data = _build_source_data(eng)
+    top_types = Counter(r.get("type", "") for r in rows).most_common(2)
     ctx = base_ctx(request) | {
         "sources": rows,
-        "source_types": _SOURCE_TYPES,
-        "source_data_json": _json.dumps(source_data),
+        "top_source_types": top_types,
     }
     return render(request, "data/sources.html", ctx)
 
@@ -1442,13 +1487,26 @@ def sql_console(request: Request, eng: ReadDep) -> HTMLResponse:
                 {"name": tbl["name"], "layer": layer, "column_count": len(schema)}
             )
     ctx = base_ctx(request) | {
-        "sql_results": [],
-        "sql_columns": [],
-        "exec_ms": None,
         "catalog_entries": catalog_entries,
         "default_sql": _DEFAULT_SQL,
     }
     return render(request, "data/sql.html", ctx)
+
+
+@router.get("/sql/tables")
+def sql_tables(request: Request, eng: JsonReadDep) -> Any:
+    """Return all tables across layers for the table browser."""
+    tables = []
+    for layer in ("bronze", "silver", "gold"):
+        for tbl in eng.warehouse_tables(layer):
+            schema = eng.warehouse_table_schema(tbl["name"], layer) or []
+            tables.append({
+                "name": tbl["name"],
+                "layer": layer,
+                "rows": tbl.get("row_count", 0),
+                "columns": len(schema),
+            })
+    return tables
 
 
 def _run_sql(
@@ -1500,7 +1558,6 @@ def execute_sql(
         lakehouse = eng.project_dir / ".dex" / "lakehouse"
         columns, results, exec_ms, error = _run_sql(lakehouse, query)
 
-    # Build catalog sidebar entries (needed when rendering the full sql.html page)
     catalog_entries: list[dict[str, Any]] = []
     with contextlib.suppress(Exception):
         for _layer in ("bronze", "silver", "gold"):
@@ -1567,11 +1624,32 @@ def _enrich_tables(eng: Any, tables: list[dict[str, Any]], layer: str) -> list[d
 
 @router.get("/warehouse", response_class=HTMLResponse)
 def warehouse(request: Request, eng: ReadDep) -> HTMLResponse:
-    tables = _enrich_tables(eng, eng.warehouse_tables("gold"), "gold")
-    ctx = base_ctx(request) | {
-        "tables": tables,
-        "active_layer": "gold",
-    }
+    layers = []
+    for layer in ("bronze", "silver", "gold"):
+        tables = eng.warehouse_tables(layer)
+        table_list = []
+        for table in tables:
+            name = table.get("name", "")
+            try:
+                schema = eng.warehouse_table_schema(name, layer) or []
+            except Exception:
+                schema = []
+            size_mb = 0
+            if table.get("size_bytes"):
+                size_mb = round(table["size_bytes"] / 1024 / 1024, 1)
+            table_list.append({
+                "name": name,
+                "layer": layer,
+                "rows": table.get("row_count", 0),
+                "columns": schema,
+                "size_mb": size_mb,
+            })
+        layers.append({
+            "layer": layer,
+            "count": len(tables),
+            "tables": table_list,
+        })
+    ctx = base_ctx(request) | {"layers": layers}
     return render(request, "data/warehouse.html", ctx)
 
 
@@ -1712,17 +1790,12 @@ def lineage_graph_partial(request: Request, eng: ReadDep, pipeline: str = "") ->
 def lineage(
     request: Request, eng: ReadDep, pipeline: str = "", view: str = "table"
 ) -> HTMLResponse:
-    all_events = _get_lineage_events(eng, pipeline)
-    pipeline_names = sorted({e["pipeline_name"] for e in all_events if e["pipeline_name"]})
     lin_nodes, lin_edges = _lineage_graph_from_config(eng)
+    pipeline_status = {r["name"]: r["status"] for r in _build_pipeline_rows(eng)}
     ctx = base_ctx(request) | {
-        "events": all_events,
-        "pipeline_names": pipeline_names,
-        "filter_pipeline": pipeline,
-        "view": view,
-        "lineage_nodes": lin_nodes,
-        "lineage_edges": lin_edges,
-        "mermaid_diagram": _build_mermaid(all_events) if all_events else "",
+        "nodes": lin_nodes,
+        "edges": lin_edges,
+        "pipeline_status": pipeline_status,
     }
     return render(request, "data/lineage.html", ctx)
 
@@ -1766,14 +1839,21 @@ def _table_quality_checks(eng: Any, table_name: str) -> list[dict[str, Any]]:
     return [c for c in checks if c.get("table") == table_name]
 
 
-def _pipeline_quality_summary(eng: Any) -> list[dict[str, Any]]:
-    """Build per-pipeline quality check counts from real results (config checks + custom rules)."""
+def _pipeline_quality_summary(
+    eng: Any, quality_results: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Build per-pipeline quality check counts from real results (config checks + custom rules).
+
+    *quality_results* should be the most recent stored quality run's results
+    (see `quality_history()`), not a fresh `quality_check_all_tables()` call —
+    that method does a full scan of every warehouse table on every invocation,
+    which is too slow to run synchronously on a page load once tables grow
+    large. Pass an empty dict if no run has happened yet.
+    """
     summary: list[dict[str, Any]] = []
     pipelines_cfg = getattr(eng.config.data, "pipelines", None) or {}
     db = get_studio_db(eng)
-    quality_results: dict[str, Any] = {}
-    with contextlib.suppress(Exception):
-        quality_results = eng.quality_check_all_tables()
+    quality_results = quality_results or {}
     for pipe_name, pipe_cfg in pipelines_cfg.items():
         q = getattr(pipe_cfg, "quality", None)
         cfg_check_count = (
@@ -1803,12 +1883,14 @@ def _pipeline_quality_summary(eng: Any) -> list[dict[str, Any]]:
         total_checks = cfg_check_count + len(rules)
         if total_checks == 0:
             continue
+        pass_count = cfg_pass + rule_pass
         summary.append(
             {
                 "name": pipe_name,
                 "check_count": total_checks,
-                "pass_count": cfg_pass + rule_pass,
+                "pass_count": pass_count,
                 "fail_count": cfg_fail + rule_fail,
+                "pass_rate": round(100 * pass_count / total_checks),
                 "last_checked": fmt_ts(max(checked_ats)) if checked_ats else "—",
             }
         )
@@ -1841,12 +1923,13 @@ def quality(request: Request, eng: ReadDep) -> HTMLResponse:
             for c in checks
         ]
 
+    latest_results: dict[str, Any] = runs[0].get("results", {}) if runs else {}
     ctx = base_ctx(request) | {
         "score_pct": overall_pass_pct,
         "overall_pass_pct": overall_pass_pct,
         "checks": checks,
         "run_count": len(runs),
-        "quality_by_pipeline": _pipeline_quality_summary(eng),
+        "quality_by_pipeline": _pipeline_quality_summary(eng, latest_results),
         "quality_events": quality_events,
     }
     return render(request, "data/quality.html", ctx)
@@ -1933,29 +2016,33 @@ def catalog_register(
     return RedirectResponse("/data/catalog", status_code=303)
 
 
-# ── Catalog (alias for sources) ───────────────────────────────────────────────
+# ── Catalog (warehouse table/schema browser, separate from sources) ───────────
 
 
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(request: Request, eng: ReadDep) -> HTMLResponse:
-    entries: list[dict[str, Any]] = []
-    layer_colors = {"bronze": "orange", "silver": "indigo", "gold": "amber"}
+    layers = []
     for layer in ("bronze", "silver", "gold"):
-        for table in eng.warehouse_tables(layer):
+        tables = eng.warehouse_tables(layer)
+        table_list = []
+        for table in tables:
             schema = eng.warehouse_table_schema(table["name"], layer) or []
-            entries.append(
-                {
-                    "name": table["name"],
-                    "layer": layer,
-                    "layer_color": layer_colors[layer],
-                    "row_count": table.get("row_count", "—"),
-                    "column_count": len(schema),
-                    "size": table.get("size", "—"),
-                    "columns": schema,
-                    "format": "parquet",
-                }
-            )
-    ctx = base_ctx(request) | {"entries": entries, "active_tab": "data"}
+            size_mb = 0
+            if table.get("size_bytes"):
+                size_mb = round(table["size_bytes"] / 1024 / 1024, 1)
+            table_list.append({
+                "name": table["name"],
+                "layer": layer,
+                "rows": table.get("row_count", 0),
+                "columns": schema,
+                "size_mb": size_mb,
+            })
+        layers.append({
+            "layer": layer,
+            "count": len(tables),
+            "tables": table_list,
+        })
+    ctx = base_ctx(request) | {"layers": layers}
     return render(request, "data/catalog.html", ctx)
 
 
@@ -2053,7 +2140,7 @@ def transforms(request: Request, eng: ReadDep, pipeline: str = "") -> HTMLRespon
         "schedule": schedule_str,
         "source": str(getattr(cfg, "source", "") or "") if cfg else "",
         "destination": str(getattr(cfg, "destination", "") or "") if cfg else "",
-        "active_tab": "data",
+        "cfg": cfg,
     }
     return render(request, "data/transforms.html", ctx)
 
@@ -2151,7 +2238,6 @@ def streaming(request: Request, eng: ReadDep) -> HTMLResponse:
     ]
     ctx = base_ctx(request) | {
         "topics": topics,
-        "active_tab": "data",
     }
     return render(request, "data/streaming.html", ctx)
 
@@ -2167,7 +2253,6 @@ def watermarks(request: Request, eng: ReadDep) -> HTMLResponse:
     ctx = base_ctx(request) | {
         "watermarks": rows,
         "all_sources": sources,
-        "active_tab": "data",
     }
     return render(request, "data/watermarks.html", ctx)
 
@@ -2232,7 +2317,6 @@ def schema_contracts(request: Request, eng: ReadDep) -> HTMLResponse:
         "contracts": contracts,
         "drift_events": drift_events,
         "pipeline_count": len(pipelines),
-        "active_tab": "data",
     }
     return render(request, "data/schema.html", ctx)
 

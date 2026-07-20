@@ -1,279 +1,71 @@
 {% extends "base.html" %}
 
-{% block title %}Security — DEX Studio{% endblock %}
+{% block title %}SecOps Overview — DEX Studio{% endblock %}
 
-{% block content_class %}full-bleed{% endblock %}
+{% block page_title %}SecOps{% endblock %}
+{% block page_sub %}Privacy & security overview{% endblock %}
 
-{% block full_bleed %}
-{% from "components/macros.html" import metric_card, empty_state %}
+{% block content %}
+<div class="animate-fade-in">
 
-{# ── Security Posture Banner ──────────────────────────────────────────────── #}
-<div style="border-bottom:1px solid var(--border);padding:16px 24px;background:color-mix(in oklch,var(--domain-secops) 6%,var(--bg-elev))">
-  <div style="display:flex;align-items:center;gap:16px">
-    <div style="width:52px;height:52px;border-radius:50%;
-                border:3px solid {{ 'var(--state-ok)' if security_score >= 80 else ('var(--state-warn)' if security_score >= 50 else 'var(--state-error)') }};
-                display:flex;align-items:center;justify-content:center;flex-shrink:0">
-      <span style="font-size:16px;font-weight:700;color:{{ 'var(--state-ok)' if security_score >= 80 else ('var(--state-warn)' if security_score >= 50 else 'var(--state-error)') }}">{{ security_score }}%</span>
-    </div>
-    <div>
-      <div style="font-weight:600;font-size:15px">{{ posture_label }}</div>
-      <div class="muted" style="font-size:12px">PrivacyGuard {{ 'active' if guard_active else 'inactive' }} · {{ strategy_count }} strateg{{ 'ies' if strategy_count != 1 else 'y' }} · {{ active_rules }} rule{{ 's' if active_rules != 1 else '' }}</div>
-    </div>
-    <span style="flex:1"></span>
-    <a href="/secops/audit" class="btn sm ghost" style="text-decoration:none">
-      <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Audit log
-    </a>
-    <a href="/secops/alerts" class="btn sm ghost" style="text-decoration:none">
-      <i data-lucide="bell" style="width:11px;height:11px"></i> Alerts
-    </a>
-  </div>
+<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+  <div class="stat"><div class="lbl"><i data-lucide="shield" style="width:14px;height:14px;color:var(--domain-secops)"></i> Guard</div><div class="val">{{ 'Active' if guard_active else 'Disabled' }}</div><div class="delta {{ 'up' if guard_active else 'down' }}">{{ 'Protecting' if guard_active else 'Inactive' }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="file-text" style="width:14px;height:14px;color:var(--info-9)"></i> Audit Events</div><div class="val">{{ audit_count }}</div><div class="delta">{{ audit_today }} today</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:var(--warning-9)"></i> Firing Alerts</div><div class="val">{{ firing_count }}</div><div class="delta down">{{ critical_count }} critical</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="check-circle-2" style="width:14px;height:14px;color:var(--success-9)"></i> Security Score</div><div class="val">{{ security_score }}</div><div class="delta">{{ posture_label }}</div></div>
 </div>
 
-{# ── Metric Strip ─────────────────────────────────────────────────────────── #}
-<div style="display:flex;gap:12px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--bg-elev)">
-  {{ metric_card("Outbound calls today", outbound_calls_today | default(0), "send", "indigo",
-      "active" if outbound_calls_today else "no calls yet") }}
-  {{ metric_card("PII fields masked", pii_masked_today | default(0), "shield-check", "green",
-      "masked today" if pii_masked_today else "none yet") }}
-  {{ metric_card("Calls blocked", calls_blocked_today | default(0), "shield-x",
-      "red" if calls_blocked_today else "indigo",
-      "blocked today" if calls_blocked_today else "none blocked") }}
-  {{ metric_card("External spend today", "$" ~ (external_spend_today | default("0.00")), "dollar-sign", "amber",
-      "local LLM · no cost" if (not external_spend_today or external_spend_today == "0.00") else "") }}
-</div>
-
-{# ── Flow Strip — Accent Cards ────────────────────────────────────────────── #}
-<div class="flow-strip">
-
-  {# 1. Strategies #}
-  <a href="/secops/" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Strategies</span>
-      {% if guard_active %}
-        <span class="accent-card-status" style="color:var(--state-ok)" title="Guard active">✓</span>
-      {% else %}
-        <span class="accent-card-status" style="color:var(--state-warn)" title="Guard inactive">⚠</span>
-      {% endif %}
-    </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
-        <i data-lucide="shield" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">{{ strategy_count }} strateg{{ 'ies' if strategy_count != 1 else 'y' }}</div>
-        <div class="accent-card-sub">
-          {% set mask_ct = strategy_display | selectattr('mode','equalto','mask') | list | length %}
-          {% set block_ct = strategy_display | selectattr('mode','equalto','block') | list | length %}
-          {{ mask_ct }} mask · {{ block_ct }} block
-        </div>
-      </div>
-    </div>
-    <div class="accent-card-widget">
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        {% for s in strategy_display[:4] %}
-        <span class="type-pill">{{ s.name }}</span>
-        {% endfor %}
-        {% if strategy_display | length > 4 %}
-        <span class="type-pill">+{{ strategy_display | length - 4 }}</span>
-        {% endif %}
-      </div>
-    </div>
-  </a>
-
-  <span class="flow-chevron">›</span>
-
-  {# 2. Alerts #}
-  {% set open_alerts = firing_count | default(0) %}
-  <a href="/secops/alerts" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Alerts</span>
-      {% if open_alerts > 0 %}
-        <span class="accent-card-status" style="color:var(--state-error)" title="{{ open_alerts }} firing">⚠</span>
-      {% else %}
-        <span class="accent-card-status" style="color:var(--state-ok)" title="All clear">✓</span>
-      {% endif %}
-    </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
-        <i data-lucide="bell" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary" style="{{ 'color:var(--state-error)' if open_alerts else '' }}">
-          {{ open_alerts }} open
-        </div>
-        <div class="accent-card-sub">alert rules</div>
-      </div>
-    </div>
-    <div class="accent-card-widget">
-      {% if open_alerts %}
-      <span class="pill error" style="font-size:9.5px">{{ open_alerts }} critical</span>
-      {% else %}
-      <span style="font-size:10px;color:var(--text-4)">No active alerts</span>
-      {% endif %}
-    </div>
-  </a>
-
-  <span class="flow-chevron">›</span>
-
-  {# 3. Audit #}
-  <a href="/secops/audit" class="accent-card" style="--card-accent: var(--domain-secops); text-decoration:none">
-    <div class="accent-card-bar"></div>
-    <div class="accent-card-head">
-      <span class="accent-card-domain">Audit</span>
-      <span class="accent-card-status" style="color:var(--state-ok)">✓</span>
-    </div>
-    <div class="accent-card-body">
-      <div class="accent-card-icon" style="color:var(--domain-secops);background:color-mix(in oklch,var(--domain-secops) 10%,transparent)">
-        <i data-lucide="scroll-text" style="width:16px;height:16px"></i>
-      </div>
-      <div class="accent-card-metric">
-        <div class="accent-card-primary">{{ audit_today | default(0) }} today</div>
-        <div class="accent-card-sub">{{ audit_count | default(0) }} total events</div>
-      </div>
-    </div>
-    <div class="accent-card-widget">
-      <span style="font-size:10px;color:var(--text-4)">→ Full audit timeline</span>
-    </div>
-  </a>
-
-</div>
-
-{# ── Hub Grid — 3 panels ──────────────────────────────────────────────────── #}
-<div class="hub-grid">
-
-  {# Panel 1: Active strategies #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Active strategies</span>
-      <a href="/secops/" class="hub-panel-link">Config →</a>
-    </div>
-    {% if strategy_display %}
+<div class="grid" style="grid-template-columns: 1fr 420px; gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="card">
+    <div class="section-h"><h2>PII Strategies</h2></div>
+    <div class="col" style="gap:var(--space-2)">
       {% for s in strategy_display %}
-      <div class="hub-row">
-        <span class="pill {{ 'warn' if s.mode == 'mask' else ('error' if s.mode == 'block' else 'success') }} no-dot"
-              style="height:16px;font-size:9px;flex-shrink:0">{{ s.mode }}</span>
-        <span class="hub-row-name mono">{{ s.name }}</span>
-        <span class="hub-row-meta">{{ s.field_count }} field{{ 's' if s.field_count != 1 else '' }}</span>
+      <div class="card" style="padding:var(--space-3);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3)">
+        <div><span class="mono" style="font-weight:500">{{ s.name }}</span><span class="muted" style="margin-left:8px;font-size:var(--text-xs)">{{ s.field_count }} field{{ 's' if s.field_count != 1 else '' }}</span></div>
+        <span class="pill {{ 'error' if s.mode == 'block' else 'warning' if s.mode == 'mask' else 'info' }}" style="font-size:var(--text-xs);height:18px">{{ s.mode | upper }}</span>
       </div>
       {% endfor %}
-    {% else %}
-      <div class="hub-row" style="color:var(--text-4);font-style:italic">No strategies configured</div>
-    {% endif %}
+    </div>
   </div>
 
-  {# Panel 2: Recent events #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Recent events</span>
-      <a href="/secops/audit" class="hub-panel-link">All events →</a>
-    </div>
-    {% if recent_events %}
-      {% for e in recent_events[:5] %}
-      <a href="/secops/audit" class="hub-row" style="text-decoration:none">
-        <span class="pill {{ 'error' if e.operation == 'blocked' else 'success' }} no-dot"
-              style="height:16px;font-size:9px;flex-shrink:0">{{ e.operation }}</span>
-        <span class="hub-row-name mono">{{ e.dataset | default('—') }}</span>
-        <span class="hub-row-meta">{{ (e.occurred_at or '—')[-8:] }}</span>
+  <div class="card">
+    <div class="section-h"><h2>Recent Activity</h2></div>
+    <div class="col" style="gap:var(--space-2);max-height:300px;overflow:auto">
+      {% for a in activity_feed %}
+      <a href="{{ a.href }}" class="card" style="padding:var(--space-3);display:flex;align-items:center;gap:var(--space-3);transition:background var(--d-fast);background:transparent;box-shadow:none;border:none;cursor:pointer" onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background='transparent'">
+        <div style="width:32px;height:32px;border-radius:var(--r-2);background:color-mix(in oklch,var(--domain-{{ a.domain }}) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i data-lucide="{{ a.icon }}" style="width:14px;height:14px;color:var(--domain-{{ a.domain }})"></i></div>
+        <div style="flex:1;min-width:0"><div style="font-weight:500;font-size:var(--text-sm)">{{ a.desc }}</div><div class="muted" style="font-size:var(--text-xs)">{{ a.sub }}</div></div>
+        <span class="pill {{ 'success' if a.badge == 'masked' else 'error' if a.badge == 'blocked' else 'info' }}" style="font-size:var(--text-xs);height:18px">{{ a.badge | upper }}</span>
       </a>
       {% endfor %}
-    {% else %}
-      <div class="hub-row" style="color:var(--text-4);font-style:italic">No events yet</div>
-    {% endif %}
-  </div>
-
-  {# Panel 3: Top masked fields #}
-  <div class="hub-panel">
-    <div class="hub-panel-head">
-      <span class="hub-panel-title">Top masked fields</span>
-      <a href="/secops/audit" class="hub-panel-link">Audit →</a>
+      {% if not activity_feed %}
+      <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="eye" class="icon"></i><div class="title">No activity</div></div>
+      {% endif %}
     </div>
-    {% if top_masked_fields %}
-      {% for f in top_masked_fields %}
-      <div class="hub-row">
-        <span class="hub-row-name mono">{{ f.field }}</span>
-        <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:color-mix(in oklch,var(--amber-9) 12%,transparent);color:var(--amber-11)">{{ f.count }}</span>
-        <span class="hub-row-meta">{{ f.strategy }}</span>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="hub-row" style="color:var(--text-4);font-style:italic">No mask events yet</div>
-    {% endif %}
   </div>
-
 </div>
 
-{# ── Activity Feed ────────────────────────────────────────────────────────── #}
-<div class="hub-feed">
-  <div class="hub-feed-head">
-    <span class="hub-feed-title">Security activity</span>
-    <a href="/secops/audit" style="font-size:10.5px;color:var(--text-4);text-decoration:none">Full log →</a>
+<div class="card">
+  <div class="section-h"><h2>Top Masked Fields</h2></div>
+  {% if top_masked_fields %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Field</th><th>Count</th><th>Strategy</th></tr></thead>
+      <tbody>
+        {% for f in top_masked_fields %}
+        <tr><td class="mono">{{ f.field }}</td><td class="tnum mono">{{ f.count }}</td><td><span class="pill {{ 'error' if f.strategy == 'block' else 'warning' }}" style="font-size:var(--text-xs);height:18px">{{ f.strategy | upper }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-  {% if activity_feed %}
-    {% for ev in activity_feed %}
-    <a href="{{ ev.href }}" class="feed-row ev-secops" style="text-decoration:none">
-      <div class="feed-icon" style="background:color-mix(in oklch,var(--domain-secops) 10%,transparent);
-                                    color:{{ 'var(--state-error)' if ev.badge == 'blocked' else ('var(--amber-9)' if ev.badge == 'masked' else 'var(--blue-9)') }}">
-        <i data-lucide="{{ ev.icon }}" style="width:12px;height:12px"></i>
-      </div>
-      <div class="feed-body">
-        <div class="feed-desc">{{ ev.desc }}</div>
-        <div class="feed-sub">{{ ev.sub }}</div>
-      </div>
-      <div class="feed-right">
-        <span class="feed-badge">{{ ev.badge }}</span>
-        <span class="feed-time">{{ ev.time_ago }}</span>
-      </div>
-    </a>
-    {% endfor %}
   {% else %}
-    <div class="feed-row" style="color:var(--text-4);font-style:italic;border-left:none">
-      No security events yet. Events appear here when PrivacyGuard intercepts outbound calls.
-    </div>
+  <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="check-circle-2" class="icon" style="color:var(--success-9)"></i><div class="title">No PII masked yet</div></div>
   {% endif %}
 </div>
 
-{# ── Strategy Accordion ───────────────────────────────────────────────────── #}
-<div style="padding:0 24px 24px">
-  <div class="section-h" style="margin-bottom:12px">
-    <h2>Strategy detail</h2>
-    <span class="muted" style="font-size:var(--text-xs)">{{ strategy_count }} configured</span>
-  </div>
-
-  {% if strategy_display %}
-    {% for s in strategy_display %}
-    <div x-data="{open:false}"
-         style="border:1px solid var(--border);border-radius:var(--r-2);margin-bottom:6px;overflow:hidden;background:var(--bg-elev)">
-      {# Accordion header #}
-      <div class="row" style="padding:10px 14px;cursor:pointer;gap:10px;user-select:none"
-           @click="open=!open">
-        <span class="pill {{ 'warn' if s.mode == 'mask' else ('error' if s.mode == 'block' else 'success') }} no-dot"
-              style="height:16px;font-size:9px;flex-shrink:0">{{ s.mode }}</span>
-        <span class="mono" style="font-weight:500;font-size:13px;flex:1">{{ s.name }}</span>
-        <span class="dim" style="font-size:11px">{{ s.field_count }} field{{ 's' if s.field_count != 1 else '' }}</span>
-        <i data-lucide="chevron-down" style="width:12px;height:12px;flex-shrink:0;transition:transform .2s"
-           :style="open ? 'transform:rotate(180deg)' : ''"></i>
-      </div>
-      {# Expanded body #}
-      <div x-show="open" x-cloak
-           style="border-top:1px solid var(--border);padding:12px 14px;background:var(--bg)">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-          <span class="chip">{{ s.name }}</span>
-          {% if s.strategy %}
-          <span class="chip">strategy: {{ s.strategy }}</span>
-          {% endif %}
-        </div>
-        <div class="muted" style="font-size:11.5px">
-          Mode: <span class="mono" style="color:{{ 'var(--amber-9)' if s.mode == 'mask' else ('var(--red-9)' if s.mode == 'block' else 'var(--green-9)') }}">{{ s.mode }}</span>
-          · Applied to: <span class="mono">{{ s.name }}</span> PII type
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  {% else %}
-    {{ empty_state("shield", "No strategies configured", "Add a secops.guard section to dex.yaml to configure field-level rules.") }}
-  {% endif %}
 </div>
+{% endblock %}
 
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

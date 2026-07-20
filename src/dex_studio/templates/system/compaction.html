@@ -1,20 +1,38 @@
 {% extends "base.html" %}
 
-{% block title %}Compaction — System — DEX Studio{% endblock %}
+{% block title %}Compaction — DEX Studio{% endblock %}
+
 {% block page_title %}Compaction{% endblock %}
-{% block page_sub %}Storage compaction configuration{% endblock %}
+{% block page_sub %}Merge small parquet files for query performance{% endblock %}
 
 {% block content %}
+<div class="animate-fade-in" style="--domain-color: var(--domain-system)">
+
 <div class="card">
-  <div class="card-header"><h3>Compaction Configuration</h3></div>
-  {% if compaction_config %}
-  <div style="padding:16px">
-    <pre style="font-size:12px;white-space:pre-wrap">{{ compaction_config }}</pre>
+  <div class="section-h"><h2>Configuration</h2></div>
+  <div style="padding:var(--space-4)">
+    {% if compaction_config %}
+    <div class="col" style="gap:var(--space-3);max-width:500px">
+      <div class="row" style="justify-content:space-between"><span class="cap">Enabled</span><span class="pill {{ 'success' if compaction_config.enabled else 'warning' }}" style="height:20px;font-size:var(--text-xs)">{{ 'Yes' if compaction_config.enabled else 'No' }}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="cap">Max File Size</span><span class="mono">{{ compaction_config.max_file_size_mb or '—' }} MB</span></div>
+      <div class="row" style="justify-content:space-between"><span class="cap">Min Files</span><span class="mono">{{ compaction_config.min_files or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="cap">Schedule</span><span class="mono">{{ compaction_config.schedule or '—' }}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="cap">Target Layers</span><span class="mono">{{ compaction_config.layers | join(', ') if compaction_config.layers else 'All' }}</span></div>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="archive" class="icon"></i><div class="title">Not configured</div><div class="desc">Add compaction config to dex.yaml observability.compaction</div></div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
-    No compaction configuration found.
-  </div>
-  {% endif %}
 </div>
+
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Recent Jobs</h2></div>
+  <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="history" class="icon"></i><div class="title">No job history</div><div class="desc">Compaction jobs will appear here after they run.</div></div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

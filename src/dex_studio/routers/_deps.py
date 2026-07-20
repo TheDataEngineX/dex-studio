@@ -59,13 +59,15 @@ def _get_csrf_token(request: Request) -> str:
     return token
 
 
-def verify_csrf(request: Request) -> None:
+async def verify_csrf(request: Request) -> None:
     """Raise 403 if no valid CSRF token is found.
 
-    Accepts the token from two sources (checked in order):
+    Accepts the token from three sources (checked in order):
     1. ``X-CSRF-Token`` request header — set by HTMX via ``hx-headers`` on body.
-    2. ``_csrf`` query parameter — appended by base.html JS for native form POSTs
-       (browsers cannot set custom headers on plain form submissions).
+    2. ``_csrf`` query parameter.
+    3. ``_csrf`` form field — hidden input on native ``<form method="post">`` submissions
+       (browsers cannot set custom headers on plain form submissions, so the token
+       travels in the body instead).
 
     Login / onboarding routes are exempt — they run before a session exists.
     """
@@ -73,6 +75,9 @@ def verify_csrf(request: Request) -> None:
     if not expected:
         return
     provided = request.headers.get("X-CSRF-Token", "") or request.query_params.get("_csrf", "")
+    if not provided:
+        form = await request.form()
+        provided = str(form.get("_csrf", ""))
     if not provided or not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=403, detail="CSRF validation failed.")
 
@@ -324,12 +329,12 @@ def engine_dep(_: Annotated[None, Depends(auth_dep)]) -> DexEngine:
     return eng
 
 
-def engine_csrf_dep(
+async def engine_csrf_dep(
     request: Request,
     eng: Annotated[DexEngine, Depends(engine_dep)],
 ) -> DexEngine:
     """Dependency: auth + engine + CSRF. Use for all POST/mutation routes."""
-    verify_csrf(request)
+    await verify_csrf(request)
     return eng
 
 
@@ -362,16 +367,12 @@ def json_engine_dep(_: Annotated[None, Depends(json_auth_dep)]) -> DexEngine:
 JsonReadDep = Annotated[DexEngine, Depends(json_engine_dep)]
 
 
-def json_engine_csrf_dep(
+async def json_engine_csrf_dep(
     request: Request,
     eng: Annotated[DexBackend, Depends(json_engine_dep)],
 ) -> DexBackend:
     """Auth + engine + CSRF for JSON mutation routes (returns HTTP 403, not HTML redirect)."""
-    expected = request.session.get("_csrf", "")
-    if expected:
-        provided = request.headers.get("X-CSRF-Token", "") or request.query_params.get("_csrf", "")
-        if not provided or not hmac.compare_digest(provided, expected):
-            raise HTTPException(status_code=403, detail="CSRF validation failed.")
+    await verify_csrf(request)
     return eng
 
 
@@ -418,3 +419,17 @@ AdminDep = Annotated[dict[str, Any], Depends(admin_dep)]
 def flash(request: Request, msg: str, kind: str = "success") -> None:
     """Write a flash message into the session for the next page render."""
     request.session["flash"] = {"msg": msg, "kind": kind}
+
+
+def push_toast_safe(request: Request, msg: str, kind: str = "success") -> None:
+    """Push a toast message via HTMX trigger header - safe version that handles test clients."""
+    import json
+
+    trigger = json.dumps({"show-toast": {"msg": msg, "kind": kind}})
+    if hasattr(request, "response") and request.response is not None:
+        request.response.headers["HX-Trigger"] = trigger
+    else:
+        # For test client, store in session for next request
+        if not hasattr(request.state, "toasts"):
+            request.state.toasts = []
+        request.state.toasts.append({"msg": msg, "kind": kind})

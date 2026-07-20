@@ -1,354 +1,60 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state, inline_error %}
 
-{% block title %}Fine-tune — Intelligence — DEX Studio{% endblock %}
+{% block title %}Fine-tune — DEX Studio{% endblock %}
+
 {% block page_title %}Fine-tune{% endblock %}
-{% block page_sub %}Train sklearn models on lakehouse data{% endblock %}
+{% block page_sub %}Train models on lakehouse data{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-intelligence)">
+<div class="animate-fade-in">
 
-{# ── Flash: result ── #}
-{% if finetune_result %}
-<div class="card" style="padding:14px 18px;margin-bottom:var(--space-3);display:flex;align-items:flex-start;gap:12px;
-     background:color-mix(in oklch,var(--green-9) 6%,transparent);
-     border-color:color-mix(in oklch,var(--green-9) 22%,transparent)">
-  <span style="flex-shrink:0;width:30px;height:30px;border-radius:6px;background:var(--green-3);
-               display:flex;align-items:center;justify-content:center">
-    <i data-lucide="check-circle-2" style="width:15px;height:15px;color:var(--green-9)"></i>
-  </span>
-  <div style="flex:1;min-width:0">
-    <div style="font-size:13px;font-weight:600;color:var(--green-11);margin-bottom:6px">
-      Model trained — <span class="mono">{{ finetune_result.model_name }}</span>
-    </div>
-    <div class="row" style="gap:16px;flex-wrap:wrap">
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Rows trained</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "{:,}".format(finetune_result.rows_trained) if finetune_result.rows_trained else '—' }}</span>
-      </div>
-      {% if finetune_result.r2_score is defined and finetune_result.r2_score is not none %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">R² score</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.4f" | format(finetune_result.r2_score) }}</span>
-      </div>
-      {% endif %}
-      {% if finetune_result.accuracy is defined and finetune_result.accuracy is not none %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Accuracy</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.2f%%" | format(finetune_result.accuracy * 100) }}</span>
-      </div>
-      {% endif %}
-      {% if finetune_result.status %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Status</span>
-        <span class="pill success" style="font-size:10px">{{ finetune_result.status }}</span>
-      </div>
-      {% endif %}
-    </div>
-    {% if finetune_result.artifact %}
-    <div style="margin-top:8px;font-size:11px;color:var(--text-3)">
-      Artifact: <span class="mono" style="font-size:11px;color:var(--text-2)">{{ finetune_result.artifact }}</span>
-    </div>
-    {% endif %}
-    {% if finetune_result.features %}
-    <div style="margin-top:4px;font-size:11px;color:var(--text-3)">
-      Features: <span class="mono" style="font-size:11px;color:var(--text-2)">{{ finetune_result.features | join(', ') }}</span>
-    </div>
-    {% endif %}
+<div class="grid" style="grid-template-columns: 1fr 1fr; gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="card">
+    <div class="section-h"><h2>Tabular Fine-tune</h2></div>
+    <form method="post" action="/intelligence/finetune/run" style="padding:var(--space-4)" class="col" style="gap:var(--space-4)">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="col" style="gap:6px"><label class="cap" for="ft-feature-set">Feature Set</label><select name="feature_set" id="ft-feature-set" class="input" required><option value="">—</option>{% for t in gold_tables %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ft-target">Target Column</label><input class="input" id="ft-target" name="target" required placeholder="e.g. target"></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ft-algorithm">Algorithm</label><select name="algorithm" id="ft-algorithm" class="input"><option value="random_forest">Random Forest</option><option value="xgboost">XGBoost</option><option value="lightgbm">LightGBM</option><option value="logistic">Logistic Regression</option></select></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ft-model-name">Model Name (optional)</label><input class="input" id="ft-model-name" name="model_name" placeholder="auto-generated if empty"></div>
+      <button type="submit" class="btn primary"><i data-lucide="cpu" style="width:14px;height:14px"></i> Train Model</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="section-h"><h2>Embedding Fine-tune</h2></div>
+    <form method="post" action="/intelligence/finetune/embeddings/run" style="padding:var(--space-4)" class="col" style="gap:var(--space-4)">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="col" style="gap:6px"><label class="cap" for="ef-dataset">Dataset Table</label><select name="dataset_table" id="ef-dataset" class="input" required><option value="">—</option>{% for t in text_tables %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-text-a">Text A Column</label><input class="input" id="ef-text-a" name="text_a_column" required></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-text-b">Text B Column</label><input class="input" id="ef-text-b" name="text_b_column" required></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-label">Label Column</label><input class="input" id="ef-label" name="label_column" required></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-base">Base Model</label><input class="input" id="ef-base" name="base_model" value="all-MiniLM-L6-v2"></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-loss">Loss Type</label><select name="loss_type" id="ef-loss" class="input"><option value="contrastive">Contrastive</option><option value="triplet">Triplet</option><option value="cosine">CosineSimilarity</option></select></div>
+      <div class="col" style="gap:6px"><label class="cap" for="ef-model-name">Model Name (optional)</label><input class="input" id="ef-model-name" name="model_name"></div>
+      <button type="submit" class="btn primary"><i data-lucide="cpu" style="width:14px;height:14px"></i> Train Embeddings</button>
+    </form>
+  </div>
+</div>
+
+{% if finetune_result or embedding_finetune_result %}
+<div class="card" style="border-left:3px solid var(--success-9);margin-top:var(--space-4)">
+  <div class="section-h"><h2>Last Result</h2></div>
+  <div style="padding:var(--space-4)">
+    <pre class="mono" style="font-size:var(--text-xs);overflow:auto;white-space:pre-wrap">{{ finetune_result or embedding_finetune_result }}</pre>
   </div>
 </div>
 {% endif %}
-
-{# ── Flash: error ── #}
-{% if finetune_error %}
-<div style="margin-bottom:var(--space-3)">
-  {{ inline_error(finetune_error) }}
+{% if finetune_error or embedding_finetune_error %}
+<div class="card" style="border-left:3px solid var(--error-9);margin-top:var(--space-4);background:color-mix(in oklch,var(--error-9) 6%,transparent)">
+  <div class="section-h"><h2>Error</h2></div>
+  <div style="padding:var(--space-4);color:var(--error-9)">{{ finetune_error or embedding_finetune_error }}</div>
 </div>
 {% endif %}
 
-{# ── Flash: embedding fine-tune result ── #}
-{% if embedding_finetune_result %}
-<div class="card" style="padding:14px 18px;margin-bottom:var(--space-3);display:flex;align-items:flex-start;gap:12px;
-     background:color-mix(in oklch,var(--green-9) 6%,transparent);
-     border-color:color-mix(in oklch,var(--green-9) 22%,transparent)">
-  <span style="flex-shrink:0;width:30px;height:30px;border-radius:6px;background:var(--green-3);
-               display:flex;align-items:center;justify-content:center">
-    <i data-lucide="check-circle-2" style="width:15px;height:15px;color:var(--green-9)"></i>
-  </span>
-  <div style="flex:1;min-width:0">
-    <div style="font-size:13px;font-weight:600;color:var(--green-11);margin-bottom:6px">
-      Embedding model trained — <span class="mono">{{ embedding_finetune_result.model_name }}</span>
-    </div>
-    <div class="row" style="gap:16px;flex-wrap:wrap">
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Pairs trained</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "{:,}".format(embedding_finetune_result.pairs_trained) if embedding_finetune_result.pairs_trained else '—' }}</span>
-      </div>
-      {% if embedding_finetune_result.metrics and embedding_finetune_result.metrics.mean_cosine_similarity is defined %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Mean cosine similarity</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.4f" | format(embedding_finetune_result.metrics.mean_cosine_similarity) }}</span>
-      </div>
-      {% endif %}
-      {% if embedding_finetune_result.metrics and embedding_finetune_result.metrics.mean_abs_error is defined %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Mean abs error</span>
-        <span class="mono" style="font-size:13px;font-weight:600">{{ "%.4f" | format(embedding_finetune_result.metrics.mean_abs_error) }}</span>
-      </div>
-      {% endif %}
-      {% if embedding_finetune_result.status %}
-      <div>
-        <span class="cap" style="display:block;margin-bottom:1px">Status</span>
-        <span class="pill success" style="font-size:10px">{{ embedding_finetune_result.status }}</span>
-      </div>
-      {% endif %}
-    </div>
-    {% if embedding_finetune_result.artifact %}
-    <div style="margin-top:8px;font-size:11px;color:var(--text-3)">
-      Artifact: <span class="mono" style="font-size:11px;color:var(--text-2)">{{ embedding_finetune_result.artifact }}</span>
-    </div>
-    {% endif %}
-  </div>
 </div>
-{% endif %}
+{% endblock %}
 
-{# ── Flash: embedding fine-tune error ── #}
-{% if embedding_finetune_error %}
-<div style="margin-bottom:var(--space-3)">
-  {{ inline_error(embedding_finetune_error) }}
-</div>
-{% endif %}
-
-{# ── Fine-tune embeddings (sentence-transformers similarity) ── #}
-<div class="card" style="padding:20px 24px;margin-bottom:var(--space-3)">
-  <div class="section-h" style="margin-bottom:16px">
-    <h2 style="font-size:14px;font-weight:700;margin:0">Fine-tune embeddings</h2>
-    <div class="muted" style="font-size:12px">Fine-tune a sentence-transformers model on labeled sentence-pair similarity data.</div>
-  </div>
-  <form method="post" action="/intelligence/finetune/embeddings/run"
-        style="display:flex;flex-direction:column;gap:14px">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-
-    <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px">
-      <div>
-        <label class="cap" for="ftemb-table" style="display:block;margin-bottom:4px">
-          Training-pairs table *
-        </label>
-        <select id="ftemb-table" name="dataset_table" class="input" style="width:100%">
-          {% for t in text_tables %}
-          <option value="{{ t }}">{{ t }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="cap" for="ftemb-base-model" style="display:block;margin-bottom:4px">
-          Base model
-        </label>
-        <input id="ftemb-base-model" type="text" name="base_model" class="input"
-               value="all-MiniLM-L6-v2" style="width:100%">
-      </div>
-      <div>
-        <label class="cap" for="ftemb-text-a" style="display:block;margin-bottom:4px">
-          Sentence A column *
-        </label>
-        <input id="ftemb-text-a" type="text" name="text_a_column" class="input" required
-               placeholder="e.g. review_text_a" style="width:100%">
-      </div>
-      <div>
-        <label class="cap" for="ftemb-text-b" style="display:block;margin-bottom:4px">
-          Sentence B column *
-        </label>
-        <input id="ftemb-text-b" type="text" name="text_b_column" class="input" required
-               placeholder="e.g. review_text_b" style="width:100%">
-      </div>
-      <div>
-        <label class="cap" for="ftemb-label" style="display:block;margin-bottom:4px">
-          Similarity label column *
-        </label>
-        <input id="ftemb-label" type="text" name="label_column" class="input" required
-               placeholder="e.g. similarity_label" style="width:100%">
-      </div>
-      <div>
-        <label class="cap" for="ftemb-loss" style="display:block;margin-bottom:4px">
-          Loss
-        </label>
-        <select id="ftemb-loss" name="loss_type" class="input" style="width:100%">
-          <option value="contrastive">Contrastive</option>
-          <option value="cosine">Cosine similarity</option>
-        </select>
-      </div>
-    </div>
-
-    <div>
-      <label class="cap" for="ftemb-model-name" style="display:block;margin-bottom:4px">
-        Model name
-      </label>
-      <input id="ftemb-model-name" type="text" name="model_name" class="input"
-             placeholder="Auto-generated if blank" style="width:100%">
-    </div>
-
-    <div style="padding-top:4px">
-      <button type="submit" class="btn primary" style="width:100%;justify-content:center">
-        <i data-lucide="play" style="width:13px;height:13px"></i>
-        Fine-tune embedding model
-      </button>
-    </div>
-  </form>
-</div>
-
-{% if gold_tables %}
-
-<div class="grid" style="grid-template-columns:1fr 340px;gap:var(--space-3);align-items:start">
-
-  {# ── Main: training form ── #}
-  <div style="display:flex;flex-direction:column;gap:var(--space-3)">
-
-    <div class="card" style="padding:20px 24px">
-      <div class="section-h" style="margin-bottom:16px">
-        <h2 style="font-size:14px;font-weight:700;margin:0">Train a model</h2>
-      </div>
-      <form method="post" action="/intelligence/finetune/run"
-            style="display:flex;flex-direction:column;gap:14px">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-
-        {# Feature set #}
-        <div>
-          <label class="cap" for="ft-feature-set" style="display:block;margin-bottom:4px">
-            Feature set (gold table) *
-          </label>
-          <select id="ft-feature-set" name="feature_set" class="input" style="width:100%">
-            {% for t in gold_tables %}
-            <option value="{{ t }}">{{ t }}</option>
-            {% endfor %}
-          </select>
-          <div class="muted" style="font-size:11px;margin-top:3px">All non-target columns are used as features.</div>
-        </div>
-
-        {# Target column #}
-        <div>
-          <label class="cap" for="ft-target" style="display:block;margin-bottom:4px">
-            Target column *
-          </label>
-          <input id="ft-target" type="text" name="target" class="input" required
-                 placeholder="e.g. rating" style="width:100%">
-          <div class="muted" style="font-size:11px;margin-top:3px">The column to predict. Must exist in the selected table.</div>
-        </div>
-
-        {# Algorithm #}
-        <div>
-          <label class="cap" for="ft-algorithm" style="display:block;margin-bottom:4px">
-            Algorithm
-          </label>
-          <select id="ft-algorithm" name="algorithm" class="input" style="width:100%">
-            <option value="random_forest">Random Forest</option>
-            <option value="gradient_boosting">Gradient Boosting</option>
-            <option value="linear">Linear</option>
-          </select>
-        </div>
-
-        {# Model name #}
-        <div>
-          <label class="cap" for="ft-model-name" style="display:block;margin-bottom:4px">
-            Model name
-          </label>
-          <input id="ft-model-name" type="text" name="model_name" class="input"
-                 placeholder="Auto-generated if blank" style="width:100%">
-          <div class="muted" style="font-size:11px;margin-top:3px">Used as the key for <span class="mono" style="font-size:10.5px">predict()</span> calls.</div>
-        </div>
-
-        <div style="padding-top:4px">
-          <button type="submit" class="btn primary" style="width:100%;justify-content:center">
-            <i data-lucide="play" style="width:13px;height:13px"></i>
-            Train model
-          </button>
-        </div>
-
-      </form>
-    </div>
-
-    {# ── Info card ── #}
-    <div class="card" style="padding:16px;background:color-mix(in oklch,var(--violet-9) 4%,transparent);
-         border-color:color-mix(in oklch,var(--violet-9) 15%,transparent)">
-      <div style="font-size:12px;font-weight:600;color:var(--violet-11);margin-bottom:8px;display:flex;align-items:center;gap:6px">
-        <i data-lucide="info" style="width:12px;height:12px"></i> How it works
-      </div>
-      <ul class="muted" style="font-size:12px;line-height:1.7;margin:0;padding-left:16px">
-        <li>Reads all rows from the selected gold table via the lakehouse.</li>
-        <li>Drops the target column from features; imputes missing values.</li>
-        <li>Trains a scikit-learn estimator (classifier or regressor auto-detected).</li>
-        <li>Registers the artifact so <span class="mono" style="font-size:11px">predict(model_name, row)</span> is available in the AI Playground.</li>
-        <li>R² reported for regression; accuracy for classification.</li>
-      </ul>
-    </div>
-
-  </div>
-
-  {# ── Sidebar: existing models + link ── #}
-  <div style="display:flex;flex-direction:column;gap:var(--space-3)">
-
-    <div class="card" style="padding:16px">
-      <div class="row" style="margin-bottom:12px;align-items:center">
-        <span style="font-size:13px;font-weight:600;flex:1">Existing models</span>
-        <a href="/intelligence/models" class="btn sm ghost" style="height:24px;font-size:11px">
-          View all <i data-lucide="arrow-right" style="width:10px;height:10px"></i>
-        </a>
-      </div>
-      {% if model_names %}
-        <div style="display:flex;flex-direction:column;gap:4px">
-          {% for m in model_names %}
-          <div class="row" style="gap:6px;padding:5px 8px;border-radius:var(--r-2);
-               background:var(--bg-elev-2)">
-            <span class="glyph" style="width:20px;height:20px;background:var(--violet-3);flex-shrink:0">
-              <i data-lucide="box" style="width:10px;height:10px;color:var(--violet-9)"></i>
-            </span>
-            <span class="mono" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-                  title="{{ m }}">{{ m }}</span>
-          </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="muted" style="font-size:12px;text-align:center;padding:16px 0">
-          No models trained yet.
-        </div>
-      {% endif %}
-    </div>
-
-  </div>
-
-</div>
-
-{% else %}
-
-{# ── Empty state: no gold tables ── #}
-{% call empty_state("database-zap", "No gold tables available", "Run a pipeline that writes to a gold-tier lakehouse table first.") %}
-<div class="card" style="margin:16px auto;max-width:440px;padding:16px;text-align:left">
-  <div class="cap" style="margin-bottom:8px">What to do next</div>
-  <ol class="muted" style="font-size:12px;line-height:1.7;margin:0;padding-left:16px">
-    <li>Go to <a href="/data/pipelines" style="color:var(--domain-intelligence)">Data › Pipelines</a> and run a pipeline.</li>
-    <li>Ensure the pipeline writes a <strong>gold</strong> table to the lakehouse.</li>
-    <li>Return here and select that table as the feature set.</li>
-  </ol>
-</div>
-{% endcall %}
-
-{% if model_names %}
-<div class="card" style="margin:0 auto;max-width:440px;padding:16px">
-  <div style="font-size:13px;font-weight:600;margin-bottom:10px">Existing models</div>
-  <div style="display:flex;flex-direction:column;gap:4px">
-    {% for m in model_names %}
-    <div class="row" style="gap:6px;padding:5px 8px;border-radius:var(--r-2);background:var(--bg-elev-2)">
-      <i data-lucide="box" style="width:11px;height:11px;color:var(--violet-9);flex-shrink:0"></i>
-      <span class="mono" style="font-size:11.5px">{{ m }}</span>
-    </div>
-    {% endfor %}
-  </div>
-  <a href="/intelligence/models" class="btn sm ghost" style="margin-top:12px;width:100%;justify-content:center">
-    View all models
-  </a>
-</div>
-{% endif %}
-
-{% endif %}
-
-</div>
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import calendar
 import contextlib
+import time
 from html import escape as _html_escape
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
@@ -21,41 +20,19 @@ from dex_studio.utils import fmt_ts_iso
 
 router = APIRouter()
 
-_cpu_last: tuple[float, float] = (0.0, 0.0)  # (total, idle) at last sample
-
-
 def _sys_metrics() -> dict[str, Any]:
-    """Read live CPU%, RAM, and uptime from /proc — no extra deps."""
-    global _cpu_last
+    """Read live CPU%, RAM, and uptime via psutil — cross-platform (Linux/macOS/Windows)."""
     metrics: dict[str, Any] = {}
-    # ── RAM ──────────────────────────────────────────────────────────────────
     with contextlib.suppress(Exception):
-        meminfo = Path("/proc/meminfo").read_text()
-        mem: dict[str, int] = {}
-        for line in meminfo.splitlines():
-            parts = line.split()
-            if parts[0].rstrip(":") in ("MemTotal", "MemAvailable"):
-                mem[parts[0].rstrip(":")] = int(parts[1])
-        total_kb = mem.get("MemTotal", 0)
-        avail_kb = mem.get("MemAvailable", 0)
-        used_kb = total_kb - avail_kb
-        metrics["mem_used_gb"] = round(used_kb / 1_048_576, 1)
-        metrics["mem_total_gb"] = round(total_kb / 1_048_576, 1)
-        metrics["mem_pct"] = round(used_kb / total_kb * 100, 1) if total_kb else 0.0
-    # ── CPU (delta since last call) ───────────────────────────────────────────
-    with contextlib.suppress(Exception):
-        stat_line = Path("/proc/stat").read_text().splitlines()[0]
-        vals = [int(x) for x in stat_line.split()[1:]]
-        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
-        total = sum(vals)
-        prev_total, prev_idle = _cpu_last
-        d_total = total - prev_total
-        d_idle = idle - prev_idle
-        _cpu_last = (total, idle)
-        metrics["cpu_pct"] = round((1.0 - d_idle / d_total) * 100, 1) if d_total else 0.0
-    # ── Uptime ────────────────────────────────────────────────────────────────
-    with contextlib.suppress(Exception):
-        uptime_secs = float(Path("/proc/uptime").read_text().split()[0])
+        import psutil
+
+        vm = psutil.virtual_memory()
+        metrics["mem_used_gb"] = round((vm.total - vm.available) / 1_073_741_824, 1)
+        metrics["mem_total_gb"] = round(vm.total / 1_073_741_824, 1)
+        metrics["mem_pct"] = round(vm.percent, 1)
+        # interval=None: non-blocking, delta since the previous call (psutil caches internally)
+        metrics["cpu_pct"] = round(psutil.cpu_percent(interval=None), 1)
+        uptime_secs = time.time() - psutil.boot_time()
         days, rem = divmod(int(uptime_secs), 86400)
         hours, rem2 = divmod(rem, 3600)
         mins = rem2 // 60
@@ -211,7 +188,11 @@ def logs_stream(request: Request, _: ReadDep, level: str = "INFO") -> EventSourc
 
 @router.get("/metrics-live", response_class=JSONResponse)
 def system_metrics_live(_request: Request, _eng: JsonReadDep) -> JSONResponse:
-    return JSONResponse(_sys_metrics())
+    from dex_studio import store
+
+    payload = _sys_metrics()
+    payload["toasts"] = store.pop_pending_toasts()
+    return JSONResponse(payload)
 
 
 @router.get("/metrics", response_class=HTMLResponse)
@@ -301,54 +282,6 @@ def system_runs(
         "status_options": status_options,
     }
     return render(request, "system/runs.html", ctx)
-
-
-# ── Costs ─────────────────────────────────────────────────────────────────────
-
-
-@router.get("/costs", response_class=HTMLResponse)
-def system_costs(request: Request, eng: ReadDep) -> HTMLResponse:
-    """External API spend — per-provider breakdown.
-
-    Populated by the AuditLogger / cost-tracking subsystem once available
-    (dex ≥ 0.5). Until then, renders a zero-state scaffold.
-    """
-    # Pull spend data from audit events when available.
-    audit = getattr(eng, "secops_audit", None)
-    events = audit.events if audit is not None else []
-    # Aggregate cost by provider from outbound events (schema: event.metadata["provider"]).
-    provider_map: dict[str, float] = {}
-    for ev in events:
-        md = getattr(ev, "metadata", {}) or {}
-        prov = md.get("provider", "")
-        cost = float(md.get("cost_usd", 0.0))
-        if prov and cost:
-            provider_map[prov] = provider_map.get(prov, 0.0) + cost
-    spend_total = sum(provider_map.values())
-    budget = 25.0
-    providers = [
-        {
-            "name": k,
-            "spend": round(v, 4),
-            "share": round(v / spend_total, 4) if spend_total else 0.0,
-        }
-        for k, v in sorted(provider_map.items(), key=lambda kv: kv[1], reverse=True)
-    ]
-    import datetime as _dt
-
-    _now = _dt.datetime.now()
-    ctx = base_ctx(request) | {
-        "spend_total": round(spend_total, 4),
-        "budget": budget,
-        "budget_pct": round(min(spend_total / budget * 100, 100), 1) if budget else 0.0,
-        "providers": providers,
-        "breakdown": [],
-        "month_label": _now.strftime("%B %Y"),
-        "month_day": _now.day,
-        "month_days": calendar.monthrange(_now.year, _now.month)[1],
-        "costs_config": getattr(getattr(eng.config, "observability", None), "costs", None),
-    }
-    return render(request, "system/costs.html", ctx)
 
 
 # ── Compaction ────────────────────────────────────────────────────────────────
