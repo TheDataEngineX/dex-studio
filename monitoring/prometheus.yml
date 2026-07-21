@@ -1,0 +1,26 @@
+# ---------------------------------------------------------------
+# Prometheus — Scrape & Alerting Configuration
+# Scrapes the dex-studio /metrics endpoint and cAdvisor every 15 s,
+# and evaluates alert rules from the alerts/ directory.
+# ---------------------------------------------------------------
+global:
+  scrape_interval: 15s           # How often Prometheus pulls metrics
+  evaluation_interval: 15s       # How often alert rules are evaluated
+
+# Alert rule files (relative to this config)
+rule_files:
+  - alerts/*.yml
+
+# --- Scrape targets ---
+scrape_configs:
+  - job_name: dex-studio         # dex-studio web UI metrics
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - dex-studio:7860
+
+  # --- Container-level metrics (cAdvisor) for OOM / CPU throttle detection ---
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080

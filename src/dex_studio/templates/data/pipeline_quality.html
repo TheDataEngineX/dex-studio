@@ -81,7 +81,7 @@
               {% endif %}
               {% if col.rules | length > 0 %}
                 <div style="font-size:10px;color:var(--text-3);margin-top:3px">
-                  <span style="color:var(--green-9)">{{ col.passing }}</span>/<span style="color:var(--text-3)">{{ col.rules | length }}</span>
+                  <span style="color:var(--success-9)">{{ col.passing }}</span>/<span style="color:var(--text-3)">{{ col.rules | length }}</span>
                 </div>
               {% endif %}
             </div>
@@ -161,13 +161,13 @@
 
                   {# Pass/fail progress bar #}
                   <div style="height:4px;background:var(--bg-elev-2);border-radius:999px;overflow:hidden;margin-bottom:8px">
-                    <div style="height:100%;background:{% if rule.get('last_result') is false %}var(--red-9){% elif rule.get('last_result') is true %}var(--green-9){% else %}var(--text-4){% endif %};width:{% if rule.get('last_result') is false %}100{% elif rule.get('last_result') is true %}100{% else %}0{% endif %}%"></div>
+                    <div style="height:100%;background:{% if rule.get('last_result') is false %}var(--error-9){% elif rule.get('last_result') is true %}var(--success-9){% else %}var(--text-4){% endif %};width:{% if rule.get('last_result') is false %}100{% elif rule.get('last_result') is true %}100{% else %}0{% endif %}%"></div>
                   </div>
 
                   {# Violation callout #}
                   {% if rule.get('last_result') is false %}
-                    <div style="padding:8px;background:color-mix(in oklch,var(--red-9) 12%,transparent);border:1px solid color-mix(in oklch,var(--red-9) 24%,transparent);border-radius:var(--r-2);margin-bottom:8px">
-                      <div style="font-size:11px;color:var(--red-9);font-weight:500">Rule violation</div>
+                    <div style="padding:8px;background:color-mix(in oklch,var(--error-9) 12%,transparent);border:1px solid color-mix(in oklch,var(--error-9) 24%,transparent);border-radius:var(--r-2);margin-bottom:8px">
+                      <div style="font-size:11px;color:var(--error-9);font-weight:500">Rule violation</div>
                       {% if rule.get('violation_desc') %}
                         <div style="font-size:11px;color:var(--text-3);margin-top:2px">{{ rule.violation_desc }}</div>
                       {% endif %}

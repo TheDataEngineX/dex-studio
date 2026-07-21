@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import secrets
 from collections.abc import AsyncGenerator
@@ -25,7 +27,7 @@ from dex_studio.logging_setup import (
     log_format,
     setup_logging,
 )
-from dex_studio.utils import fmt_bytes, fmt_cron, fmt_ts, status_color
+from dex_studio.utils import fmt_bytes, fmt_cron, fmt_intword, fmt_ts, fmt_ts_iso, status_color
 
 # ── Logging — configured centrally in dex_studio.logging_setup ───────────────
 setup_logging()
@@ -44,7 +46,7 @@ class _SelectiveGZip:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "") if scope["type"] == "http" else ""
-        if path.endswith("/stream") or "/stream" in path:
+        if path.endswith("/stream") or "/stream" in path or path.startswith("/metrics"):
             await self._app(scope, receive, send)
         else:
             await self._gzip(scope, receive, send)
@@ -59,8 +61,10 @@ def make_templates() -> Jinja2Templates:
     """Create the Jinja2 environment with custom filters."""
     t = Jinja2Templates(directory=str(TEMPLATES_DIR))
     t.env.filters["fmt_ts"] = fmt_ts
+    t.env.filters["fmt_ts_iso"] = fmt_ts_iso
     t.env.filters["fmt_cron"] = fmt_cron
     t.env.filters["fmt_bytes"] = fmt_bytes
+    t.env.filters["intword"] = fmt_intword
     t.env.filters["status_color"] = status_color
     t.env.globals["enumerate"] = enumerate
     t.env.globals["zip"] = zip
@@ -74,6 +78,7 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     from dex_studio._engine import get_engine
     from dex_studio.auth import setup_password
     from dex_studio.db_store import init_db
+    from dex_studio.pipeline_queue import queue_processor_loop
     from dex_studio.scheduler import start_scheduler, stop_scheduler
 
     init_db()
@@ -108,11 +113,39 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     else:
         logger.warning("no engine at startup — waiting for project selection via onboarding")
 
+    # A fresh process means nothing from a prior process can still be
+    # executing — any 'running' pipeline_runs row or held lock at this point
+    # is orphaned (crash, OOM kill, restart) and would otherwise show that
+    # pipeline as stuck 'running' until the scheduler's 1h stale-lock tick.
+    if eng is not None:
+        with contextlib.suppress(Exception):
+            from dex_studio.studio_db import get_studio_db
+
+            sdb = get_studio_db(eng)
+            if sdb is not None:
+                sdb.clear_expired_locks(0)
+                reconciled = sdb.reconcile_all_running_at_startup()
+                if reconciled:
+                    logger.warning("reconciled orphaned running runs at startup", count=reconciled)
+
+    # Start background tasks
+    stop_event = asyncio.Event()
+    _app.state.queue_processor_stop = stop_event
+    _app.state.queue_processor_task = asyncio.create_task(queue_processor_loop(stop_event))
+    logger.info("queue processor started")
+
     start_scheduler(_app)
     logger.info("scheduler started")
     try:
         yield
     finally:
+        logger.info("DEX Studio shutting down")
+        stop_event.set()
+        _app.state.queue_processor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _app.state.queue_processor_task
+        logger.info("queue processor stopped")
+
         logger.info("DEX Studio shutting down")
         await stop_scheduler(_app)
         logger.info("scheduler stopped")
@@ -126,6 +159,31 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             if _ENGINE is not None:
                 _ENGINE.close()
                 logger.info("engine closed")
+
+
+def _load_project_graphql_schema(eng: Any) -> Any | None:
+    """Return the current project's GraphQL schema, if it defines one.
+
+    Convention: ``<project_dir>/plugins/graphql_schema.py`` defining a
+    ``build_schema(engine) -> strawberry.Schema`` function — same project-local
+    plugin directory dataenginex.core.project_plugins.load_project_plugins
+    scans for connectors/transforms, but loaded directly here since we need
+    its return value (the schema), not just import side effects.
+    """
+    import importlib.util
+
+    schema_file = Path(eng.project_dir) / "plugins" / "graphql_schema.py"
+    if not schema_file.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("_dex_project_graphql_schema", schema_file)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    build_schema = getattr(module, "build_schema", None)
+    if build_schema is None:
+        return None
+    return build_schema(eng)
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
@@ -190,23 +248,22 @@ def _session_secret() -> str:
 
     When neither env var nor cached file exist, generates a random key and
     persists it to ``~/.dex-studio/session.key`` so signed cookies survive restarts.
+
+    In Kubernetes (KUBERNETES_SERVICE_HOST set), the env var is MANDATORY.
+    Without a shared secret across replicas, users get randomly logged out
+    depending which pod serves the request. Fail fast instead of silently
+    breaking auth.
     """
     env = os.environ.get("DEX_STUDIO_SESSION_SECRET")
     if env:
         return env
-    # Falling back here means each replica mints/reads its own local secret.
-    # In-cluster (KUBERNETES_SERVICE_HOST set) with no shared filesystem,
-    # that means a different secret per pod — users get randomly logged out
-    # depending which replica the load balancer routes them to, and it fails
-    # silently (looks like a flaky auth bug, not a config problem). Loud
-    # warning so a future deploy that drops the env var is caught immediately
-    # instead of debugged blind.
+    # In Kubernetes, fail fast — no shared secret = broken auth
     if os.environ.get("KUBERNETES_SERVICE_HOST"):
-        logger.warning(
-            "DEX_STUDIO_SESSION_SECRET not set — falling back to a local"
-            " per-pod session key. In a multi-replica deployment this causes"
-            " random session invalidation depending which pod serves a"
-            " request. Set DEX_STUDIO_SESSION_SECRET explicitly."
+        raise RuntimeError(
+            "DEX_STUDIO_SESSION_SECRET must be set in Kubernetes. "
+            "Without a shared secret across replicas, session cookies are invalid "
+            "on any pod that didn't generate them. Set DEX_STUDIO_SESSION_SECRET "
+            "in your deployment/env config."
         )
     key_file = Path.home() / ".dex-studio" / "session.key"
     if key_file.exists():
@@ -298,7 +355,7 @@ def _add_middlewares(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     """FastAPI application factory — called by uvicorn --factory."""
-    from dex_studio.routers import api, data, intelligence, root, secops, system
+    from dex_studio.routers import api, content, data, intelligence, root, secops, system
 
     app = FastAPI(
         title="DEX Studio",
@@ -312,6 +369,13 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
     _add_middlewares(app)
 
+    try:
+        from dex_studio.otel_setup import setup_otel
+
+        setup_otel(app)
+    except ModuleNotFoundError:
+        logger.error("Error Setting up OTEL")
+
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -324,9 +388,31 @@ def create_app() -> FastAPI:
     app.include_router(root.router)
     app.include_router(data.router, prefix="/data")
     app.include_router(intelligence.router, prefix="/intelligence")
+    app.include_router(content.router, prefix="/content")
     app.include_router(secops.router, prefix="/secops")
     app.include_router(system.router, prefix="/system")
     app.include_router(api.router, prefix="/api")
+
+    # ── Prometheus metrics ──────────────────────────────────────────────────
+    from prometheus_client import make_asgi_app
+
+    app.mount("/metrics", make_asgi_app())
+
+    # ── GraphQL (optional) ───────────────────────────────────────────────────
+    # Read-only, unauthenticated by design (spec: gold-layer reads are public).
+    # Mounted only when the current project defines a schema — most projects
+    # don't, and forcing an empty schema on every project would be pointless.
+    with contextlib.suppress(Exception):
+        from dex_studio._engine import get_engine as _get_engine_for_gql
+
+        gql_eng = _get_engine_for_gql()
+        if gql_eng is not None:
+            schema = _load_project_graphql_schema(gql_eng)
+            if schema is not None:
+                from strawberry.fastapi import GraphQLRouter
+
+                app.include_router(GraphQLRouter(schema), prefix="/graphql")
+                logger.info("GraphQL schema mounted", path="/graphql")
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> FileResponse:

@@ -30,6 +30,12 @@ cmd = "uvicorn dex_studio.app:create_app --factory --host 0.0.0.0 --port 7860 --
 env = { PYTHONPATH = "src" }
 help = "Launch DataEngineX Studio production server (port 7860)"
 
+[tool.poe.tasks.worker]
+cmd = "arq dataenginex.worker.WorkerSettings"
+env = { PYTHONPATH = "src" }
+envfile = ".env"
+help = "Launch the ARQ async job worker (run_pipeline/train_model/run_agent via Redis)"
+
 # ── Testing ───────────────────────────────────────────────────────────────────
 [tool.poe.tasks.test-cov-core]
 cmd = "pytest tests/ -v --cov=dex_studio --cov-report=html --cov-report=xml:coverage.xml --cov-report=term-missing"

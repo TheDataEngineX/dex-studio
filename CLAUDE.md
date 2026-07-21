@@ -43,26 +43,41 @@ uv run poe dev          # uvicorn dev server (port 7860)
 Standing rubric for judging pipeline/warehouse production-readiness. Apply when auditing or reviewing changes to `jobs.py`, `scheduler.py`, `studio_db.py`, `watermark.py`, `compaction.py`, `backfill.py`.
 
 **Data Quality SLAs**
+
 - Reconciliation: 100% row-count/sum match, source vs target.
 - Schema integrity: zero unexpected nulls in PK/FK columns.
-- Freshness: loaded within window (e.g. daily 6am, or <5min streaming).
-- Anomaly frequency: <2 automated DQ alerts/week.
+- Freshness: loaded within window (e.g. daily 6am, or \<5min streaming).
+- Anomaly frequency: \<2 automated DQ alerts/week.
 
 **Operational Reliability KPIs**
+
 - Pipeline success rate: >99% of scheduled runs complete without manual intervention.
 - MTTD: alerted within 15 min of failure.
 - MTTR: fixed + backfilled within 2 hours for critical dashboards.
 - Storage cost efficiency: linear scaling, compression ratios monitored.
 
 **Performance & Usability**
-- Query latency P95 <5s. Dashboard load <3s.
+
+- Query latency P95 \<5s. Dashboard load \<3s.
 - Zero query queuing/timeouts at peak concurrency.
 - System availability 99.9%.
 
 **UAT Checklist (pre-signoff)**
+
 - [ ] Source-to-target row-count/checksum validation, all core tables.
 - [ ] Historical backfill check — no truncation/corruption.
 - [ ] Schema evolution test — pipeline survives source schema change without silent breakage.
 - [ ] Stress/concurrency test — 50+ simultaneous analytical queries.
 - [ ] Downstream BI validation — dashboard numbers match legacy reports exactly.
 - [ ] Permissions/security audit — RBAC restricts PII correctly.
+
+## TMDB Data-Intelligence Re-Architecture (2026-07-06)
+
+Full design lives in the `dataenginex` repo: `dataenginex/docs/superpowers/specs/2026-07-06-tmdb-data-intelligence-rearchitecture-design.md` (single source of truth — don't duplicate it here).
+
+Relevant to this repo:
+
+- New `routers/content.py` + `templates/content/explorer.html` — the one new domain-facing page (recommendation compare, watch-provider table, cross-source match-confidence table). Everything else needed already exists (`templates/data/*`, `templates/intelligence/*`) — new pipelines/models register into those, no new generic UI infra required.
+- `auth.py` gets wired to Authentik OIDC once enabled in `infradex` — core dex-studio change, benefits any deployment, not moviedex-specific.
+- Delivery: one phase, no backward-compatibility shims.
+- Reliability requirements (spec §6) apply here too: any new external dependency call from a router must have a timeout + graceful fallback, never a hard block/crash on the request path.

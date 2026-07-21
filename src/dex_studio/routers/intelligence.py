@@ -31,6 +31,7 @@ from dex_studio.routers._deps import (
     get_eng,
     render,
 )
+from dex_studio.routers._deps import push_toast_safe as push_toast
 from dex_studio.utils import fmt_ts
 
 router = APIRouter()
@@ -182,13 +183,10 @@ def _count_memory(obj: Any) -> int:
     return 0
 
 
-def _run_async_agent(fn: Any, text: str, timeout: float) -> Any:
+def _run_coro_in_thread(fn: Any, text: str) -> Any:
     import asyncio as _asyncio
 
-    async def _inner() -> Any:
-        return await _asyncio.wait_for(fn(text), timeout=timeout)
-
-    return _asyncio.run(_inner())
+    return _asyncio.run(fn(text))
 
 
 async def _agent_result(agent: Any, text: str) -> tuple[str, float, int]:
@@ -203,9 +201,16 @@ async def _agent_result(agent: Any, text: str) -> tuple[str, float, int]:
         return str(agent), (time.monotonic() - t0) * 1000, 0
 
     if inspect.iscoroutinefunction(fn):
-        result: Any = await asyncio.to_thread(_run_async_agent, fn, text, _AGENT_TIMEOUT_S)
+        call = asyncio.to_thread(_run_coro_in_thread, fn, text)
     else:
-        result = await asyncio.to_thread(fn, text)
+        call = asyncio.to_thread(fn, text)
+    # Agent runtimes may call their LLM provider synchronously inside an
+    # "async def" method (no internal await point), so a coroutine can run
+    # to completion without ever yielding back to an event loop. wait_for
+    # must therefore bound the outer to_thread awaitable from *this* loop —
+    # placed inside the worker thread's own loop (as before), the deadline
+    # timer never gets scheduled time to fire and the timeout is a no-op.
+    result: Any = await asyncio.wait_for(call, timeout=_AGENT_TIMEOUT_S)
     latency_ms = (time.monotonic() - t0) * 1000
     tool_calls = 0
     if isinstance(result, dict):
@@ -273,6 +278,25 @@ def _model_rows(eng: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _model_versions(eng: Any, name: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        for version in eng.model_registry.list_versions(name):
+            art = eng.model_registry.get(name, version)
+            if art is None:
+                continue
+            rows.append(
+                {
+                    "version": str(art.version),
+                    "stage": str(art.stage.value),
+                    "created_at": fmt_ts(art.created_at),
+                    "promoted_at": fmt_ts(art.promoted_at) if art.promoted_at else "—",
+                }
+            )
+    rows.sort(key=lambda r: r["created_at"], reverse=True)
+    return rows
+
+
 def _model_data_json(eng: Any) -> str:
     data: dict[str, Any] = {}
     for name in eng.model_registry.list_models():
@@ -286,6 +310,8 @@ def _model_data_json(eng: Any) -> str:
                 "stage": str(latest.stage.value),
                 "framework": str(params.get("framework", "—")),
                 "parameters": {k: v for k, v in params.items() if k != "framework"},
+                "metrics": dict(latest.metrics) if latest.metrics else {},
+                "versions": _model_versions(eng, name),
             }
     return _json.dumps(data)
 
@@ -477,7 +503,12 @@ def intelligence_dashboard(request: Request, eng: ReadDep) -> HTMLResponse:  # n
     tool_count = len(registry.list_tools())
 
     # Run stats from studio DB
-    run_stats: dict[str, Any] = {}
+    run_stats: dict[str, Any] = {
+        "total_runs": 0,
+        "error_count": 0,
+        "avg_latency_ms": 0,
+        "total_tool_calls": 0,
+    }
     recent_runs: list[dict[str, Any]] = []
     with contextlib.suppress(Exception):
         from dex_studio.studio_db import get_studio_db
@@ -569,6 +600,7 @@ def register_model(
         )
         eng.model_registry.register(artifact)
         flash(request, f"Model '{name}' registered.")
+        push_toast(request, f"Model '{name}' registered.", "success")
     except Exception as exc:
         flash(request, str(exc), "error")
     return RedirectResponse("/intelligence/models", status_code=303)
@@ -911,7 +943,7 @@ def run_drift(  # noqa: C901
 
 
 @router.get("/playground", response_class=HTMLResponse)
-def playground(request: Request, eng: ReadDep, agent: str = "") -> HTMLResponse:
+def playground(request: Request, eng: ReadDep, agent: str = "", q: str = "") -> HTMLResponse:
     agent_names = list(eng.agents.keys())
     selected = agent if agent in agent_names else (agent_names[0] if agent_names else "")
     catalog_entries: list[dict[str, Any]] = []
@@ -932,6 +964,7 @@ def playground(request: Request, eng: ReadDep, agent: str = "") -> HTMLResponse:
         "tool_names": registry.names(),
         "llm_model": llm_model,
         "circuit_state": _circuit.state,
+        "prefill_query": q,
     }
     return render(request, "intelligence/playground.html", ctx)
 
@@ -956,6 +989,7 @@ def add_agent(
     try:
         eng.add_agent(name.strip(), runtime.strip(), system_prompt.strip())
         flash(request, f"Agent '{name}' created.")
+        push_toast(request, f"Agent '{name}' created.", "success")
     except Exception as exc:
         flash(request, str(exc), "error")
     return RedirectResponse("/intelligence/agents", status_code=303)
@@ -1092,12 +1126,19 @@ def finetune_page(request: Request, eng: ReadDep) -> HTMLResponse:
     gold_tables: list[str] = []
     with contextlib.suppress(Exception):
         gold_tables = [t["name"] for t in (eng.warehouse_tables("gold") or [])]
+    text_tables: list[str] = []
+    with contextlib.suppress(Exception):
+        for layer in ("bronze", "silver", "gold"):
+            text_tables.extend(t["name"] for t in (eng.warehouse_tables(layer) or []))
     model_names = eng.model_registry.list_models()
     ctx = base_ctx(request) | {
         "gold_tables": gold_tables,
+        "text_tables": text_tables,
         "model_names": model_names,
         "finetune_result": request.session.pop("finetune_result", None),
         "finetune_error": request.session.pop("finetune_error", None),
+        "embedding_finetune_result": request.session.pop("embedding_finetune_result", None),
+        "embedding_finetune_error": request.session.pop("embedding_finetune_error", None),
     }
     return render(request, "intelligence/finetune.html", ctx)
 
@@ -1124,6 +1165,43 @@ async def run_finetune(
             flash(request, f"Model '{result.get('model_name')}' trained and registered.")
     except Exception as exc:
         request.session["finetune_error"] = str(exc)
+    return RedirectResponse("/intelligence/finetune", status_code=303)
+
+
+@router.post("/finetune/embeddings/run")
+async def run_finetune_embeddings(
+    request: Request,
+    eng: WriteDep,
+    dataset_table: Annotated[str, Form()],
+    text_a_column: Annotated[str, Form()],
+    text_b_column: Annotated[str, Form()],
+    label_column: Annotated[str, Form()],
+    base_model: Annotated[str, Form()] = "all-MiniLM-L6-v2",
+    loss_type: Annotated[str, Form()] = "contrastive",
+    model_name: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    import asyncio
+
+    from dex_studio.tools.builtins import _tool_finetune_embeddings
+
+    try:
+        result = await asyncio.to_thread(
+            _tool_finetune_embeddings,
+            dataset_table,
+            text_a_column,
+            text_b_column,
+            label_column,
+            base_model,
+            loss_type,
+            model_name,
+        )
+        if "error" in result:
+            request.session["embedding_finetune_error"] = result["error"]
+        else:
+            request.session["embedding_finetune_result"] = result
+            flash(request, f"Embedding model '{result.get('model_name')}' trained and registered.")
+    except Exception as exc:
+        request.session["embedding_finetune_error"] = str(exc)
     return RedirectResponse("/intelligence/finetune", status_code=303)
 
 
@@ -1320,8 +1398,16 @@ async def chat(request: Request, eng: JsonReadDep) -> Any:
             {"error": f"Agent '{agent_name}' not found. Available: {list(eng.agents.keys())}"},
             status_code=404,
         )
+    from dex_studio.execution import AgentRun
+
+    run = AgentRun(agent_name=agent_name, user_message=message)
+    step = run.add_step("llm")
     try:
         content, latency_ms, tool_calls = await _agent_result(agent, message)
+        step.finish(content)
+        run.finish(content)
+        run.tool_calls = tool_calls
+        run.persist(eng)
         with contextlib.suppress(Exception):
             if eng.ai_memory and hasattr(eng.ai_memory, "add"):
                 eng.ai_memory.add({"role": "user", "content": message})
@@ -1329,7 +1415,17 @@ async def chat(request: Request, eng: JsonReadDep) -> Any:
         return JSONResponse(
             {"content": content, "latency_ms": round(latency_ms, 1), "tool_calls": tool_calls}
         )
+    except TimeoutError:
+        step.finish("", status="error")
+        run.finish("", status="error")
+        run.persist(eng)
+        return JSONResponse(
+            {"error": f"Agent timed out after {_AGENT_TIMEOUT_S}s"}, status_code=504
+        )
     except Exception:
+        step.finish("", status="error")
+        run.finish("", status="error")
+        run.persist(eng)
         return JSONResponse({"error": "Agent invocation failed"}, status_code=500)
 
 
@@ -1386,7 +1482,8 @@ async def native_call(request: Request, eng: JsonWriteDep) -> Any:
         return JSONResponse(
             {"result": result, "tool": tool_name, "duration_ms": round(duration_ms, 1)}
         )
-    except Exception:
+    except Exception as exc:
+        log.warning("native tool call failed", tool=tool_name, error=str(exc))
         return JSONResponse({"error": "An error occurred executing the tool"}, status_code=500)
 
 
@@ -1431,8 +1528,8 @@ async def ambient_context(request: Request, eng: JsonReadDep, page: str = "") ->
     # Model names available for switching (agent names as proxy)
     agent_models: dict[str, str] = {}
     with contextlib.suppress(Exception):
-        for aname, aobj in (getattr(eng, "agents", {}) or {}).items():
-            model = getattr(getattr(aobj, "config", None), "model", None) or ""
+        for aname, cfg in (eng.config.ai.agents or {}).items():
+            model = getattr(cfg, "model", None) or ""
             agent_models[aname] = str(model)
 
     return JSONResponse(
@@ -1445,7 +1542,7 @@ async def ambient_context(request: Request, eng: JsonReadDep, page: str = "") ->
     )
 
 
-# ── WebSocket (preserved for real-time use-cases) ─────────────────────────────
+# ── WebSocket (real-time playground use-case) ─────────────────────────────────
 
 
 @router.websocket("/playground/ws/{agent_name}")
@@ -1466,8 +1563,16 @@ async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
                     {"role": "assistant", "content": f"Agent '{agent_name}' not available."}
                 )
                 continue
+            from dex_studio.execution import AgentRun
+
+            run = AgentRun(agent_name=agent_name, user_message=text)
+            step = run.add_step("llm")
             try:
                 content, latency_ms, tool_calls = await _agent_result(agent, text)
+                step.finish(content)
+                run.finish(content)
+                run.tool_calls = tool_calls
+                run.persist(eng)
                 with contextlib.suppress(Exception):
                     if eng.ai_memory and hasattr(eng.ai_memory, "add"):
                         eng.ai_memory.add({"role": "user", "content": text})
@@ -1481,6 +1586,9 @@ async def playground_ws(websocket: WebSocket, agent_name: str) -> None:
                     }
                 )
             except Exception as exc:
+                step.finish("", status="error")
+                run.finish("", status="error")
+                run.persist(eng)
                 await websocket.send_json({"role": "error", "content": str(exc)})
     except WebSocketDisconnect:
         pass

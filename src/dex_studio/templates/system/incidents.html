@@ -1,81 +1,43 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block title %}Incidents — System — DEX Studio{% endblock %}
+{% block title %}Incidents — DEX Studio{% endblock %}
+
 {% block page_title %}Incidents{% endblock %}
-{% block page_sub %}{{ dead_letter|length }} dead-lettered · {{ failures|length }} recent failures{% endblock %}
+{% block page_sub %}Dead letter pipelines and recent failures{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
+<div class="animate-fade-in" style="--domain-color: var(--domain-system)">
 
-{% if dead_letter or failures %}
-<div class="row" style="gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
-  {{ metric_card("Dead letter", dead_letter|length, "archive", "red") }}
-  {{ metric_card("Recent failures", failures|length, "alert-triangle", "orange") }}
+<div class="grid grid-2" style="gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="stat" style="text-align:center;padding:var(--space-6);background:color-mix(in oklch,var(--error-9) 8%,transparent);border:1px solid color-mix(in oklch,var(--error-9) 20%,transparent);border-radius:var(--r-3)">
+    <div class="val" style="font-size:var(--text-4xl);color:var(--error-9)">{{ dead_letter | length }}</div><div class="lbl">Dead Letter</div>
+  </div>
+  <div class="stat" style="text-align:center;padding:var(--space-6);background:color-mix(in oklch,var(--warning-9) 8%,transparent);border:1px solid color-mix(in oklch,var(--warning-9) 20%,transparent);border-radius:var(--r-3)">
+    <div class="val" style="font-size:var(--text-4xl);color:var(--warning-9)">{{ failures | length }}</div><div class="lbl">Recent Failures</div>
+  </div>
 </div>
-{% endif %}
 
-{% if dead_letter %}
-<div class="section-h" style="margin-bottom:12px">
-  <i data-lucide="archive" style="width:13px;height:13px;color:var(--text-4)"></i>
-  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Dead Letter Queue</span>
+<div class="card">
+  <div class="section-h"><h2>Dead Letter Queue</h2></div>
+  {% if dead_letter %}
+  <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>Pipeline</th><th>Error</th><th>Retries</th><th>Last Attempt</th></tr></thead><tbody>{% for d in dead_letter %}<tr><td class="mono" style="font-weight:500">{{ d.pipeline }}</td><td class="muted" style="font-size:var(--text-xs);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ d.error }}</td><td class="tnum">{{ d.retry_count }}</td><td class="muted">{{ d.last_attempt }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="check-circle-2" class="icon" style="color:var(--success-9)"></i><div class="title">Dead letter queue empty</div></div>
+  {% endif %}
 </div>
-<div class="card bare" style="margin-bottom:24px">
-  <table class="dex-table">
-    <thead>
-      <tr>
-        <th>Pipeline</th>
-        <th>Error</th>
-        <th>Attempts</th>
-        <th style="width:150px">Recorded at</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for d in dead_letter %}
-      <tr>
-        <td class="mono" style="font-size:12px">{{ d.pipeline }}</td>
-        <td class="mono" style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ d.error }}">{{ d.error }}</td>
-        <td>{{ d.attempts }}</td>
-        <td class="mono muted" style="font-size:10px">{{ d.recorded_at }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
 
-{% if failures %}
-<div class="section-h" style="margin-bottom:12px">
-  <i data-lucide="alert-triangle" style="width:13px;height:13px;color:var(--text-4)"></i>
-  <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)">Recent Failed Runs</span>
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Recent Failures</h2></div>
+  {% if failures %}
+  <div style="overflow:auto"><table class="tbl" style="font-size:var(--text-sm)"><thead><tr><th>Pipeline</th><th>Status</th><th>Finished</th><th>Duration</th></tr></thead><tbody>{% for f in failures %}<tr><td class="mono" style="font-weight:500">{{ f.pipeline }}</td><td><span class="pill error" style="height:18px;font-size:var(--text-xs)">{{ f.status }}</span></td><td class="muted">{{ f.finished_at }}</td><td class="tnum">{{ (f.duration_s | float) | round(1) }}s</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)"><div class="title">No recent failures</div></div>
+  {% endif %}
 </div>
-<div class="card bare">
-  <table class="dex-table">
-    <thead>
-      <tr>
-        <th>Pipeline</th>
-        <th>Status</th>
-        <th>Duration</th>
-        <th style="width:150px">Finished at</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for f in failures %}
-      <tr>
-        <td class="mono" style="font-size:12px">{{ f.pipeline }}</td>
-        <td><span class="dex-log-badge dex-log-error">{{ f.status }}</span></td>
-        <td class="mono">{{ f.duration_s }}s</td>
-        <td class="mono muted" style="font-size:10px">{{ f.finished_at }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-{% if not dead_letter and not failures %}
-{{ empty_state("check-circle", "No incidents", "All pipelines running normally.") }}
-{% endif %}
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

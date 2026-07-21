@@ -74,7 +74,15 @@ class CompactionEngine:
         self._db = db
 
     def _collect_files(self, pipeline: str) -> list[Path]:
-        """Find all parquet files belonging to *pipeline* across all layers."""
+        """Find all parquet files belonging to *pipeline* across all layers.
+
+        Skips Delta table directories (``_delta_log`` present): merging their
+        part-files and deleting the originals — which is what the rest of
+        this class does — silently desyncs the transaction log from the
+        files actually on disk, since nothing here writes a matching
+        add/remove commit. Those tables need Delta-native compaction
+        (``DeltaTable.optimize.compact()``) instead, not this raw-file merge.
+        """
         files: list[Path] = []
         for layer in ("bronze", "silver", "gold"):
             layer_dir = self._root / layer
@@ -82,7 +90,7 @@ class CompactionEngine:
                 continue
             files.extend(layer_dir.glob(f"{pipeline}*.parquet"))
             part_dir = layer_dir / pipeline
-            if part_dir.is_dir():
+            if part_dir.is_dir() and not (part_dir / "_delta_log").exists():
                 files.extend(part_dir.glob("*.parquet"))
         return files
 

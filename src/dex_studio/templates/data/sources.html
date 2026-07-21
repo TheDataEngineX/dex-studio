@@ -1,384 +1,143 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, status_badge, empty_state, filter_empty_state %}
 
 {% block title %}Sources — DEX Studio{% endblock %}
+
 {% block page_title %}Sources{% endblock %}
-{% block page_sub %}{{ sources | length }} source{{ 's' if sources | length != 1 }} configured{% endblock %}
+{% block page_sub %}{{ sources | length }} connector{{ 's' if sources | length != 1 }} configured{% for t, n in top_source_types %} · {{ n }} {{ t | upper if t | length <= 4 else t | capitalize }}{% endfor %}{% endblock %}
+
 {% block page_actions %}
-<button @click="$dispatch('open-add-source')" class="btn sm primary">
-  <i data-lucide="plus" style="width:13px;height:13px"></i> Add Source
-</button>
+<a href="/data/sources/new" class="btn primary">
+  <i data-lucide="plus" style="width:12px;height:12px"></i> Add source
+</a>
 {% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
+<div class="animate-fade-in">
 
-{% if sources %}
-
-{# ── 3-col master-detail layout ────────────────────────────────────────────── #}
-<div class="grid" style="grid-template-columns:1fr 2fr 1fr;gap:var(--space-3);align-items:start">
-
-  {# ── Left col: source list ──────────────────────────────────────────────── #}
-  <div class="card bare">
-    <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
-      <div class="input-icon">
-        <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
-        <input class="input" id="src-search" placeholder="Filter sources…" style="font-size:12px;height:26px"
-               oninput="srcFilter(this.value)">
-      </div>
-    </div>
-    <div id="src-list">
-      {% for s in sources %}
-      <div class="pipe-item {{ 'active' if loop.first }}"
-           role="button" tabindex="0"
-           data-name="{{ s.name }}"
-           data-connector="{{ s.connector_type | default('http') }}"
-           onclick="selectSource(this)"
-           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectSource(this)}"
-           style="border-bottom:1px solid var(--border);border-left:3px solid {{ 'var(--accent-9)' if loop.first else 'transparent' }};padding:10px 14px 10px 11px;cursor:pointer;display:flex;gap:10px;align-items:center;background:{{ 'color-mix(in oklch,var(--accent-9) 10%,transparent)' if loop.first else 'none' }}">
-        <i data-lucide="database" style="width:13px;height:13px;opacity:.4;flex-shrink:0"></i>
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;gap:6px;align-items:center">
-            <span class="mono" style="font-weight:500;font-size:13px;color:var(--text)">{{ s.name }}</span>
-            <span class="type-pill">{{ s.connector_type | default('http') }}</span>
-          </div>
-          <div class="muted" style="font-size:11px;margin-top:2px">
-            <span class="sdot {{ 'ok' if s.status == 'active' else 'error' }}" style="width:6px;height:6px;display:inline-block;margin-right:4px"></span>
-            {{ s.status | default('active') }} · last {{ s.last_synced | default('—') }}
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
+{# ── Filter bar ───────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:var(--space-3);display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+  <div class="input-icon" style="width:280px">
+    <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
+    <input class="input" id="src-search" placeholder="search sources…" style="height:26px;font-size:12px;font-family:var(--font-mono)" oninput="filterSources()">
   </div>
+  <select class="input sm" id="src-type-filter" style="height:26px;font-size:11.5px;font-family:var(--font-mono);width:auto" onchange="filterSources()">
+    <option value="all">All types</option>
+    <option value="csv">CSV</option>
+    <option value="parquet">Parquet</option>
+    <option value="delta">Delta Lake</option>
+    <option value="duckdb">DuckDB</option>
+    <option value="postgres">PostgreSQL</option>
+    <option value="mysql">MySQL</option>
+    <option value="s3">S3</option>
+    <option value="rest">REST API</option>
+    <option value="kafka">Kafka</option>
+    <option value="spark">Spark</option>
+    <option value="dbt">dbt</option>
+    {% set known_types = ['csv','parquet','delta','duckdb','postgres','mysql','s3','rest','kafka','spark','dbt'] %}
+    {% for t in sources | map(attribute='type') | unique | list if t not in known_types %}
+    <option value="{{ t }}">{{ t | upper if t | length <= 4 else t | capitalize }}</option>
+    {% endfor %}
+  </select>
+  <div style="flex:1"></div>
+  <span class="muted" style="font-size:var(--text-xs)" id="src-count">{{ sources | length }} sources</span>
+</div>
 
-  {# ── Center col: detail with tabs ───────────────────────────────────────── #}
-  <div class="card bare" style="overflow:hidden;display:flex;flex-direction:column">
-
-    {# Header #}
-    <div class="row" style="padding:14px 16px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0">
-      <span class="glyph accent">
-        <i data-lucide="database" style="width:13px;height:13px"></i>
-      </span>
-      <div style="flex:1;min-width:0">
-        <div class="row" style="gap:8px">
-          <span class="mono" id="src-name" style="font-weight:600;font-size:15px">
-            {{ sources[0].name if sources else '—' }}
-          </span>
-          <span id="src-type-pill" class="type-pill">{{ sources[0].connector_type if sources else '—' }}</span>
-        </div>
-        <div class="muted" id="src-meta" style="font-size:11px;margin-top:2px">
-          {{ sources[0].last_synced if sources else '—' }}
-        </div>
-      </div>
-      <button class="btn sm ghost" onclick="testConnection()">
-        <i data-lucide="zap" style="width:11px;height:11px"></i> Test connection
-      </button>
-    </div>
-
-    {# Tabs #}
-    <div class="tabs" style="padding-left:14px;flex-shrink:0">
-      <button class="tab active" onclick="switchSrcTab('overview',this)">Overview</button>
-      <button class="tab" onclick="switchSrcTab('schema',this)">Schema</button>
-      <button class="tab" onclick="switchSrcTab('sample',this)">Sample</button>
-      <button class="tab" onclick="switchSrcTab('config',this)">Config</button>
-    </div>
-
-    {# Overview tab #}
-    <div id="src-tab-overview" style="padding:16px">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-        <div class="card dex-metric-card dex-metric-indigo" style="padding:14px 18px;flex:1;min-width:100px">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Total Rows</div>
-          <div id="src-metric-rows" style="font-size:22px;font-weight:700;color:var(--text);line-height:1">—</div>
-        </div>
-        <div class="card dex-metric-card dex-metric-blue" style="padding:14px 18px;flex:1;min-width:100px">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Columns</div>
-          <div id="src-metric-cols" style="font-size:22px;font-weight:700;color:var(--text);line-height:1">—</div>
-        </div>
-        <div class="card dex-metric-card dex-metric-green" style="padding:14px 18px;flex:1;min-width:100px">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px">Connector</div>
-          <div id="src-metric-type" style="font-size:16px;font-weight:700;color:var(--text);line-height:1;font-family:var(--font-mono)">—</div>
+{# ── Sources grid ─────────────────────────────────────────────────────────── #}
+<div class="card card-bare" style="margin-top:var(--space-3)">
+  {% if sources %}
+  <div class="grid grid-4" style="gap:var(--space-4)">
+    {% for s in sources %}
+    <div class="card" style="padding:var(--space-4);transition:transform var(--d-fast),box-shadow var(--d-fast)"
+         onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+         onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'">
+      <div class="row" style="justify-content:space-between;margin-bottom:var(--space-3)">
+        <div class="row" style="gap:var(--space-2)">
+          <div style="width:40px;height:40px;border-radius:var(--r-2);background:color-mix(in oklch,var(--domain-data) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i data-lucide="{% if s.type == 'postgres' %}database{% elif s.type == 'csv' %}file-text{% elif s.type == 'parquet' %}file{% elif s.type == 'delta' %}layers{% elif s.type == 's3' %}cloud{% elif s.type == 'kafka' %}radio{% elif s.type == 'rest' %}globe{% elif s.type == 'spark' %}zap{% elif s.type == 'dbt' %}git-branch{% else %}database{% endif %}" style="width:20px;height:20px;color:var(--domain-data)"></i>
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:var(--text-sm)">{{ s.name }}</div>
+            <span class="layer-chip {{ s.type }}">{{ s.type }}</span>
+          </div>
         </div>
       </div>
-      <div id="src-overview-detail" class="muted" style="font-size:12px;line-height:1.6">
-        Select a source from the list to view details.
+
+      <div class="muted" style="font-size:var(--text-xs);margin-bottom:var(--space-3)">{{ s.type }}</div>
+
+      {% if s.tables %}
+      <div style="margin-bottom:var(--space-3)">
+        <div class="cap" style="margin-bottom:4px">{{ s.tables | length }} table{{ 's' if s.tables | length != 1 }}</div>
+        <div class="muted" style="font-size:var(--text-xs);display:flex;flex-wrap:wrap;gap:4px">
+          {% for t in s.tables[:5] %}
+          <span class="mono" style="background:var(--bg);padding:2px 6px;border-radius:var(--r-1);border:1px solid var(--border)">{{ t }}</span>
+          {% endfor %}
+          {% if s.tables | length > 5 %}
+          <span class="mono" style="color:var(--text-4)">+{{ s.tables | length - 5 }} more</span>
+          {% endif %}
+        </div>
       </div>
-    </div>
+      {% endif %}
 
-    {# Schema tab #}
-    <div id="src-tab-schema" style="display:none;overflow:auto">
-      <table class="dex-table" id="src-schema-table">
-        <thead><tr><th>Column</th><th>Type</th></tr></thead>
-        <tbody id="src-schema-body">
-          <tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No schema data</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# Sample tab #}
-    <div id="src-tab-sample" style="display:none;overflow:auto">
-      <table class="dex-table" id="src-sample-table">
-        <thead><tr id="src-sample-head"><th class="muted">—</th></tr></thead>
-        <tbody id="src-sample-body">
-          <tr><td class="muted" style="text-align:center;padding:20px">No sample data</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    {# Config tab #}
-    <div id="src-tab-config" style="display:none;overflow:auto">
-      <table class="dex-table" id="src-config-table">
-        <thead><tr><th>Key</th><th>Value</th></tr></thead>
-        <tbody id="src-config-body">
-          <tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No config data</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-  </div>
-
-  {# ── Right col: health & actions ────────────────────────────────────────── #}
-  <div class="card bare" style="padding:16px;display:flex;flex-direction:column;gap:14px">
-    <div>
-      <div class="cap" style="margin-bottom:6px">Last fetched</div>
-      <div class="mono" id="src-last-fetched" style="font-size:12px;color:var(--text-2)">—</div>
-    </div>
-    <div>
-      <div class="cap" style="margin-bottom:6px">Row trend</div>
-      <div id="src-row-trend" style="font-size:12px;color:var(--text-3)">
-        <span style="color:var(--state-idle)">— no data</span>
-      </div>
-    </div>
-    <div>
-      <div class="cap" style="margin-bottom:8px">Actions</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <button class="btn ghost" style="width:100%;justify-content:flex-start;gap:6px;font-size:12px"
-                onclick="testConnection()">
-          <i data-lucide="zap" style="width:12px;height:12px"></i> Test connection
-        </button>
-        <a id="src-run-link" href="/data/pipelines" class="btn ghost"
-           style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;text-decoration:none">
-          <i data-lucide="play" style="width:12px;height:12px"></i> Run now
+      <div class="row" style="gap:var(--space-2)">
+        <a href="/data/sources/{{ s.name | urlencode }}" class="btn ghost sm" style="flex:1">
+          <i data-lucide="eye" style="width:12px;height:12px"></i> View
         </a>
-        <a href="/data/sources" class="btn ghost"
-           style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;text-decoration:none">
-          <i data-lucide="eye" style="width:12px;height:12px"></i> View detail
-        </a>
-      </div>
-    </div>
-    <div>
-      <div class="cap" style="margin-bottom:6px">Recent fetches</div>
-      <div style="display:flex;gap:4px">
-        {# Placeholder status dots - would be populated from run history #}
-        {% for _ in range(5) %}
-        <span class="sdot idle" title="No data"></span>
-        {% endfor %}
-      </div>
-    </div>
-    <div style="margin-top:4px;padding-top:12px;border-top:1px solid var(--border)">
-      <form method="post" id="src-delete-form" action="#"
-            onsubmit="event.preventDefault();dexConfirm(this,'Remove source?','This will permanently disconnect this source from the project.')">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button type="submit" class="btn ghost" style="width:100%;justify-content:flex-start;gap:6px;font-size:12px;color:var(--red-9);border-color:var(--red-6)">
-          <i data-lucide="trash-2" style="width:12px;height:12px"></i> Remove source
+        <button class="btn ghost sm" style="color:var(--error-9)" onclick="deleteSource('{{ s.name }}')">
+          <i data-lucide="trash-2" style="width:12px;height:12px"></i>
         </button>
-      </form>
+      </div>
     </div>
+    {% endfor %}
   </div>
-
-</div>
-
-{% else %}
-{{ empty_state("database", "No sources configured", "Add a data source to get started.") }}
-{% endif %}
-
-{# ── Add Source Dialog ───────────────────────────────────────────────────────── #}
-<div x-data="{open:false,srcType:'csv'}" @open-add-source.window="open=true"
-     x-show="open" x-cloak class="dex-modal-overlay"
-     @click.self="open=false" x-transition:enter="transition-opacity duration-150" x-transition:enter-start="opacity-0">
-  <div class="card" style="width:420px;padding:24px" @click.stop>
-    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Add Source</h3>
-    <form method="post" action="/data/sources/add">
-      <div class="dex-form-group" style="margin-bottom:10px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Name *</label>
-        <input type="text" name="name" placeholder="my_source" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-      </div>
-      <div class="dex-form-group" style="margin-bottom:10px">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Type *</label>
-        <select name="type" x-model="srcType" required style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
-          {% for t in source_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="dex-form-group" style="margin-bottom:10px" x-show="srcType !== 'dbt'">
-        <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Path / URL</label>
-        <input type="text" name="path" placeholder="/data/file.csv" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-      </div>
-      <template x-if="srcType === 'spark'">
-        <div>
-          <div class="dex-form-group" style="margin-bottom:10px">
-            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Spark master</label>
-            <input type="text" name="spark_master" placeholder="local[*]" value="local[*]" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-          </div>
-          <div class="dex-form-group" style="margin-bottom:10px">
-            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Format</label>
-            <select name="spark_format" style="padding:7px 10px;font-size:12px;border:1px solid var(--gray-6);border-radius:5px;background:var(--color-background);color:var(--gray-12);width:100%">
-              <option value="parquet">parquet</option>
-              <option value="delta">delta</option>
-              <option value="iceberg">iceberg</option>
-              <option value="csv">csv</option>
-              <option value="json">json</option>
-            </select>
-          </div>
-        </div>
-      </template>
-      <template x-if="srcType === 'dbt'">
-        <div>
-          <div class="dex-form-group" style="margin-bottom:10px">
-            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Project dir *</label>
-            <input type="text" name="dbt_project_dir" placeholder="/path/to/dbt_project" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-          </div>
-          <div class="dex-form-group" style="margin-bottom:10px">
-            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Model *</label>
-            <input type="text" name="dbt_model" placeholder="my_model" required class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-          </div>
-          <div class="dex-form-group" style="margin-bottom:10px">
-            <label style="font-size:12px;font-weight:500;color:var(--gray-11)">Target</label>
-            <input type="text" name="dbt_target" placeholder="dev" value="dev" class="input" style="width:100%;padding:7px 10px;font-family:var(--font-mono);font-size:12px">
-          </div>
-        </div>
-      </template>
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-        <button type="button" @click="open=false" class="btn ghost">Cancel</button>
-        <button type="submit" class="btn primary">Add</button>
-      </div>
-    </form>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)">
+    <i data-lucide="database" class="icon"></i>
+    <div class="title">No sources yet</div>
+    <div class="desc">Connect your first data source to get started.</div>
+    <a href="/data/sources/new" class="btn primary" style="margin-top:var(--space-3)">
+      <i data-lucide="plus" style="width:14px;height:14px"></i> Add source
+    </a>
   </div>
+  {% endif %}
 </div>
 
 </div>
+
+{# ── Delete confirm ───────────────────────────────────────────────────────── #}
+<form id="delete-source-form" method="post" style="display:none">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+</form>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-(function () {
-  const SOURCE_DATA = {{ source_data_json | safe }};
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+});
 
-  function esc(s) {
-    return String(s ?? '—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+function filterSources() {
+  const search = document.getElementById('src-search').value.toLowerCase();
+  const typeFilter = document.getElementById('src-type-filter').value;
+  let visible = 0;
 
-  function setEl(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
-  }
+  document.querySelectorAll('.grid > .card').forEach(card => {
+    const name = card.querySelector('[style*="font-weight:600"]').textContent.toLowerCase();
+    const type = card.querySelector('.layer-chip').textContent.toLowerCase();
+    const matchesSearch = name.includes(search) || type.includes(search);
+    const matchesType = typeFilter === 'all' || type === typeFilter;
+    const show = matchesSearch && matchesType;
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
 
-  function setHtml(id, html) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
-  }
+  document.getElementById('src-count').textContent = visible + ' source' + (visible !== 1 ? 's' : '');
+}
 
-  globalThis.selectSource = function (el) {
-    document.querySelectorAll('.pipe-item').forEach(function (i) {
-      i.classList.remove('active');
-      i.style.borderLeftColor = 'transparent';
-      i.style.background = 'none';
-    });
-    el.classList.add('active');
-    el.style.borderLeftColor = 'var(--accent-9)';
-    el.style.background = 'color-mix(in oklch,var(--accent-9) 10%,transparent)';
-
-    const name = el.dataset.name;
-    const d = SOURCE_DATA[name] || {};
-
-    setEl('src-name', name);
-    const typePill = document.getElementById('src-type-pill');
-    if (typePill) typePill.textContent = d.connector || '—';
-    setEl('src-meta', 'Last synced: ' + (d.last_fetched || '—'));
-    setEl('src-last-fetched', d.last_fetched || '—');
-    setEl('src-metric-rows', d.row_count != null ? String(d.row_count) : '—');
-    setEl('src-metric-cols', d.schema ? String(d.schema.length) : '—');
-    setEl('src-metric-type', d.connector || '—');
-
-    // Overview
-    setEl('src-overview-detail', 'Connector: ' + esc(d.connector || '—') +
-      ' · ' + (d.schema ? d.schema.length + ' columns' : 'schema unavailable'));
-
-    // Schema tab
-    const schemaBody = document.getElementById('src-schema-body');
-    if (schemaBody) {
-      if (d.schema && d.schema.length) {
-        schemaBody.innerHTML = d.schema.map(function(col) {
-          return '<tr><td class="mono" style="font-size:12px">' + esc(col.name) + '</td>' +
-            '<td class="mono dim" style="font-size:11.5px">' + esc(col.type) + '</td></tr>';
-        }).join('');
-      } else {
-        schemaBody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No schema available</td></tr>';
-      }
-    }
-
-    // Sample tab
-    const sampleHead = document.getElementById('src-sample-head');
-    const sampleBody = document.getElementById('src-sample-body');
-    if (sampleHead && sampleBody) {
-      const cols = d.sample_cols || [];
-      if (cols.length && d.sample_rows && d.sample_rows.length) {
-        sampleHead.innerHTML = cols.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('');
-        sampleBody.innerHTML = d.sample_rows.slice(0, 5).map(function(row) {
-          return '<tr>' + cols.map(function(c) {
-            return '<td class="mono" style="font-size:11.5px">' + esc(row[c] != null ? row[c] : '—') + '</td>';
-          }).join('') + '</tr>';
-        }).join('');
-      } else {
-        sampleHead.innerHTML = '<th class="muted">—</th>';
-        sampleBody.innerHTML = '<tr><td class="muted" style="text-align:center;padding:20px">No sample data</td></tr>';
-      }
-    }
-
-    // Config tab
-    const configBody = document.getElementById('src-config-body');
-    if (configBody) {
-      if (d.config_display && d.config_display.length) {
-        configBody.innerHTML = d.config_display.map(function(c) {
-          return '<tr><td class="mono" style="font-size:12px">' + esc(c.key) + '</td>' +
-            '<td class="mono dim" style="font-size:11.5px">' + esc(c.value) + '</td></tr>';
-        }).join('');
-      } else {
-        configBody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:20px">No config data</td></tr>';
-      }
-    }
-
-    // Update delete form action
-    const delForm = document.getElementById('src-delete-form');
-    if (delForm) delForm.action = '/data/sources/delete/' + encodeURIComponent(name);
-    // Update run link
-    const runLink = document.getElementById('src-run-link');
-    if (runLink) runLink.href = '/data/pipelines';
-  };
-
-  globalThis.switchSrcTab = function (name, btn) {
-    document.querySelectorAll('[id^="src-tab-"]').forEach(el => { el.style.display = 'none'; });
-    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const pane = document.getElementById('src-tab-' + name);
-    if (pane) pane.style.display = '';
-  };
-
-  globalThis.srcFilter = function (q) {
-    const lq = q.toLowerCase();
-    document.querySelectorAll('.pipe-item').forEach(function (item) {
-      item.style.display = !lq || item.dataset.name.toLowerCase().includes(lq) ? '' : 'none';
-    });
-  };
-
-  globalThis.testConnection = function () {
-    const name = document.getElementById('src-name');
-    if (name) alert('Testing connection for: ' + name.textContent + '\n(Connection test would run here)');
-  };
-
-  // Init with first source
-  const first = document.querySelector('.pipe-item');
-  if (first) selectSource(first);
-})();
+function deleteSource(name) {
+  const form = document.getElementById('delete-source-form');
+  form.action = '/data/sources/delete/' + encodeURIComponent(name);
+  dexConfirm(form, 'Delete source?', 'This will permanently remove "' + name + '" and its configuration.');
+}
 </script>
 {% endblock %}

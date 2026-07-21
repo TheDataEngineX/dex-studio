@@ -29,9 +29,9 @@ from typing import Any
 import structlog
 import yaml
 from croniter import croniter
-from dataenginex.data.pipeline.dag import build_dag, downstream_of, root_pipelines
+from dataenginex.data.pipeline.dag import downstream_of, root_pipelines
 
-from dex_studio import jobs, run_checks
+from dex_studio import run_checks
 from dex_studio.studio_db import PgStudioDb, StudioDb, get_studio_db
 from dex_studio.watermark import WatermarkStore
 
@@ -42,6 +42,7 @@ _MIN_TICK_S = 5  # lower bound — avoid busy-spinning
 _LOCK_TIMEOUT_S = 3600  # 1 h — releases locks from crashed runs
 _COMPACTION_INTERVAL_S = 86400  # once per day
 _COMPACTION_SENTINEL = "__compaction__"  # synthetic "pipeline" key in scheduler_state
+_SCHEDULER_TICK_COUNT = 0  # module-level counter for periodic tasks
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ class SchedulerConfig:
     enabled: bool = True
     timezone: str = "UTC"
     max_concurrent: int = 3
+    min_free_mb: int = 3072
     retry_attempts: int = 2
     retry_backoff_s: int = 60
     on_complete: dict[str, dict[str, Any]] = dataclasses.field(default_factory=dict)
@@ -73,6 +75,7 @@ def read_scheduler_config(eng: Any) -> SchedulerConfig:
         enabled=bool(sched.get("enabled", True)),
         timezone=str(sched.get("timezone", "UTC")),
         max_concurrent=int(sched.get("max_concurrent_pipelines", 3)),
+        min_free_mb=int(sched.get("min_free_mb", 3072)),
         retry_attempts=int(retry.get("max_attempts", 2)),
         retry_backoff_s=int(retry.get("backoff_seconds", 60)),
         on_complete=dict(sched.get("on_pipeline_complete") or {}),
@@ -82,11 +85,16 @@ def read_scheduler_config(eng: Any) -> SchedulerConfig:
 # ── Cron helpers ──────────────────────────────────────────────────────────────
 
 
-def _is_due(cron_expr: str, last_run: datetime | None) -> bool:
-    """True if the cron has a tick between last_run (or epoch) and now."""
+def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
+    """True if the cron has a tick between last_run (or now) and now.
+
+    A pipeline that has never run waits for its *next* natural cron tick
+    rather than firing immediately — using ``now`` (not an epoch far in the
+    past) as the fallback base means a fresh/never-run pipeline is never
+    retroactively "overdue" just because the scheduler happened to boot.
+    """
     try:
-        now = datetime.now(tz=UTC)
-        base = last_run if last_run else datetime(2000, 1, 1, tzinfo=UTC)
+        base = last_run if last_run else now
         if base.tzinfo is None:
             base = base.replace(tzinfo=UTC)
         itr = croniter(cron_expr, base)
@@ -99,17 +107,17 @@ def _is_due(cron_expr: str, last_run: datetime | None) -> bool:
         return False
 
 
-def _secs_until_next(cron_expr: str, last_run: datetime | None) -> float:
+def _secs_until_next(cron_expr: str, last_run: datetime | None, now: datetime) -> float:
     """Seconds until cron fires next. Returns _MAX_TICK_S on any error."""
     try:
-        base = last_run if last_run else datetime(2000, 1, 1, tzinfo=UTC)
+        base = last_run if last_run else now
         if base.tzinfo is None:
             base = base.replace(tzinfo=UTC)
         itr = croniter(cron_expr, base)
         nxt: datetime = itr.get_next(datetime)
         if nxt.tzinfo is None:
             nxt = nxt.replace(tzinfo=UTC)
-        return max(0.0, (nxt - datetime.now(UTC)).total_seconds())
+        return max(0.0, (nxt - now).total_seconds())
     except Exception as exc:
         log.warning("could not compute next cron tick", expr=cron_expr, error=str(exc))
         return float(_MAX_TICK_S)
@@ -220,13 +228,16 @@ def _run_one_pipeline(
         run_ts = datetime.now(UTC)
         rows_input = getattr(result, "rows_input", 0) or 0 if result is not None else 0
         rows_output = getattr(result, "rows_output", 0) or 0 if result is not None else 0
-        db.finish_run(run_id, "success", rows_input=rows_input, rows_output=rows_output)
+        skipped = bool(getattr(result, "skipped", False)) if result is not None else False
+        terminal = "skipped" if skipped else "success"
+        db.finish_run(run_id, terminal, rows_input=rows_input, rows_output=rows_output)
         db.set_last_run(name, run_ts)
         db.release_lock(name)
         db.clear_run_state(name)
-        log.info("pipeline complete", pipeline=name)
-        run_checks.run_quality_check(eng, db, name)
-        run_checks.check_row_reconciliation(db, name, rows_input, rows_output)
+        log.info("pipeline complete", pipeline=name, skipped=skipped)
+        if not skipped:
+            run_checks.run_quality_check(eng, db, name)
+            run_checks.check_row_reconciliation(db, name, rows_input, rows_output)
         _post_success_hooks(eng, name, db, cfg, dag, run_ts, _visited=_visited)
 
     except Exception as exc:
@@ -258,7 +269,7 @@ def _should_fire(name: str, pipe_cfg: Any, db: StudioDb | PgStudioDb, now: datet
     if name in db.locked_pipelines():
         log.debug("pipeline already running — skipping scheduled fire", pipeline=name)
         return False
-    return _is_due(pipe_cfg.schedule, db.get_last_run(name))
+    return _is_due(pipe_cfg.schedule, db.get_last_run(name), now)
 
 
 def _fire_retries(
@@ -315,6 +326,7 @@ def _compute_next_tick(
     db: StudioDb | PgStudioDb,
     dag: dict[str, list[str]],
     pipelines: dict[str, Any],
+    now: datetime,
 ) -> int:
     """Return seconds until the next root pipeline cron fires (min _MIN_TICK_S)."""
     next_wait = float(_MAX_TICK_S)
@@ -322,10 +334,30 @@ def _compute_next_tick(
         schedule = getattr(pipelines.get(name), "schedule", "") or ""
         if not schedule:
             continue
-        secs = _secs_until_next(schedule, db.get_last_run(name))
+        secs = _secs_until_next(schedule, db.get_last_run(name), now)
         if secs < next_wait:
             next_wait = secs
     return max(_MIN_TICK_S, int(next_wait))
+
+
+def _reconcile_orphaned_run(
+    db: StudioDb | PgStudioDb, name: str, cutoff_iso: str, reason: str
+) -> None:
+    """Mark *name*'s stuck 'running' run(s) as failed and record an alert."""
+    try:
+        reconciled = db.reconcile_stale_running_runs(name, cutoff_iso)
+    except Exception as exc:
+        log.warning("failed to reconcile orphaned running run", pipeline=name, error=str(exc))
+        return
+    if not reconciled:
+        return
+    log.warning("reconciled orphaned running run", pipeline=name, count=reconciled, reason=reason)
+    try:
+        db.record_alert(
+            "run_stuck_reconciled", name, f"{reconciled} run(s) marked failed — {reason}"
+        )
+    except Exception as exc:
+        log.warning("run_stuck_reconciled alert failed", pipeline=name, error=str(exc))
 
 
 def _reconcile_stale_locks(db: StudioDb | PgStudioDb) -> None:
@@ -343,34 +375,58 @@ def _reconcile_stale_locks(db: StudioDb | PgStudioDb) -> None:
     ).isoformat()
     stale_pipelines = db.stale_locked_pipelines(_LOCK_TIMEOUT_S)
     db.clear_stale_locks(_LOCK_TIMEOUT_S)
+
+    # A pipeline_locks row can vanish before it ever ages past _LOCK_TIMEOUT_S —
+    # e.g. the process holding it gets OOM-killed, Postgres immediately drops
+    # the session-scoped advisory lock, and nothing deletes the run's 'running'
+    # row since finish_run() never ran. acquire_lock() always creates the run
+    # row *after* the lock is held, so any 'running' row for a pipeline that
+    # currently holds no lock at all is unambiguously orphaned — reconcile it
+    # right away instead of waiting out the full timeout.
+    now_iso = datetime.now(UTC).isoformat()
+    locked_now = set(db.locked_pipelines())
+    running_names = {
+        r.get("pipeline", "")
+        for r in db.get_runs(None, limit=200)
+        if r.get("status") == "running" and not r.get("finished_at")
+    }
+    for name in sorted(running_names - locked_now - set(stale_pipelines)):
+        _reconcile_orphaned_run(db, name, now_iso, "status was 'running' but no lock was held")
+
     for name in stale_pipelines:
-        try:
-            reconciled = db.reconcile_stale_running_runs(name, cutoff_iso)
-        except Exception as exc:
-            log.warning("failed to reconcile stale running runs", pipeline=name, error=str(exc))
-            continue
-        if reconciled:
-            log.warning(
-                "reconciled stale running run(s) after stale lock clear",
-                pipeline=name,
-                count=reconciled,
-            )
-            try:
-                db.record_alert(
-                    "run_stuck_reconciled",
-                    name,
-                    f"stale lock cleared; {reconciled} run(s) marked failed"
-                    " — run did not report a terminal status",
-                )
-            except Exception as exc:
-                log.warning("run_stuck_reconciled alert failed", pipeline=name, error=str(exc))
+        _reconcile_orphaned_run(db, name, cutoff_iso, "run did not report a terminal status")
+
+
+def resolve_depends_on(eng: Any, db: StudioDb | PgStudioDb, pipeline_name: str) -> list[str]:
+    """Pipeline's depends_on — prefers the DB definition model, falls back
+    to the YAML-parsed dex.yaml config for projects not yet imported.
+    """
+    project_id = str(getattr(getattr(eng.config, "project", None), "name", "default") or "default")
+    with contextlib.suppress(Exception):
+        pdef = db.get_pipeline_def(project_id, pipeline_name)
+        if pdef is not None:
+            return list(pdef["depends_on"])
+
+    pipes: dict[str, Any] = eng.config.data.pipelines or {}
+    pipe_cfg = pipes.get(pipeline_name)
+    return list(getattr(pipe_cfg, "depends_on", None) or []) if pipe_cfg else []
+
+
+def _build_dag(
+    eng: Any, db: StudioDb | PgStudioDb, pipelines: dict[str, Any]
+) -> dict[str, list[str]]:
+    """Dependency DAG for execution order — same source (DB model, YAML
+    fallback) as resolve_depends_on, so root selection and downstream
+    triggering match what the status/UI display shows.
+    """
+    return {name: resolve_depends_on(eng, db, name) for name in pipelines}
 
 
 def _run_due_pipelines(
     eng: Any,
     cfg: SchedulerConfig,
     db: StudioDb | PgStudioDb,
-    epoch: datetime,
+    now: datetime,
     ran_cb: Callable[[str], None] | None = None,
 ) -> int:
     """Check all root pipelines; run those that are due.
@@ -380,8 +436,7 @@ def _run_due_pipelines(
     """
     _reconcile_stale_locks(db)
     pipelines: dict[str, Any] = eng.config.data.pipelines or {}
-    dag = build_dag(pipelines)
-    now = datetime.now(UTC)
+    dag = _build_dag(eng, db, pipelines)
 
     _fire_retries(eng, cfg, db, dag, pipelines, now, ran_cb)
 
@@ -389,12 +444,26 @@ def _run_due_pipelines(
     # jobs included, via jobs.running_pipelines()), not just this tick's own
     # loop — otherwise an operator capping concurrency at 1 has no effect
     # while a user-triggered background run is already in progress.
+    from dex_studio import jobs
+
     in_flight = len(jobs.running_pipelines())
     for name in root_pipelines(dag):
         if in_flight >= cfg.max_concurrent:
             log.info(
                 "max_concurrent_pipelines reached — deferring remaining due pipelines to next tick",
                 max_concurrent=cfg.max_concurrent,
+            )
+            break
+        # Resource-aware scheduling: skip if memory is low
+        from dex_studio.jobs import _available_mb
+
+        free_mb = _available_mb()
+        if free_mb < cfg.min_free_mb:
+            log.warning(
+                "low memory — deferring pipeline",
+                pipeline=name,
+                free_mb=free_mb,
+                min_free_mb=cfg.min_free_mb,
             )
             break
         pipe_cfg = pipelines.get(name)
@@ -404,14 +473,26 @@ def _run_due_pipelines(
         if state["state"] in ("retrying", "dead"):
             continue
         if _should_fire(name, pipe_cfg, db, now):
-            _run_one_pipeline(eng, name, db, cfg, dag)
-            in_flight += 1
-            if ran_cb:
-                ran_cb(name)
+            # Use the job queue system which respects max_concurrent
+            from dex_studio import jobs
+
+            result = jobs.run_pipeline_bg(name, triggered_by="scheduler")
+            if result in ("started", "queued"):
+                in_flight += 1
+                if ran_cb:
+                    ran_cb(name)
 
     _maybe_run_compaction(eng, db, now)
 
-    return _compute_next_tick(db, dag, pipelines)
+    # Unconditional queue drain: the loop above only enqueues newly cron-due
+    # roots. On a tick where none are due, nothing else was going to attempt
+    # to claim already-queued work (that only happened as a side effect of
+    # run_pipeline_bg() enqueuing something new, or a run completing) — so a
+    # claimed, even top-priority pipeline could sit queued indefinitely with
+    # free concurrency slots sitting idle.
+    jobs.drain_queue(db, cfg.max_concurrent, cfg.min_free_mb)
+
+    return _compute_next_tick(db, dag, pipelines, now)
 
 
 # ── Scheduler status ──────────────────────────────────────────────────────────
@@ -452,7 +533,11 @@ def _pipeline_sched_row(
     return {
         "name": name,
         "schedule": schedule,
-        "depends_on": list(getattr(pipe_cfg, "depends_on", None) or []),
+        "depends_on": (
+            resolve_depends_on(eng, db, name)
+            if db is not None
+            else list(getattr(pipe_cfg, "depends_on", None) or [])
+        ),
         "last_run_at": last_run.isoformat() if last_run else "",
         "next_run_at": next_run_at,
         "status": status,
@@ -491,6 +576,8 @@ def get_scheduler_status(eng: Any, app: Any) -> dict[str, Any]:
         "paused": paused,
         "running": running,
         "tick_s": _MAX_TICK_S,
+        "max_concurrent": sched_cfg.max_concurrent,
+        "min_free_mb": sched_cfg.min_free_mb,
         "pipelines": pipelines_out,
         "dead_letter": dead,
         "locked": locked,
@@ -548,6 +635,7 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
 
     log.info("scheduler started", max_tick_s=_MAX_TICK_S)
 
+    global _SCHEDULER_TICK_COUNT
     while not stop_event.is_set():
         import time as _time
 
@@ -571,6 +659,12 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
                         log.debug("scheduler disabled in dex.yaml — tick skipped")
         except Exception as exc:
             log.error("scheduler tick error", error=str(exc), exc_info=True)
+
+        _SCHEDULER_TICK_COUNT += 1
+        # Periodic cleanup: old hashes every 100 ticks (~50 min at 30s tick)
+        if _SCHEDULER_TICK_COUNT % 100 == 0 and db is not None:
+            with contextlib.suppress(Exception):
+                db.cleanup_old_hashes(keep_days=30)
 
         tick_ms = round((_time.monotonic() - tick_start) * 1000, 1)
         log.debug("scheduler ticked", pipelines=pipelines_count, ms=tick_ms, next_tick_s=tick_s)

@@ -1,0 +1,69 @@
+{
+  "uid": "dex-traces",
+  "title": "Dex-Studio Traces",
+  "tags": ["dex-studio", "tempo", "traces"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tempo",
+        "type": "datasource",
+        "label": "Tempo",
+        "query": "tempo",
+        "current": { "text": "Tempo", "value": "Tempo" }
+      },
+      {
+        "name": "service",
+        "type": "constant",
+        "label": "Service",
+        "query": "dex-studio",
+        "current": { "text": "dex-studio", "value": "dex-studio" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "traces",
+      "title": "Traces (by service)",
+      "datasource": { "type": "tempo", "uid": "${tempo}" },
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 12 },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "expr": "{resource.service.name=\"$service\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Top Endpoints (TraceQL)",
+      "datasource": { "type": "tempo", "uid": "${tempo}" },
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "expr": "{resource.service.name=\"$service\"} | stats count() by span.name",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Avg Span Duration (ms)",
+      "datasource": { "type": "tempo", "uid": "${tempo}" },
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "expr": "{resource.service.name=\"$service\"} | stats avg(duration) by span.name",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

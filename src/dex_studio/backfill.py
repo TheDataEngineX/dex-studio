@@ -8,6 +8,7 @@ the alerting / activity UI.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -111,13 +112,47 @@ class BackfillEngine:
             log.warning("backfill: pipeline failed", pipeline=pipeline, error=str(exc))
 
     def trigger_all(
-        self, pipelines: list[str], *, clear_hashes: bool = True, run_now: bool = True
+        self,
+        pipelines: list[str],
+        *,
+        clear_hashes: bool = True,
+        run_now: bool = True,
+        batch_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Trigger backfill for multiple pipelines with progress bar."""
+        """Trigger backfill for multiple pipelines with progress bar.
+
+        Checkpointed: progress is persisted per-pipeline to ``backfill_batches``
+        as each one finishes. If the process dies mid-batch, call
+        ``resume_batch(batch_id)`` (or re-call this with the same *batch_id*)
+        to skip whatever already succeeded and retry the rest.
+        """
+        if batch_id is None:
+            batch_id = uuid.uuid4().hex
+            self._db.create_backfill_batch(batch_id, pipelines)
+
         results = []
         with tqdm(total=len(pipelines), desc="Backfill pipelines", unit="pipeline") as pbar:
             for name in pipelines:
                 pbar.set_description(f"Backfill {name}")
-                results.append(self.trigger(name, clear_hashes=clear_hashes, run_now=run_now))
+                result = self.trigger(name, clear_hashes=clear_hashes, run_now=run_now)
+                result["batch_id"] = batch_id
+                status = "failed" if result["error"] else "success"
+                self._db.mark_backfill_pipeline(batch_id, name, status, result["error"])
+                results.append(result)
                 pbar.update(1)
         return results
+
+    def resume_batch(
+        self, batch_id: str, *, clear_hashes: bool = True, run_now: bool = True
+    ) -> list[dict[str, Any]]:
+        """Resume an interrupted batch — retries anything not yet succeeded."""
+        rows = self._db.get_backfill_batch(batch_id)
+        remaining = [r["pipeline"] for r in rows if r["status"] != "success"]
+        if not remaining:
+            return []
+        return self.trigger_all(
+            remaining, clear_hashes=clear_hashes, run_now=run_now, batch_id=batch_id
+        )
+
+    def list_incomplete_batches(self) -> list[str]:
+        return self._db.list_incomplete_backfill_batches()

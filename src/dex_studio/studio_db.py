@@ -9,10 +9,11 @@ PostgreSQL strategy: SQLAlchemy connection pool.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +87,82 @@ CREATE TABLE IF NOT EXISTS alert_events (
     message     TEXT NOT NULL DEFAULT '',
     delivered   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_queue (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_name   TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN (
+        'pending', 'queued', 'running', 'success', 'failed', 'cancelled', 'skipped'
+    )),
+    priority        INTEGER DEFAULT 0,
+    depends_on      TEXT NOT NULL DEFAULT '[]',
+    triggered_by    TEXT NOT NULL DEFAULT 'manual',
+    lock_token      TEXT,
+    version         INTEGER DEFAULT 0,
+    started_at      TEXT,
+    finished_at     TEXT,
+    error_msg       TEXT,
+    run_id          INTEGER REFERENCES pipeline_runs(id),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pq_status_priority
+    ON pipeline_queue(status, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_pq_pipeline_status
+    ON pipeline_queue(pipeline_name, status);
+CREATE INDEX IF NOT EXISTS idx_pq_depends ON pipeline_queue(depends_on);
+
+CREATE TABLE IF NOT EXISTS backfill_batches (
+    batch_id    TEXT NOT NULL,
+    pipeline    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    error       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (batch_id, pipeline)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+    pipeline    TEXT PRIMARY KEY,
+    stage       TEXT NOT NULL,
+    run_id      INTEGER,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_defs (
+    id           TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    schedule     TEXT NOT NULL DEFAULT '',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    depends_on   TEXT NOT NULL DEFAULT '[]',
+    retry_attempts INTEGER NOT NULL DEFAULT 0,
+    canvas_x     REAL NOT NULL DEFAULT 0,
+    canvas_y     REAL NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    UNIQUE(project_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_nodes (
+    id                     TEXT PRIMARY KEY,
+    pipeline_id            TEXT NOT NULL,
+    kind                   TEXT NOT NULL,
+    transform_type         TEXT NOT NULL DEFAULT '',
+    config                 TEXT NOT NULL DEFAULT '{}',
+    transform_block_id     TEXT,
+    transform_block_version INTEGER,
+    canvas_x               REAL NOT NULL DEFAULT 0,
+    canvas_y               REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_edges (
+    id            TEXT PRIMARY KEY,
+    pipeline_id   TEXT NOT NULL,
+    from_node_id  TEXT NOT NULL,
+    to_node_id    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS dead_letter_runs (
@@ -322,7 +399,13 @@ class StudioDb:
         conn.execute("DELETE FROM pipeline_locks WHERE pipeline=?", [pipeline])
         conn.commit()
 
-    def clear_stale_locks(self, timeout_s: int = 7200) -> int:
+    def clear_expired_locks(self, timeout_s: int = 7200) -> int:
+        """Delete pipeline_locks rows older than *timeout_s* seconds.
+
+        Unlike ``clear_stale_locks``, this unconditionally deletes locks based
+        on age alone. Use with *timeout_s* = 0 to clear ALL locks (e.g. at
+        startup to clear any stale state from a previous crash/restart).
+        """
         cutoff_iso = datetime.fromtimestamp(
             datetime.now(UTC).timestamp() - timeout_s, tz=UTC
         ).isoformat()
@@ -330,6 +413,18 @@ class StudioDb:
         cur = conn.execute("DELETE FROM pipeline_locks WHERE locked_at < ?", [cutoff_iso])
         conn.commit()
         return cur.rowcount
+
+    def clear_stale_locks(self, timeout_s: int = 7200) -> int:
+        """Delete pipeline_locks rows for pipelines confirmed orphaned.
+
+        Only deletes rows for names whose advisory lock probes free — a
+        wall-clock-old row for a pipeline still legitimately running past the
+        timeout is left alone, so locked_pipelines() doesn't incorrectly stop
+        showing it as active.
+        """
+        # For SQLite, we don't have advisory locks, so this falls back to
+        # clearing expired locks (same as clear_expired_locks).
+        return self.clear_expired_locks(timeout_s)
 
     def stale_locked_pipelines(self, timeout_s: int = 7200) -> list[str]:
         """Return pipeline names whose lock is older than *timeout_s*.
@@ -509,6 +604,28 @@ class StudioDb:
             " finished_at=?"
             " WHERE pipeline=? AND status='running' AND started_at < ?",
             [finished, pipeline, cutoff_iso],
+        )
+        conn.commit()
+        return cur.rowcount
+
+    def reconcile_all_running_at_startup(self) -> int:
+        """Mark every 'running' run as failed. Call once, at process boot.
+
+        A fresh process guarantees nothing from a prior process can still be
+        executing, so — unlike ``reconcile_stale_running_runs`` — no age
+        cutoff is needed: any 'running' row at this point is orphaned by
+        definition (crash, OOM kill, manual restart), and leaving it would
+        show that pipeline as perpetually 'running' until the 1h lock-timeout
+        tick eventually catches it.
+        """
+        finished = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        conn = self._conn()
+        cur = conn.execute(
+            "UPDATE pipeline_runs SET status='failed',"
+            " error='orphaned by process restart — no terminal status recorded',"
+            " finished_at=?"
+            " WHERE status='running'",
+            [finished],
         )
         conn.commit()
         return cur.rowcount
@@ -864,6 +981,63 @@ class StudioDb:
             }
             for r in rows
         ]
+
+    # ── Backfill batch checkpoints ──────────────────────────────────────────────
+
+    def create_backfill_batch(self, batch_id: str, pipelines: list[str]) -> None:
+        """Seed a batch's pipelines as 'pending' so progress survives a crash."""
+        conn = self._conn()
+        now = datetime.now(UTC).isoformat()
+        for pipeline in pipelines:
+            conn.execute(
+                "INSERT INTO backfill_batches(batch_id,pipeline,status,started_at)"
+                " VALUES(?,?,'pending',?)"
+                " ON CONFLICT(batch_id,pipeline) DO NOTHING",
+                [batch_id, pipeline, now],
+            )
+        conn.commit()
+
+    def mark_backfill_pipeline(
+        self, batch_id: str, pipeline: str, status: str, error: str = ""
+    ) -> None:
+        conn = self._conn()
+        conn.execute(
+            "UPDATE backfill_batches SET status=?, finished_at=?, error=?"
+            " WHERE batch_id=? AND pipeline=?",
+            [status, datetime.now(UTC).isoformat(), error, batch_id, pipeline],
+        )
+        conn.commit()
+
+    def get_backfill_batch(self, batch_id: str) -> list[dict[str, Any]]:
+        rows = (
+            self._conn()
+            .execute(
+                "SELECT batch_id,pipeline,status,started_at,finished_at,error"
+                " FROM backfill_batches WHERE batch_id=? ORDER BY started_at",
+                [batch_id],
+            )
+            .fetchall()
+        )
+        return [
+            {
+                "batch_id": r[0],
+                "pipeline": r[1],
+                "status": r[2],
+                "started_at": r[3],
+                "finished_at": r[4],
+                "error": r[5],
+            }
+            for r in rows
+        ]
+
+    def list_incomplete_backfill_batches(self) -> list[str]:
+        """Batch ids with at least one pipeline still 'pending' — resumable."""
+        rows = (
+            self._conn()
+            .execute("SELECT DISTINCT batch_id FROM backfill_batches WHERE status='pending'")
+            .fetchall()
+        )
+        return [r[0] for r in rows]
 
     # ── AI traces ─────────────────────────────────────────────────────────────
 
@@ -1253,6 +1427,457 @@ class StudioDb:
             for r in rows
         ]
 
+    # ── Pipeline definitions ─────────────────────────────────────────────────
+
+    def create_pipeline_def(
+        self,
+        project_id: str,
+        name: str,
+        schedule: str = "",
+        depends_on: list[str] | None = None,
+    ) -> str:
+        import json
+        import uuid
+
+        pipeline_id = uuid.uuid4().hex
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+        conn.execute(
+            "INSERT INTO pipeline_defs"
+            "(id,project_id,name,schedule,enabled,depends_on,retry_attempts,"
+            " canvas_x,canvas_y,created_at,updated_at)"
+            " VALUES(?,?,?,?,1,?,0,0,0,?,?)",
+            [
+                pipeline_id,
+                project_id,
+                name,
+                schedule,
+                json.dumps(depends_on or []),
+                now,
+                now,
+            ],
+        )
+        conn.commit()
+        return pipeline_id
+
+    def get_pipeline_def(self, project_id: str, name: str) -> dict[str, Any] | None:
+        import json
+
+        row = (
+            self._conn()
+            .execute(
+                "SELECT id,project_id,name,schedule,enabled,depends_on,"
+                "retry_attempts,canvas_x,canvas_y,created_at,updated_at"
+                " FROM pipeline_defs WHERE project_id=? AND name=?",
+                [project_id, name],
+            )
+            .fetchone()
+        )
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "project_id": row[1],
+            "name": row[2],
+            "schedule": row[3],
+            "enabled": bool(row[4]),
+            "depends_on": json.loads(row[5]),
+            "retry_attempts": row[6],
+            "canvas_x": row[7],
+            "canvas_y": row[8],
+            "created_at": row[9],
+            "updated_at": row[10],
+        }
+
+    def upsert_node(
+        self,
+        pipeline_id: str,
+        node_id: str,
+        kind: str,
+        transform_type: str,
+        config: dict[str, Any],
+        canvas_x: float = 0,
+        canvas_y: float = 0,
+    ) -> None:
+        import json
+
+        conn = self._conn()
+        conn.execute(
+            "INSERT INTO pipeline_nodes"
+            "(id,pipeline_id,kind,transform_type,config,canvas_x,canvas_y)"
+            " VALUES(?,?,?,?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " kind=excluded.kind, transform_type=excluded.transform_type,"
+            " config=excluded.config, canvas_x=excluded.canvas_x,"
+            " canvas_y=excluded.canvas_y",
+            [
+                node_id,
+                pipeline_id,
+                kind,
+                transform_type,
+                json.dumps(config),
+                canvas_x,
+                canvas_y,
+            ],
+        )
+        conn.commit()
+
+    def delete_node(self, node_id: str) -> None:
+        conn = self._conn()
+        conn.execute(
+            "DELETE FROM pipeline_edges WHERE from_node_id=? OR to_node_id=?",
+            [node_id, node_id],
+        )
+        conn.execute("DELETE FROM pipeline_nodes WHERE id=?", [node_id])
+        conn.commit()
+
+    def list_nodes(self, pipeline_id: str) -> list[dict[str, Any]]:
+        import json
+
+        rows = (
+            self._conn()
+            .execute(
+                "SELECT id,pipeline_id,kind,transform_type,config,"
+                "transform_block_id,transform_block_version,canvas_x,canvas_y"
+                " FROM pipeline_nodes WHERE pipeline_id=?",
+                [pipeline_id],
+            )
+            .fetchall()
+        )
+        return [
+            {
+                "id": r[0],
+                "pipeline_id": r[1],
+                "kind": r[2],
+                "transform_type": r[3],
+                "config": json.loads(r[4]),
+                "transform_block_id": r[5],
+                "transform_block_version": r[6],
+                "canvas_x": r[7],
+                "canvas_y": r[8],
+            }
+            for r in rows
+        ]
+
+    def upsert_edge(
+        self,
+        pipeline_id: str,
+        edge_id: str,
+        from_node_id: str,
+        to_node_id: str,
+    ) -> None:
+        conn = self._conn()
+        conn.execute(
+            "INSERT INTO pipeline_edges(id,pipeline_id,from_node_id,to_node_id)"
+            " VALUES(?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " from_node_id=excluded.from_node_id, to_node_id=excluded.to_node_id",
+            [edge_id, pipeline_id, from_node_id, to_node_id],
+        )
+        conn.commit()
+
+    def delete_edge(self, edge_id: str) -> None:
+        conn = self._conn()
+        conn.execute("DELETE FROM pipeline_edges WHERE id=?", [edge_id])
+        conn.commit()
+
+    def delete_pipeline_def(self, pipeline_id: str) -> None:
+        """Delete a pipeline_defs row and all its nodes/edges (cleanup-on-failure)."""
+        conn = self._conn()
+        conn.execute("DELETE FROM pipeline_edges WHERE pipeline_id=?", [pipeline_id])
+        conn.execute("DELETE FROM pipeline_nodes WHERE pipeline_id=?", [pipeline_id])
+        conn.execute("DELETE FROM pipeline_defs WHERE id=?", [pipeline_id])
+        conn.commit()
+
+    def list_edges(self, pipeline_id: str) -> list[dict[str, Any]]:
+        rows = (
+            self._conn()
+            .execute(
+                "SELECT id,pipeline_id,from_node_id,to_node_id"
+                " FROM pipeline_edges WHERE pipeline_id=?",
+                [pipeline_id],
+            )
+            .fetchall()
+        )
+        return [
+            {"id": r[0], "pipeline_id": r[1], "from_node_id": r[2], "to_node_id": r[3]}
+            for r in rows
+        ]
+
+    # ── Pipeline Queue Operations ────────────────────────────────────────────────
+
+    def enqueue_pipeline(
+        self,
+        pipeline_name: str,
+        priority: int = 0,
+        depends_on: list[str] | None = None,
+        triggered_by: str = "manual",
+    ) -> int:
+        """Add a pipeline to the queue. Returns queue entry ID."""
+        import json
+
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+        cols = (
+            "pipeline_name, status, priority, depends_on, "
+            "triggered_by, version, created_at, updated_at"
+        )
+        sql = f"INSERT INTO pipeline_queue ({cols}) VALUES(?, 'queued', ?, ?, ?, 0, ?, ?)"
+        cur = conn.execute(
+            sql, [pipeline_name, priority, json.dumps(depends_on or []), triggered_by, now, now]
+        )
+        conn.commit()
+        return cur.lastrowid or 0
+
+    def claim_next_queued(self, max_concurrent: int = 3) -> dict[str, Any] | None:
+        """Atomically claim the next queued pipeline whose dependencies are met.
+        Returns the queue entry or None if nothing to run.
+        """
+        import json
+
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+
+        # First, check running count
+        running_count = conn.execute(
+            "SELECT COUNT(*) FROM pipeline_queue WHERE status='running'"
+        ).fetchone()[0]
+        if running_count >= max_concurrent:
+            return None
+
+        # Find next queued pipeline with all dependencies satisfied
+        # Use a subquery to find entries where all depends_on are in 'success' status
+        row = conn.execute(
+            """
+            SELECT id, pipeline_name, priority, depends_on, triggered_by, version
+            FROM pipeline_queue
+            WHERE status = 'queued'
+            AND (
+                depends_on = '[]'
+                OR NOT EXISTS (
+                    SELECT 1 FROM json_each(depends_on) dep
+                    WHERE dep.value NOT IN (
+                        SELECT pipeline_name FROM pipeline_queue
+                        WHERE status IN ('success', 'skipped')
+                    )
+                )
+            )
+            ORDER BY priority DESC, created_at
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        queue_id, pipeline_name, priority, depends_on, triggered_by, version = row
+
+        # Atomically claim it
+        sql = (
+            "UPDATE pipeline_queue SET status='running', started_at=?, updated_at=?, "
+            "version=version+1, lock_token=? "
+            "WHERE id=? AND version=? AND status='queued'"
+        )
+        cur = conn.execute(sql, [now, now, now + "-" + str(queue_id), queue_id, version])
+        conn.commit()
+
+        if cur.rowcount == 0:
+            # Lost race, try again
+            return self.claim_next_queued(max_concurrent)
+
+        return {
+            "id": queue_id,
+            "pipeline_name": pipeline_name,
+            "priority": priority,
+            "depends_on": json.loads(depends_on),
+            "triggered_by": triggered_by,
+            "version": version + 1,
+        }
+
+    def mark_queue_status(
+        self,
+        queue_id: int,
+        status: str,
+        error_msg: str = "",
+        run_id: int | None = None,
+        version: int = 0,
+    ) -> bool:
+        """Update pipeline queue status with optimistic locking.
+        Returns True if update succeeded, False if version mismatch (concurrent modification).
+        """
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+
+        # This connection is thread-local and long-lived (reused for every future
+        # call on this thread, including from the single persistent background
+        # job worker) — a write that raises here (e.g. an invalid `status` value
+        # tripping the pipeline_queue CHECK constraint) would otherwise leave its
+        # implicit transaction open forever, silently locking out every later
+        # writer to this database. Roll back before propagating so the
+        # connection stays usable.
+        try:
+            if status in ("success", "failed", "cancelled", "skipped"):
+                sql = (
+                    "UPDATE pipeline_queue SET status=?, finished_at=?, error_msg=?, "
+                    "run_id=?, updated_at=?, version=version+1 "
+                    "WHERE id=? AND version=?"
+                )
+                cur = conn.execute(sql, [status, now, error_msg, run_id, now, queue_id, version])
+            else:
+                sql = (
+                    "UPDATE pipeline_queue SET status=?, updated_at=?, version=version+1 "
+                    "WHERE id=? AND version=?"
+                )
+                cur = conn.execute(sql, [status, now, queue_id, version])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        return cur.rowcount > 0
+
+    def get_queue_status(self) -> dict[str, Any]:
+        """Get current queue status for monitoring."""
+        conn = self._conn()
+        cols = (
+            "pipeline_name, status, priority, depends_on, "
+            "triggered_by, started_at, finished_at, error_msg, version"
+        )
+        rows = conn.execute(f"SELECT {cols} FROM pipeline_queue ORDER BY created_at").fetchall()
+
+        status_counts: dict[str, int] = {}
+        for r in rows:
+            status_counts[r[1]] = status_counts.get(r[1], 0) + 1
+
+        return {
+            "total": len(rows),
+            "by_status": status_counts,
+            "entries": [
+                {
+                    "pipeline_name": r[0],
+                    "status": r[1],
+                    "priority": r[2],
+                    "depends_on": json.loads(r[3]),
+                    "triggered_by": r[4],
+                    "started_at": r[5],
+                    "finished_at": r[6],
+                    "error_msg": r[7],
+                    "version": r[8],
+                }
+                for r in rows
+            ],
+        }
+
+    def cancel_pipeline_in_queue(self, pipeline_name: str) -> bool:
+        """Cancel a pipeline that's pending/queued/running.
+        For running pipelines, sets a cancellation flag.
+        """
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+
+        # Cancel pending/queued
+        sql = (
+            "UPDATE pipeline_queue SET status='cancelled', finished_at=?, "
+            "updated_at=?, error_msg='cancelled by user' "
+            "WHERE pipeline_name=? AND status IN ('pending', 'queued')"
+        )
+        cur = conn.execute(sql, [now, now, pipeline_name])
+
+        # For running, we can't easily cancel the thread, but we can mark it
+        # The worker should check is_pipeline_cancelled()
+        cur2 = conn.execute(
+            "UPDATE pipeline_queue SET error_msg='cancelled by user' "
+            "WHERE pipeline_name=? AND status='running'",
+            [pipeline_name],
+        )
+
+        conn.commit()
+        return cur.rowcount > 0 or cur2.rowcount > 0
+
+    def requeue_stale_running(self, timeout_s: int = 3600) -> int:
+        """Re-queue pipelines stuck in 'running' longer than timeout."""
+        cutoff = datetime.fromtimestamp(
+            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
+        ).isoformat()
+
+        conn = self._conn()
+        # Find running entries older than timeout
+        sql = (
+            "SELECT id, pipeline_name, version FROM pipeline_queue "
+            "WHERE status='running' AND started_at < ?"
+        )
+        rows = conn.execute(sql, [cutoff]).fetchall()
+
+        requeued = 0
+        for row in rows:
+            queue_id, pipeline_name, version = row
+            now = datetime.now(UTC).isoformat()
+            sql = (
+                "UPDATE pipeline_queue SET status='queued', started_at=NULL, "
+                "updated_at=?, version=version+1 "
+                "WHERE id=? AND version=? AND status='running'"
+            )
+            cur = conn.execute(sql, [now, queue_id, version])
+            if cur.rowcount > 0:
+                requeued += 1
+        conn.commit()
+        return requeued
+
+    def cleanup_old_queue_entries(self, keep: int = 1000) -> int:
+        """Delete old completed queue entries beyond keep limit."""
+        conn = self._conn()
+        sql = (
+            "DELETE FROM pipeline_queue WHERE id NOT IN "
+            "(SELECT id FROM pipeline_queue WHERE status IN "
+            "('success','failed','cancelled','skipped') "
+            "ORDER BY finished_at DESC LIMIT ?)"
+        )
+        cur = conn.execute(sql, [keep])
+        conn.commit()
+        return cur.rowcount
+
+    # ── Pipeline checkpoints (step-level recovery) ─────────────────────────
+
+    def save_checkpoint(self, pipeline: str, stage: str, run_id: int | None = None) -> None:
+        """Save a pipeline checkpoint after a stage completes."""
+        now = datetime.now(UTC).isoformat()
+        conn = self._conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO pipeline_checkpoints (pipeline, stage, run_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            [pipeline, stage, run_id, now],
+        )
+        conn.commit()
+
+    def get_checkpoint(self, pipeline: str) -> dict[str, Any] | None:
+        """Get the last checkpoint for a pipeline."""
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT stage, run_id, created_at FROM pipeline_checkpoints WHERE pipeline = ?",
+            [pipeline],
+        ).fetchone()
+        if row is None:
+            return None
+        return {"stage": row[0], "run_id": row[1], "created_at": row[2]}
+
+    def clear_checkpoint(self, pipeline: str) -> None:
+        """Clear a pipeline checkpoint after successful completion."""
+        conn = self._conn()
+        conn.execute("DELETE FROM pipeline_checkpoints WHERE pipeline = ?", [pipeline])
+        conn.commit()
+
+    # ── Hash table TTL pruning ─────────────────────────────────────────────
+
+    def cleanup_old_hashes(self, keep_days: int = 30) -> int:
+        """Delete ingested hashes older than keep_days."""
+        cutoff = (datetime.now(UTC) - timedelta(days=keep_days)).isoformat()
+        conn = self._conn()
+        cur = conn.execute(
+            "DELETE FROM ingested_hashes WHERE ingested_at < ?",
+            [cutoff],
+        )
+        conn.commit()
+        return cur.rowcount
+
     # ── Scheduler leader election (Phase 2, SQLite always True) ──────────────
 
     def try_scheduler_leadership(self) -> bool:
@@ -1320,6 +1945,96 @@ CREATE TABLE IF NOT EXISTS alert_events (
     message     TEXT NOT NULL DEFAULT '',
     delivered   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backfill_batches (
+    batch_id    TEXT NOT NULL,
+    pipeline    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    error       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (batch_id, pipeline)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id             BIGSERIAL PRIMARY KEY,
+    pipeline       TEXT NOT NULL,
+    started_at     TEXT NOT NULL,
+    finished_at    TEXT,
+    status         TEXT NOT NULL DEFAULT 'running',
+    error          TEXT,
+    triggered_by   TEXT NOT NULL DEFAULT 'scheduler',
+    duration_s     DOUBLE PRECISION,
+    request_id     TEXT,
+    rows_input     INTEGER NOT NULL DEFAULT 0,
+    rows_output    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline
+    ON pipeline_runs(pipeline, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS pipeline_queue (
+    id              BIGSERIAL PRIMARY KEY,
+    pipeline_name   TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN (
+        'pending', 'queued', 'running', 'success', 'failed', 'cancelled', 'skipped'
+    )),
+    priority        INTEGER DEFAULT 0,
+    depends_on      TEXT NOT NULL DEFAULT '[]',
+    triggered_by    TEXT NOT NULL DEFAULT 'manual',
+    lock_token      TEXT,
+    version         INTEGER DEFAULT 0,
+    started_at      TEXT,
+    finished_at     TEXT,
+    error_msg       TEXT,
+    run_id          BIGINT REFERENCES pipeline_runs(id),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pq_status_priority
+    ON pipeline_queue(status, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_pq_pipeline_status ON pipeline_queue(pipeline_name, status);
+CREATE INDEX IF NOT EXISTS idx_pq_depends ON pipeline_queue(depends_on);
+
+CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+    pipeline    TEXT PRIMARY KEY,
+    stage       TEXT NOT NULL,
+    run_id      BIGINT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_defs (
+    id           TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    schedule     TEXT NOT NULL DEFAULT '',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    depends_on   TEXT NOT NULL DEFAULT '[]',
+    retry_attempts INTEGER NOT NULL DEFAULT 0,
+    canvas_x     REAL NOT NULL DEFAULT 0,
+    canvas_y     REAL NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    UNIQUE(project_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_nodes (
+    id                     TEXT PRIMARY KEY,
+    pipeline_id            TEXT NOT NULL,
+    kind                   TEXT NOT NULL,
+    transform_type         TEXT NOT NULL DEFAULT '',
+    config                 TEXT NOT NULL DEFAULT '{}',
+    transform_block_id     TEXT,
+    transform_block_version INTEGER,
+    canvas_x               REAL NOT NULL DEFAULT 0,
+    canvas_y               REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_edges (
+    id            TEXT PRIMARY KEY,
+    pipeline_id   TEXT NOT NULL,
+    from_node_id  TEXT NOT NULL,
+    to_node_id    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS dead_letter_runs (
@@ -1587,6 +2302,27 @@ class PgStudioDb:
         finally:
             conn.close()
 
+    def clear_expired_locks(self, timeout_s: int = 7200) -> int:
+        """Delete all pipeline_locks rows older than *timeout_s* seconds.
+
+        Unlike ``clear_stale_locks``, this does not check if the advisory lock
+        is still held — it simply deletes all rows older than the timeout.
+        Use with ``timeout_s=0`` to clear all locks unconditionally (useful at
+        startup to ensure a clean slate).
+        """
+        cutoff_iso = datetime.fromtimestamp(
+            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
+        ).isoformat()
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            result = conn.execute(
+                text("DELETE FROM pipeline_locks WHERE locked_at < :cutoff"),
+                {"cutoff": cutoff_iso},
+            )
+            conn.commit()
+            return result.rowcount  # type: ignore[no-any-return]
+
     def clear_stale_locks(self, timeout_s: int = 7200) -> int:
         """Delete pipeline_locks rows for pipelines confirmed orphaned.
 
@@ -1720,8 +2456,8 @@ class PgStudioDb:
         with self._conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT pipeline, attempts, next_retry_at, state"
-                    " FROM pipeline_run_state WHERE state != 'idle'"
+                    "SELECT pipeline, attempts, next_retry_at, state "
+                    "FROM pipeline_run_state WHERE state != 'idle'"
                 )
             ).fetchall()
         return [
@@ -1861,6 +2597,32 @@ class PgStudioDb:
                     " WHERE pipeline=:p AND status='running' AND started_at < :c"
                 ),
                 {"f": finished, "p": pipeline, "c": cutoff_iso},
+            )
+            conn.commit()
+            return result.rowcount  # type: ignore[no-any-return]
+
+    def reconcile_all_running_at_startup(self) -> int:
+        """Mark every 'running' run as failed. Call once, at process boot.
+
+        A fresh process guarantees nothing from a prior process can still be
+        executing, so — unlike ``reconcile_stale_running_runs`` — no age
+        cutoff is needed: any 'running' row at this point is orphaned by
+        definition (crash, OOM kill, manual restart), and leaving it would
+        show that pipeline as perpetually 'running' until the 1h lock-timeout
+        tick eventually catches it.
+        """
+        from sqlalchemy import text
+
+        finished = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        with self._conn() as conn:
+            result = conn.execute(
+                text(
+                    "UPDATE pipeline_runs SET status='failed',"
+                    " error='orphaned by process restart — no terminal status recorded',"
+                    " finished_at=:f"
+                    " WHERE status='running'"
+                ),
+                {"f": finished},
             )
             conn.commit()
             return result.rowcount  # type: ignore[no-any-return]
@@ -2279,6 +3041,79 @@ class PgStudioDb:
             }
             for r in rows
         ]
+
+    # ── Backfill batch checkpoints ──────────────────────────────────────────────
+
+    def create_backfill_batch(self, batch_id: str, pipelines: list[str]) -> None:
+        """Seed a batch's pipelines as 'pending' so progress survives a crash."""
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            for pipeline in pipelines:
+                conn.execute(
+                    text(
+                        "INSERT INTO backfill_batches(batch_id,pipeline,status,started_at)"
+                        " VALUES(:b,:p,'pending',:t)"
+                        " ON CONFLICT(batch_id,pipeline) DO NOTHING"
+                    ),
+                    {"b": batch_id, "p": pipeline, "t": now},
+                )
+            conn.commit()
+
+    def mark_backfill_pipeline(
+        self, batch_id: str, pipeline: str, status: str, error: str = ""
+    ) -> None:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text(
+                    "UPDATE backfill_batches SET status=:s, finished_at=:f, error=:e"
+                    " WHERE batch_id=:b AND pipeline=:p"
+                ),
+                {
+                    "s": status,
+                    "f": datetime.now(UTC).isoformat(),
+                    "e": error,
+                    "b": batch_id,
+                    "p": pipeline,
+                },
+            )
+            conn.commit()
+
+    def get_backfill_batch(self, batch_id: str) -> list[dict[str, Any]]:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT batch_id,pipeline,status,started_at,finished_at,error"
+                    " FROM backfill_batches WHERE batch_id=:b ORDER BY started_at"
+                ),
+                {"b": batch_id},
+            ).fetchall()
+        return [
+            {
+                "batch_id": r[0],
+                "pipeline": r[1],
+                "status": r[2],
+                "started_at": r[3],
+                "finished_at": r[4],
+                "error": r[5],
+            }
+            for r in rows
+        ]
+
+    def list_incomplete_backfill_batches(self) -> list[str]:
+        """Batch ids with at least one pipeline still 'pending' — resumable."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            rows = conn.execute(
+                text("SELECT DISTINCT batch_id FROM backfill_batches WHERE status='pending'")
+            ).fetchall()
+        return [r[0] for r in rows]
 
     # ── AI traces ────────────────────────────────────────────────────────────
 
@@ -2747,6 +3582,207 @@ class PgStudioDb:
             for r in rows
         ]
 
+    # ── Pipeline definitions ─────────────────────────────────────────────────
+
+    def create_pipeline_def(
+        self,
+        project_id: str,
+        name: str,
+        schedule: str = "",
+        depends_on: list[str] | None = None,
+    ) -> str:
+        import json
+        import uuid
+
+        from sqlalchemy import text
+
+        pipeline_id = uuid.uuid4().hex
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline_defs"
+                    "(id,project_id,name,schedule,enabled,depends_on,retry_attempts,"
+                    " canvas_x,canvas_y,created_at,updated_at)"
+                    " VALUES(:id,:proj,:name,:sched,1,:deps,0,0,0,:now,:now)"
+                ),
+                {
+                    "id": pipeline_id,
+                    "proj": project_id,
+                    "name": name,
+                    "sched": schedule,
+                    "deps": json.dumps(depends_on or []),
+                    "now": now,
+                },
+            )
+            conn.commit()
+        return pipeline_id
+
+    def get_pipeline_def(self, project_id: str, name: str) -> dict[str, Any] | None:
+        import json
+
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT id,project_id,name,schedule,enabled,depends_on,"
+                    "retry_attempts,canvas_x,canvas_y,created_at,updated_at"
+                    " FROM pipeline_defs WHERE project_id=:proj AND name=:name"
+                ),
+                {"proj": project_id, "name": name},
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "project_id": row[1],
+            "name": row[2],
+            "schedule": row[3],
+            "enabled": bool(row[4]),
+            "depends_on": json.loads(row[5]),
+            "retry_attempts": row[6],
+            "canvas_x": row[7],
+            "canvas_y": row[8],
+            "created_at": row[9],
+            "updated_at": row[10],
+        }
+
+    def upsert_node(
+        self,
+        pipeline_id: str,
+        node_id: str,
+        kind: str,
+        transform_type: str,
+        config: dict[str, Any],
+        canvas_x: float = 0,
+        canvas_y: float = 0,
+    ) -> None:
+        import json
+
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline_nodes"
+                    "(id,pipeline_id,kind,transform_type,config,canvas_x,canvas_y)"
+                    " VALUES(:id,:pid,:kind,:ttype,:config,:cx,:cy)"
+                    " ON CONFLICT(id) DO UPDATE SET"
+                    " kind=excluded.kind, transform_type=excluded.transform_type,"
+                    " config=excluded.config, canvas_x=excluded.canvas_x,"
+                    " canvas_y=excluded.canvas_y"
+                ),
+                {
+                    "id": node_id,
+                    "pid": pipeline_id,
+                    "kind": kind,
+                    "ttype": transform_type,
+                    "config": json.dumps(config),
+                    "cx": canvas_x,
+                    "cy": canvas_y,
+                },
+            )
+            conn.commit()
+
+    def delete_node(self, node_id: str) -> None:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text("DELETE FROM pipeline_edges WHERE from_node_id=:n OR to_node_id=:n"),
+                {"n": node_id},
+            )
+            conn.execute(text("DELETE FROM pipeline_nodes WHERE id=:n"), {"n": node_id})
+            conn.commit()
+
+    def list_nodes(self, pipeline_id: str) -> list[dict[str, Any]]:
+        import json
+
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id,pipeline_id,kind,transform_type,config,"
+                    "transform_block_id,transform_block_version,canvas_x,canvas_y"
+                    " FROM pipeline_nodes WHERE pipeline_id=:pid"
+                ),
+                {"pid": pipeline_id},
+            ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "pipeline_id": r[1],
+                "kind": r[2],
+                "transform_type": r[3],
+                "config": json.loads(r[4]),
+                "transform_block_id": r[5],
+                "transform_block_version": r[6],
+                "canvas_x": r[7],
+                "canvas_y": r[8],
+            }
+            for r in rows
+        ]
+
+    def upsert_edge(
+        self,
+        pipeline_id: str,
+        edge_id: str,
+        from_node_id: str,
+        to_node_id: str,
+    ) -> None:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline_edges(id,pipeline_id,from_node_id,to_node_id)"
+                    " VALUES(:id,:pid,:f,:t)"
+                    " ON CONFLICT(id) DO UPDATE SET"
+                    " from_node_id=excluded.from_node_id, to_node_id=excluded.to_node_id"
+                ),
+                {"id": edge_id, "pid": pipeline_id, "f": from_node_id, "t": to_node_id},
+            )
+            conn.commit()
+
+    def delete_edge(self, edge_id: str) -> None:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(text("DELETE FROM pipeline_edges WHERE id=:id"), {"id": edge_id})
+            conn.commit()
+
+    def delete_pipeline_def(self, pipeline_id: str) -> None:
+        """Delete a pipeline_defs row and all its nodes/edges (cleanup-on-failure)."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text("DELETE FROM pipeline_edges WHERE pipeline_id=:pid"), {"pid": pipeline_id}
+            )
+            conn.execute(
+                text("DELETE FROM pipeline_nodes WHERE pipeline_id=:pid"), {"pid": pipeline_id}
+            )
+            conn.execute(text("DELETE FROM pipeline_defs WHERE id=:pid"), {"pid": pipeline_id})
+            conn.commit()
+
+    def list_edges(self, pipeline_id: str) -> list[dict[str, Any]]:
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id,pipeline_id,from_node_id,to_node_id"
+                    " FROM pipeline_edges WHERE pipeline_id=:pid"
+                ),
+                {"pid": pipeline_id},
+            ).fetchall()
+        return [
+            {"id": r[0], "pipeline_id": r[1], "from_node_id": r[2], "to_node_id": r[3]}
+            for r in rows
+        ]
+
     # ── Scheduler leader election (Phase 2) ──────────────────────────────────
     # ponytail: same session-scoped lock issue as pipeline locks — keep conn.
 
@@ -2768,6 +3804,232 @@ class PgStudioDb:
             conn.close()
             raise
 
+    # ── Pipeline Queue (PostgreSQL) ────────────────────────────────────────────
+
+    def enqueue_pipeline(
+        self,
+        pipeline_name: str,
+        priority: int = 0,
+        depends_on: list[str] | None = None,
+        triggered_by: str = "manual",
+    ) -> int:
+        """Add a pipeline to the queue. Returns queue entry ID."""
+        import json
+
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            cols = (
+                "pipeline_name, status, priority, depends_on, triggered_by, created_at, updated_at"
+            )
+            sql = (
+                f"INSERT INTO pipeline_queue ({cols}) "
+                "VALUES(:pn, 'queued', :pr, :deps, :tr, :now, :now) RETURNING id"
+            )
+            row = conn.execute(
+                text(sql),
+                {
+                    "pn": pipeline_name,
+                    "pr": priority,
+                    "deps": json.dumps(depends_on or []),
+                    "tr": triggered_by,
+                    "now": now,
+                },
+            ).fetchone()
+            conn.commit()
+        return row[0] if row else 0
+
+    def claim_next_queued(self, max_concurrent: int = 3) -> dict[str, Any] | None:
+        """Atomically claim the next queued pipeline respecting deps and concurrency."""
+        import json
+
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            # Check running count
+            running = conn.execute(
+                text("SELECT COUNT(*) FROM pipeline_queue WHERE status='running'")
+            ).scalar()
+            if running >= max_concurrent:
+                return None
+
+            # Find next queued pipeline whose dependencies are all satisfied
+            row = conn.execute(
+                text(
+                    "SELECT id, pipeline_name, priority, depends_on, triggered_by, version"
+                    " FROM pipeline_queue"
+                    " WHERE status='queued'"
+                    " AND NOT EXISTS ("
+                    "   SELECT 1 FROM jsonb_array_elements_text(depends_on::jsonb) AS dep(d)"
+                    "   WHERE NOT EXISTS ("
+                    "     SELECT 1 FROM pipeline_queue q2"
+                    "     WHERE q2.pipeline_name = dep.d AND q2.status IN ('success', 'skipped')"
+                    "   )"
+                    " )"
+                    " ORDER BY priority DESC, created_at"
+                    " LIMIT 1 FOR UPDATE SKIP LOCKED"
+                )
+            ).fetchone()
+
+            if not row:
+                return None
+
+            queue_id, pipeline_name, priority, depends_on, triggered_by, version = row
+
+            # Atomically claim
+            sql = (
+                "UPDATE pipeline_queue SET status='running', started_at=:now, "
+                "updated_at=:now, version=version+1 "
+                "WHERE id=:id AND version=:ver AND status='queued'"
+            )
+            cur = conn.execute(text(sql), {"now": now, "id": queue_id, "ver": version})
+            conn.commit()
+
+            if cur.rowcount == 0:
+                return self.claim_next_queued(max_concurrent)  # retry
+
+            return {
+                "id": queue_id,
+                "pipeline_name": pipeline_name,
+                "priority": priority,
+                "depends_on": json.loads(depends_on),
+                "triggered_by": triggered_by,
+                "version": version + 1,
+            }
+
+    def mark_queue_status(
+        self,
+        queue_id: int,
+        status: str,
+        error_msg: str = "",
+        run_id: int | None = None,
+        version: int = 0,
+    ) -> bool:
+        """Update pipeline queue status with optimistic locking."""
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            if status in ("success", "failed", "cancelled", "skipped"):
+                sql = (
+                    "UPDATE pipeline_queue SET status=:s, finished_at=:now, error_msg=:e, "
+                    "run_id=:rid, updated_at=:now, version=version+1 "
+                    "WHERE id=:id AND version=:ver"
+                )
+                cur = conn.execute(
+                    text(sql),
+                    {
+                        "s": status,
+                        "now": now,
+                        "e": error_msg,
+                        "rid": run_id,
+                        "id": queue_id,
+                        "ver": version,
+                    },
+                )
+            else:
+                sql = (
+                    "UPDATE pipeline_queue SET status=:s, updated_at=:now, version=version+1 "
+                    "WHERE id=:id AND version=:ver"
+                )
+                cur = conn.execute(
+                    text(sql),
+                    {"s": status, "now": now, "id": queue_id, "ver": version},
+                )
+            conn.commit()
+            return bool(cur.rowcount > 0)
+
+    def get_queue_status(self) -> dict[str, Any]:
+        """Get current queue status for monitoring."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            cols = (
+                "pipeline_name, status, priority, depends_on, "
+                "triggered_by, started_at, finished_at, error_msg, version"
+            )
+            sql = f"SELECT {cols} FROM pipeline_queue ORDER BY created_at"
+            rows = conn.execute(text(sql)).fetchall()
+
+        status_counts: dict[str, int] = {}
+        for r in rows:
+            status_counts[r[1]] = status_counts.get(r[1], 0) + 1
+
+        return {
+            "total": len(rows),
+            "by_status": status_counts,
+            "entries": [
+                {
+                    "pipeline_name": r[0],
+                    "status": r[1],
+                    "priority": r[2],
+                    "depends_on": r[3],
+                    "triggered_by": r[4],
+                    "started_at": r[5],
+                    "finished_at": r[6],
+                    "error_msg": r[7],
+                    "version": r[8],
+                }
+                for r in rows
+            ],
+        }
+
+    def requeue_stale_running(self, timeout_s: int = 3600) -> int:
+        """Re-queue pipelines stuck in 'running' longer than timeout."""
+        from sqlalchemy import text
+
+        cutoff = datetime.fromtimestamp(
+            datetime.now(UTC).timestamp() - timeout_s, tz=UTC
+        ).isoformat()
+
+        with self._conn() as conn:
+            sql = text(
+                "SELECT id, pipeline_name, version FROM pipeline_queue "
+                "WHERE status='running' AND started_at < :cutoff"
+            )
+            rows = conn.execute(sql, {"cutoff": cutoff}).fetchall()
+
+            requeued = 0
+            for row in rows:
+                queue_id, pipeline_name, version = row
+                now = datetime.now(UTC).isoformat()
+                sql = text(
+                    "UPDATE pipeline_queue SET status='queued', started_at=NULL, "
+                    "updated_at=:now, version=version+1 "
+                    "WHERE id=:id AND version=:ver AND status='running'"
+                )
+                cur = conn.execute(sql, {"now": now, "id": queue_id, "ver": version})
+                if cur.rowcount > 0:
+                    requeued += 1
+            conn.commit()
+        return requeued
+
+    def cancel_pipeline_in_queue(self, pipeline_name: str) -> bool:
+        """Cancel a pipeline that's pending/queued/running."""
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            # Cancel pending/queued
+            sql = text(
+                "UPDATE pipeline_queue SET status='cancelled', finished_at=:now, "
+                "updated_at=:now, error_msg='cancelled by user' "
+                "WHERE pipeline_name=:name AND status IN ('pending', 'queued')"
+            )
+            cur = conn.execute(sql, {"now": now, "name": pipeline_name})
+
+            # For running, mark cancellation flag (worker checks is_pipeline_cancelled)
+            sql2 = text(
+                "UPDATE pipeline_queue SET error_msg='cancelled by user' "
+                "WHERE pipeline_name=:name AND status='running'"
+            )
+            cur2 = conn.execute(sql2, {"name": pipeline_name})
+
+            conn.commit()
+        return bool(cur.rowcount > 0 or cur2.rowcount > 0)
+
     def release_scheduler_leadership(self) -> None:
         from sqlalchemy import text
 
@@ -2781,6 +4043,65 @@ class PgStudioDb:
         finally:
             conn.close()
 
+    # ── Pipeline checkpoints (step-level recovery) ─────────────────────────
+
+    def save_checkpoint(self, pipeline: str, stage: str, run_id: int | None = None) -> None:
+        """Save a pipeline checkpoint after a stage completes."""
+        from sqlalchemy import text
+
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline_checkpoints (pipeline, stage, run_id, created_at) "
+                    "VALUES (:p, :s, :r, :now) "
+                    "ON CONFLICT (pipeline) DO UPDATE SET stage=:s, run_id=:r, created_at=:now"
+                ),
+                {"p": pipeline, "s": stage, "r": run_id, "now": now},
+            )
+            conn.commit()
+
+    def get_checkpoint(self, pipeline: str) -> dict[str, Any] | None:
+        """Get the last checkpoint for a pipeline."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT stage, run_id, created_at FROM pipeline_checkpoints WHERE pipeline = :p"
+                ),
+                {"p": pipeline},
+            ).fetchone()
+        if row is None:
+            return None
+        return {"stage": row[0], "run_id": row[1], "created_at": row[2]}
+
+    def clear_checkpoint(self, pipeline: str) -> None:
+        """Clear a pipeline checkpoint after successful completion."""
+        from sqlalchemy import text
+
+        with self._conn() as conn:
+            conn.execute(
+                text("DELETE FROM pipeline_checkpoints WHERE pipeline = :p"),
+                {"p": pipeline},
+            )
+            conn.commit()
+
+    # ── Hash table TTL pruning ─────────────────────────────────────────────
+
+    def cleanup_old_hashes(self, keep_days: int = 30) -> int:
+        """Delete ingested hashes older than keep_days."""
+        from sqlalchemy import text
+
+        cutoff = (datetime.now(UTC) - timedelta(days=keep_days)).isoformat()
+        with self._conn() as conn:
+            result = conn.execute(
+                text("DELETE FROM ingested_hashes WHERE ingested_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
+            conn.commit()
+            return int(result.rowcount)
+
 
 # ── Process-level singleton accessor ─────────────────────────────────────────
 
@@ -2792,7 +4113,7 @@ def _resolve_sqlite_path(eng: Any) -> Path | None:
     """Extract the studio.db path from the engine's project directory."""
     try:
         dex_dir = getattr(eng, "_dex_dir", None)
-        if dex_dir:
+        if isinstance(dex_dir, Path):
             # eng._dex_dir is already the project's `.dex` directory (see
             # DexEngine.__init__: `self._dex_dir = self.project_dir / ".dex"`).
             # Appending ".dex" again here used to produce a doubled
@@ -2800,8 +4121,14 @@ def _resolve_sqlite_path(eng: Any) -> Path | None:
             # `<project>/.dex/studio.db` was never touched, so every
             # start_run/finish_run/acquire_lock call silently wrote to (and
             # read from) an orphaned sibling database instead.
-            return Path(str(dex_dir)) / "studio.db"
-        db_dir = Path(str(getattr(eng, "config_path", "")))
+            return dex_dir / "studio.db"
+        config_path = getattr(eng, "config_path", None)
+        if not isinstance(config_path, (str, Path)):
+            # eng is an unconfigured mock (or otherwise lacks a real path) —
+            # stringifying it here used to `mkdir` a literal
+            # `<MagicMock ...>/studio.db` directory in the cwd.
+            return None
+        db_dir = Path(config_path)
         if db_dir.suffix in (".yaml", ".yml", ".toml"):
             db_dir = db_dir.parent
         return db_dir / ".dex" / "studio.db"

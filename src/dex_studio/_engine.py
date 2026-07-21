@@ -11,7 +11,11 @@ import threading
 from contextlib import suppress
 from pathlib import Path
 
+import duckdb
+import structlog
 from dataenginex.engine import DexEngine
+
+log = structlog.get_logger().bind(src="engine")
 
 _ENGINE: DexEngine | None = None
 # Protects _ENGINE mutation. DexEngine.__init__ is synchronous and potentially
@@ -19,9 +23,26 @@ _ENGINE: DexEngine | None = None
 # project-switch requests from racing and leaving a half-initialised singleton.
 _ENGINE_LOCK = threading.Lock()
 
+# Shared DuckDB connection for read-only operations (pool of 1)
+_DUCKDB_CONN: duckdb.DuckDBPyConnection | None = None
+_DUCKDB_LOCK = threading.Lock()
+
 # Project storage directory — only dex.yaml paths are stored here
 USER_PROJECTS_DIR: Path = Path.home() / ".dex-studio" / "projects"
 _CONFIG_FILENAME = "dex.yaml"
+
+
+def get_duckdb() -> duckdb.DuckDBPyConnection:
+    """Return a shared DuckDB connection for read-only operations.
+
+    Reuses a single connection to avoid catalog/parser overhead per query.
+    Thread-safe.
+    """
+    global _DUCKDB_CONN
+    with _DUCKDB_LOCK:
+        if _DUCKDB_CONN is None:
+            _DUCKDB_CONN = duckdb.connect(":memory:")
+        return _DUCKDB_CONN
 
 
 def init_engine(config_path: str | Path) -> DexEngine:
@@ -37,6 +58,7 @@ def init_engine(config_path: str | Path) -> DexEngine:
                 _ENGINE.close()
         _ENGINE = DexEngine(config_path)
         os.environ["DEX_CONFIG_PATH"] = str(config_path)
+        log.info("engine initialized", config_path=str(config_path))
         return _ENGINE
 
 
@@ -47,6 +69,7 @@ def get_engine() -> DexEngine | None:
         return _ENGINE
     path = os.getenv("DEX_CONFIG_PATH")
     if path:
+        log.info("initializing engine from DEX_CONFIG_PATH", path=path)
         return init_engine(path)
     # Saved default project (persisted via StudioPrefs.default_config_path)
     try:
@@ -56,15 +79,27 @@ def get_engine() -> DexEngine | None:
         if saved:
             p = Path(saved)
             if p.exists():
+                log.info("initializing engine from saved default", path=str(p))
                 return init_engine(p)
-    except Exception:
-        pass
+            else:
+                log.warning("saved default config path does not exist", path=saved)
+    except Exception as exc:
+        log.warning("failed to load saved default config", error=str(exc))
     user = find_user_projects()
     if user:
+        log.info("initializing engine from user project", project=user[0][0], path=str(user[0][1]))
         return init_engine(user[0][1])
     starter = find_starter_config()
     if starter:
+        log.info("initializing engine from starter config", path=str(starter))
         return init_engine(starter)
+    log.warning(
+        "no engine config found",
+        env="DEX_CONFIG_PATH not set",
+        default="no saved default",
+        user="no user projects",
+        starter="no starter configs",
+    )
     return None
 
 

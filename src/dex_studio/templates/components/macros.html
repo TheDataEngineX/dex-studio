@@ -155,3 +155,67 @@
 </span>
 {% endif %}
 {% endmacro %}
+
+{# list_toolbar — client-side search box filtering rows by data-search attribute #}
+{% macro list_toolbar(placeholder="Search...") %}
+<div x-data="{ q: '' }" style="margin-bottom:14px">
+  <div style="position:relative;max-width:320px">
+    <i data-lucide="search" style="width:13px;height:13px;position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-4)"></i>
+    <input type="text" x-model="q" placeholder="{{ placeholder }}" class="input"
+           style="padding-left:30px;width:100%"
+           @input="
+              const q = $event.target.value.toLowerCase();
+              document.querySelectorAll('.list-row').forEach(row => {
+                const hay = (row.dataset.search || '').toLowerCase();
+                row.style.display = hay.includes(q) ? '' : 'none';
+              });
+            ">
+  </div>
+</div>
+{% endmacro %}
+
+{# status_pill — single source for status pills: running/queued/success/failed/skipped/never #}
+{% macro status_pill(status, size="sm") %}
+{% set _map = {
+  "running": {"cls": "running", "label": "running", "icon": "play"},
+  "queued": {"cls": "warning", "label": "queued", "icon": "clock"},
+  "success": {"cls": "success", "label": "success", "icon": "check-circle-2"},
+  "succeeded": {"cls": "success", "label": "success", "icon": "check-circle-2"},
+  "ok": {"cls": "success", "label": "ok", "icon": "check-circle-2"},
+  "failed": {"cls": "error", "label": "failed", "icon": "x-circle"},
+  "error": {"cls": "error", "label": "failed", "icon": "x-circle"},
+  "skipped": {"cls": "info", "label": "skipped", "icon": "skip-forward"},
+  "never": {"cls": "", "label": "never", "icon": "circle"},
+  "idle": {"cls": "", "label": "idle", "icon": "circle"},
+} %}
+{% set s = status|lower %}
+{% set cfg = _map.get(s, {"cls": "", "label": status, "icon": "help-circle"}) %}
+{% set cls = cfg.cls %}
+{% set label = cfg.label %}
+{% set icon = cfg.icon %}
+<span class="pill {{ cls }}" style="font-size:{{ '9px' if size=='xs' else '9.5px' if size=='sm' else '11px' }};height:{{ '14px' if size=='xs' else '16px' if size=='sm' else '20px' }};font-weight:600">
+  <i data-lucide="{{ icon }}" style="width:{{ '8px' if size=='xs' else '9px' if size=='sm' else '11px' }};height:{{ '8px' if size=='xs' else '9px' if size=='sm' else '11px' }};flex-shrink:0;margin-right:4px"></i>
+  {{ label }}
+</span>
+{% endmacro %}
+
+{# log_query_parser — parses structured log queries like: level:ERROR src:agent.* msg:"timeout" #}
+{# Returns: (levelFilter, srcRegex, searchTerm) #}
+{% macro log_query_parser(query) %}
+{% set levelFilter = 'all' %}
+{% set srcRegex = '' %}
+{% set searchTerm = query %}
+{% if query %}
+  {% set parts = query.split() %}
+  {% for part in parts %}
+    {% if part.startswith('level:') or part.startswith('lvl:') %}
+      {% set levelFilter = part.split(':')[1].upper() %}
+    {% elif part.startswith('src:') or part.startswith('source:') %}
+      {% set srcRegex = part.split(':')[1] %}
+    {% elif part.startswith('msg:') or part.startswith('message:') %}
+      {% set searchTerm = part.split(':', 1)[1] %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{{ (levelFilter, srcRegex, searchTerm) }}
+{% endmacro %}

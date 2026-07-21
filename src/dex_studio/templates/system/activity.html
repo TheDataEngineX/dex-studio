@@ -1,37 +1,34 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Activity — System — DEX Studio{% endblock %}
+{% block title %}Activity — DEX Studio{% endblock %}
+
 {% block page_title %}Activity{% endblock %}
-{% block page_sub %}Recent system activity and audit events{% endblock %}
+{% block page_sub %}Audit trail and system events{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
-  <div class="card bare">
-    {% if events %}
-    <table class="dex-table">
-      <thead>
-        <tr>
-          <th style="width:150px">Timestamp</th>
-          <th style="width:120px">Action</th>
-          <th>Dataset / Target</th>
-          <th style="width:120px">Actor</th>
-        </tr>
-      </thead>
+<div class="animate-fade-in" style="--domain-color: var(--domain-system)">
+
+<div class="card">
+  <div class="section-h"><h2>Recent Events</h2></div>
+  {% if events %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Time</th><th>Action</th><th>Dataset</th><th>Actor</th></tr></thead>
       <tbody>
         {% for e in events %}
-        <tr>
-          <td class="mono muted" style="font-size:10px;white-space:nowrap">{{ e.ts }}</td>
-          <td><span class="dex-log-badge dex-log-info">{{ e.action }}</span></td>
-          <td class="mono" style="font-size:11.5px">{{ e.dataset }}</td>
-          <td class="muted" style="font-size:11px">{{ e.actor }}</td>
-        </tr>
+        <tr><td class="mono" style="font-size:var(--text-xs)">{{ e.ts }}</td><td><span class="pill {{ 'error' if e.action == 'blocked' else 'warning' if e.action == 'masked' else 'info' }}" style="height:18px;font-size:var(--text-xs)">{{ e.action | upper }}</span></td><td class="mono" style="font-size:var(--text-xs)">{{ e.dataset }}</td><td class="muted" style="font-size:var(--text-xs)">{{ e.actor }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    {{ empty_state("activity", "No activity yet", "Events will appear as pipelines run and actions are performed.") }}
-    {% endif %}
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="activity" class="icon"></i><div class="title">No activity</div><div class="desc">Audit events will appear here when enabled.</div></div>
+  {% endif %}
 </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

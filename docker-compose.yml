@@ -1,0 +1,357 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# dex — Local dev stack (runs from dex-studio repo root)
+# Usage:
+#   docker compose up -d                          # Full stack
+#   docker compose up -d dex-studio               # Dex studio only
+#   docker compose logs -f                        # Tail all logs
+#   docker compose up -d --scale dex-studio=2     # Scale to 2 replicas
+#   docker compose down
+#
+# OOM / CPU kill detection:
+#   docker compose events                         # Watch OOM events
+#   docker inspect dex-studio --format '{{.State.OOMKilled}}'
+#   Prometheus: container_oom_events_total, container_cpu_cfs_throttled_seconds_total
+# ─────────────────────────────────────────────────────────────────────────────
+name: dex
+
+services:
+  # --- dex-studio — Web UI (FastAPI + Jinja2 + HTMX) ---
+  #
+  # Build from local source:
+  #   docker compose build dex-studio
+  #
+  # Scale to multiple replicas (no port mapping in scaled mode):
+  #   docker compose up -d --scale dex-studio=2
+  #
+  # Terminal access (tty enabled):
+  #   docker attach dex-studio
+  #   docker compose exec dex-studio /bin/bash
+  #
+  dex-studio:
+    build:
+      context: ..
+      dockerfile: dex-studio/Dockerfile
+    image: ghcr.io/thedataenginex/dex-studio:local
+    container_name: dex-studio
+    ports:
+      - "7860:7860"
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Chicago
+      - DEX_STUDIO_LOG_LEVEL=${DEX_STUDIO_LOG_LEVEL:-INFO}
+      - DEX_STUDIO_SESSION_SECRET=${DEX_STUDIO_SESSION_SECRET:-}
+      - DEX_STUDIO_PASSPHRASE=${DEX_STUDIO_PASSPHRASE:-admin}
+      - DATABASE_URL=postgresql://dex:dex@postgres:5432/dex
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - DEX_MAX_CONCURRENT_PIPELINES=4
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/0
+      - DEX_CONFIG_PATH=/home/dex/dex.yaml
+      - OTLP_ENDPOINT=http://tempo:4318
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    volumes:
+      - dex_studio_home:/home/dex
+      - ./examples/movie-dex/dex.yaml:/home/dex/dex.yaml:ro
+      - ./examples/movie-dex/plugins:/home/dex/plugins
+      - dex_data:/home/dex/.dex
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 6.5G
+        reservations:
+          cpus: "2"
+          memory: 2G
+    stdin_open: true
+
+  # --- Redis — Session store / rate limiting / Celery broker ---
+  redis:
+    image: redis:7-alpine
+    container_name: dex-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Prometheus — Metrics collection ---
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: dex-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Alertmanager — Alert routing ---
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: dex-alertmanager
+    ports:
+      - "9093:9093"
+    environment:
+      # Set a real Slack webhook URL to receive alerts in #dex-alerts.
+      # Example: SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/xxx
+      - SLACK_WEBHOOK_URL=http://localhost:12345/unused
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Grafana — Dashboards & visualisation ---
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: dex-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ENABLE_GZIP=true
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- cAdvisor — Container metrics (OOM, CPU throttle, mem usage) ---
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: dex-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: false
+    devices:
+      - /dev/kmsg
+    command:
+      - -docker_only=true
+      - -housekeeping_interval=10s
+    restart: unless-stopped
+
+  # --- Tempo — Traces storage ---
+  tempo:
+    image: grafana/tempo:2.4.0
+    container_name: dex-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"
+      - "4318:4318"
+    volumes:
+      - ./monitoring/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3200/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- PostgreSQL — Shared state for dex-studio ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: dex-postgres
+    environment:
+      - POSTGRES_USER=dex
+      - POSTGRES_PASSWORD=dex
+      - POSTGRES_DB=dex
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dex -d dex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # --- Elasticsearch — Lexical search for movie-dex ---
+  elasticsearch:
+    image: elasticsearch:9.1.0
+    container_name: dex-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - cluster.name=dex
+      - ingest.geoip.downloader.enabled=false
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Kafka — Streaming message bus ---
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: dex-kafka
+    environment:
+      # KRaft mode — no Zookeeper needed
+      # Dual listener: PLAINTEXT (29092) for container-to-container traffic
+      # (schema-registry, kafka-ui, containerized dex-studio); PLAINTEXT_HOST
+      # (9092) advertised as localhost for host-side dev processes — Kafka
+      # tells clients to reconnect using the advertised name after the
+      # initial handshake, so a single "kafka:9092" listener is unreachable
+      # from anything outside the compose network.
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:29092,PLAINTEXT_HOST://:9092,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - CLUSTER_ID=2lUvAU82Tm6KjCCjTYYabQ
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Schema Registry — Avro/Protobuf schema management ---
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.9.0
+    container_name: dex-schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      - SCHEMA_REGISTRY_HOST_NAME=schema-registry
+      - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=kafka:29092
+      - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
+    depends_on:
+      kafka:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+
+  # --- Kafka UI — Browse topics, partitions, messages ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: dex-kafka-ui
+    ports:
+      - "9091:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=dex
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  tempo_data:
+  postgres_data:
+  es_data:
+  dex_studio_home:
+  kafka_data:
+  dex_data:
+  redis_data:
+
+networks:
+  default:
+    name: dex

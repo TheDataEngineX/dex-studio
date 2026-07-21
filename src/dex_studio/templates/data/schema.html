@@ -1,138 +1,169 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block title %}Schema Contracts — Lakehouse — DEX Studio{% endblock %}
+{% block title %}Schema Contracts — DEX Studio{% endblock %}
 
 {% block page_title %}Schema Contracts{% endblock %}
-{% block page_sub %}snapshot expected schemas · detect drift · accept changes to update contracts{% endblock %}
+{% block page_sub %}{{ contracts | length }} pipeline{{ 's' if contracts | length != 1 }} · Drift detection & evolution{% endblock %}
+
+{% block page_actions %}
+<button class="btn primary" onclick="snapshotAll()">
+  <i data-lucide="camera" style="width:12px;height:12px"></i> Snapshot all
+</button>
+{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
+<div class="animate-fade-in">
 
-  {# ── Metric strip ── #}
-  {% set open_drifts = drift_events | rejectattr('accepted') | list | length %}
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-    {{ metric_card("Contracts", contracts | selectattr('has_contract') | list | length, "file-code", "indigo", "defined") }}
-    {{ metric_card("Pipelines", pipeline_count, "workflow", "blue") }}
-    {{ metric_card("Open Drift", open_drifts, "alert-triangle", "red" if open_drifts else "green", "events") }}
-  </div>
-
-  {# ── Contracts table ── #}
-  <div class="card bare" style="margin-bottom:20px;overflow:hidden">
-    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
-      <h2 style="font-size:13px">Pipeline Contracts</h2>
-      <span class="muted" style="font-size:11px">Snapshot the current schema to create or refresh a contract.</span>
-    </div>
-    <table class="dex-table">
-      <thead>
-        <tr>
-          <th>Pipeline</th>
-          <th style="text-align:right">Columns</th>
-          <th>Recorded at</th>
-          <th style="text-align:right;width:120px">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in contracts %}
-        <tr>
-          <td>
-            <span class="mono" style="font-size:12px;font-weight:500">{{ c.pipeline }}</span>
-            {% if not c.has_contract %}
-            <span class="badge" style="background:color-mix(in oklch,var(--amber-9) 12%,transparent);color:var(--amber-11);border-color:var(--amber-6);margin-left:4px">no contract</span>
-            {% endif %}
-          </td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums">
-            {{ c.columns | length if c.has_contract else '—' }}
-          </td>
-          <td class="muted" style="font-size:12px">
-            {{ c.recorded_at[:19] | replace('T', ' ') if c.recorded_at else '—' }}
-          </td>
-          <td style="text-align:right">
+{# ── Contracts table ───────────────────────────────────────────────────────── #}
+<div class="card card-bare">
+  {% if contracts %}
+  <table class="tbl" id="schema-table" style="font-size:var(--text-sm)">
+    <thead>
+      <tr>
+        <th class="sortable" data-sort-key="pipeline" onclick="sortSchemaTable(this)">Pipeline</th>
+        <th class="sortable" data-sort-key="contract" onclick="sortSchemaTable(this)">Contract</th>
+        <th class="sortable" data-sort-key="columns" onclick="sortSchemaTable(this)">Columns</th>
+        <th class="sortable" data-sort-key="recorded" onclick="sortSchemaTable(this)">Recorded</th>
+        <th style="width:140px"></th>
+      </tr>
+    </thead>
+    <tbody id="schema-table-body">
+      {% for c in contracts %}
+      {% set has_contract = c.has_contract %}
+      <tr class="list-row"
+          data-pipeline="{{ c.pipeline }}"
+          data-has-contract="{{ 'true' if has_contract else 'false' }}"
+          data-sort-pipeline="{{ c.pipeline }}"
+          data-sort-contract="{{ 'yes' if has_contract else 'no' }}"
+          data-sort-columns="{{ c.columns | length }}"
+          data-sort-recorded="{{ c.recorded_at or '' }}">
+        <td class="mono" style="font-weight:500;color:var(--text)">{{ c.pipeline }}</td>
+        <td>
+          {% if has_contract %}
+          <span class="pill success" style="height:18px;font-size:9.5px">
+            <i data-lucide="check-circle-2" style="width:10px;height:10px"></i> Active
+          </span>
+          {% else %}
+          <span class="pill" style="height:18px;font-size:9.5px">Missing</span>
+          {% endif %}
+        </td>
+        <td class="num mono dim" style="font-size:var(--text-xs)">{{ c.columns | length }}</td>
+        <td class="mono dim" style="font-size:var(--text-xs)">{{ c.recorded_at | fmt_ts_iso | fmt_ts or '—' }}</td>
+        <td>
+          <div class="row row-action" style="gap:2px;justify-content:flex-end">
+            {% if not has_contract %}
             <form method="post" action="/data/schema/{{ c.pipeline }}/snapshot" style="display:inline">
-              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px">
-                <i data-lucide="camera" style="width:11px;height:11px"></i>
-                {{ 'Snapshot' if not c.has_contract else 'Re-snapshot' }}
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="btn icon ghost sm" title="Create snapshot">
+                <i data-lucide="camera" style="width:12px;height:12px"></i>
               </button>
             </form>
-          </td>
-        </tr>
-        {% if c.has_contract and c.columns %}
-        <tr style="background:var(--bg-elev)">
-          <td colspan="4" style="padding:6px 14px">
-            <div style="display:flex;flex-wrap:wrap;gap:4px">
-              {% for col, typ in c.columns.items() %}
-              <span style="font-size:11px;padding:1px 6px;border-radius:var(--r-1);background:var(--bg-base);border:1px solid var(--border);font-family:var(--font-mono)">
-                <span style="color:var(--text)">{{ col }}</span>
-                <span style="color:var(--text-4);margin-left:3px">{{ typ }}</span>
-              </span>
-              {% endfor %}
-            </div>
-          </td>
-        </tr>
-        {% endif %}
-        {% else %}
-        <tr>
-          <td colspan="4">
-            {{ empty_state("file-code", "No pipelines found.", "Configure a pipeline to start capturing schema contracts.") }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {# ── Drift events ── #}
-  {% if drift_events %}
-  <div class="card bare" style="overflow:hidden">
-    <div class="section-h" style="padding:12px 14px;margin-bottom:0;border-bottom:1px solid var(--border)">
-      <h2 style="font-size:13px">Drift Events</h2>
-      <span class="muted" style="font-size:11px">Accept to promote the new schema as the active contract.</span>
-    </div>
-    <table class="dex-table">
-      <thead>
-        <tr>
-          <th>Pipeline</th>
-          <th>Detected at</th>
-          <th>Changes</th>
-          <th style="text-align:right;width:140px">Status / Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ev in drift_events %}
-        <tr {% if ev.accepted %}style="opacity:0.55"{% endif %}>
-          <td class="mono" style="font-size:12px;font-weight:500">{{ ev.pipeline }}</td>
-          <td class="muted" style="font-size:12px">{{ ev.detected_at[:19] | replace('T', ' ') }}</td>
-          <td>
-            <div style="display:flex;flex-wrap:wrap;gap:3px">
-              {% for ch in ev.drift %}
-              {% set color = 'green' if ch.kind == 'added' else ('red' if ch.kind == 'removed' else 'amber') %}
-              <span class="badge" style="background:color-mix(in oklch,var(--{{ color }}-9) 12%,transparent);color:var(--{{ color }}-11);border-color:var(--{{ color }}-6);font-size:10px">
-                {{ ch.kind }}: {{ ch.column }}
-                {% if ch.old_type and ch.new_type %} ({{ ch.old_type }} → {{ ch.new_type }}){% endif %}
-              </span>
-              {% endfor %}
-            </div>
-          </td>
-          <td style="text-align:right">
-            {% if ev.accepted %}
-            <span class="pill ok" style="font-size:10px">Accepted</span>
             {% else %}
-            <form method="post" action="/data/schema/drift/{{ ev.id }}/accept" style="display:inline">
-              <input type="hidden" name="pipeline" value="{{ ev.pipeline }}">
-              <button class="btn ghost" style="font-size:11px;height:26px;padding:0 10px;color:var(--green-9);border-color:var(--green-6)">
-                <i data-lucide="check" style="width:11px;height:11px"></i> Accept drift
-              </button>
-            </form>
+            <button class="btn icon ghost sm" title="View drift history" onclick="viewDrift('{{ c.pipeline }}')">
+              <i data-lucide="git-compare" style="width:12px;height:12px"></i>
+            </button>
             {% endif %}
-          </td>
-        </tr>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)">
+    <i data-lucide="file-code" class="icon"></i>
+    <div class="title">No pipelines configured</div>
+    <div class="desc">Add pipelines to track schema contracts.</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Drift Events ──────────────────────────────────────────────────────────── #}
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h">
+    <h2>Drift Events</h2>
+  </div>
+  {% if drift_events %}
+  <div class="col" style="gap:0">
+    {% for d in drift_events %}
+    <div class="card" data-drift-pipeline="{{ d.pipeline }}" style="padding:var(--space-3);background:{{ 'color-mix(in oklch,var(--error-9) 8%,transparent)' if d.severity == 'breaking' else 'color-mix(in oklch,var(--warning-9) 8%,transparent)' }};border-color:{{ 'color-mix(in oklch,var(--error-9) 20%,transparent)' if d.severity == 'breaking' else 'color-mix(in oklch,var(--warning-9) 20%,transparent)' }}">
+      <div class="row" style="justify-content:space-between;margin-bottom:var(--space-2)">
+        <div class="row" style="gap:var(--space-2);align-items:center">
+          <span class="pill {{ 'error' if d.severity == 'breaking' else 'warning' }}" style="font-size:var(--text-xs);height:18px">
+            {{ d.severity | upper }}
+          </span>
+          <span class="mono" style="font-weight:500;font-size:var(--text-sm)">{{ d.pipeline }}</span>
+        </div>
+        <span class="muted" style="font-size:var(--text-xs);font-variant-numeric:tabular-nums">{{ d.detected_at | fmt_ts_iso | fmt_ts }}</span>
+      </div>
+      <div style="font-size:var(--text-xs);color:var(--text-2)">
+        {{ d.changes | length }} change{{ 's' if d.changes | length != 1 }} · 
+        {% for ch in d.changes[:3] %}
+        <span class="layer-chip {{ 'error' if ch.type == 'column_removed' else 'warning' if ch.type == 'type_changed' else 'info' }}" style="font-size:var(--text-xs);height:16px;padding:0 6px">{{ ch.type }}: {{ ch.column }}</span>
         {% endfor %}
-      </tbody>
-    </table>
+        {% if d.changes | length > 3 %}<span class="muted">+{{ d.changes | length - 3 }} more</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
-  {{ empty_state("file-code", "No drift events recorded.", "Snapshot a contract above, then run pipelines — DEX Studio will detect schema changes automatically.") }}
+  <div class="empty-state" style="padding:var(--space-8)">
+    <i data-lucide="check-circle-2" class="icon" style="color:var(--success-9)"></i>
+    <div class="title">No drift detected</div>
+    <div class="desc">All pipeline schemas match their contracts.</div>
+  </div>
   {% endif %}
+</div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => lucide.createIcons());
+
+function sortSchemaTable(th) {
+  const table = document.getElementById('schema-table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr.list-row'));
+  const key = th.dataset.sortKey;
+  const asc = !th.classList.contains('sort-asc');
+
+  table.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+  rows.sort((a, b) => {
+    const av = a.dataset['sort-' + key] || '';
+    const bv = b.dataset['sort-' + key] || '';
+    const an = parseFloat(av.replace(/[^0-9.-]/g, ''));
+    const bn = parseFloat(bv.replace(/[^0-9.-]/g, ''));
+    const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+    return asc ? cmp : -cmp;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function snapshotAll() {
+  const pipelines = Array.from(document.querySelectorAll('[data-pipeline]')).map(r => r.dataset.pipeline);
+  pipelines.forEach((p, i) => {
+    setTimeout(() => {
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/data/schema/' + encodeURIComponent(p) + '/snapshot';
+      form.innerHTML = '<input type="hidden" name="_csrf" value="' + document.querySelector('meta[name="csrf-token"]').content + '">';
+      document.body.appendChild(form);
+      form.submit();
+    }, i * 200);
+  });
+}
+
+function viewDrift(pipeline) {
+  const target = document.querySelector('[data-drift-pipeline="' + CSS.escape(pipeline) + '"]');
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const prevOutline = target.style.outline;
+  target.style.outline = '2px solid var(--accent-9)';
+  setTimeout(() => { target.style.outline = prevOutline; }, 1200);
+}
+</script>
 {% endblock %}

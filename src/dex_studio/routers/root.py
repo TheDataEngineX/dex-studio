@@ -1,4 +1,4 @@
-"""Root routes: /, /onboarding, /login, /logout."""
+"""Root routes: /, /onboarding, /login, /logout, /login/oidc, /auth/callback."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from dex_studio import oidc
 from dex_studio._engine import (
     USER_PROJECTS_DIR,
     copy_example_to_user_dir,
@@ -243,7 +244,7 @@ def hub(request: Request, eng: ReadDep) -> HTMLResponse:
         "source_count": source_count,
         "model_count": len(eng.model_registry.list_models()),
         "agent_count": len(eng.agents),
-        "table_count": source_count + extra_tables,
+        "table_count": extra_tables,
         "health_status": health.get("status", "unknown"),
         "layer_stats": layer_stats,
         "components": components,
@@ -282,14 +283,14 @@ def onboarding_page(request: Request) -> HTMLResponse:
 
 
 @router.post("/onboarding/open")
-def onboarding_open(
+async def onboarding_open(
     request: Request,
     config_path: Annotated[str, Form()],
     is_example: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    verify_csrf(request)
+    await verify_csrf(request)
     path = config_path.strip()
     if not path:
         request.session["onboarding_error"] = "Enter or select a path to a dex.yaml file."
@@ -316,14 +317,14 @@ def onboarding_open(
 
 
 @router.post("/onboarding/create")
-def onboarding_create(
+async def onboarding_create(
     request: Request,
     project_name: Annotated[str, Form()] = "",
     project_path: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     if not is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
-    verify_csrf(request)
+    await verify_csrf(request)
     import re as _re
 
     name = _re.sub(r"[\x00-\x1f\x7f]", "", project_name.strip())[:64] or "my-project"
@@ -464,6 +465,7 @@ def login_page(request: Request) -> HTMLResponse | RedirectResponse:
         "project_name": "DEX Studio",
         "engine_ready": False,
         "error": request.session.pop("login_error", ""),
+        "oidc_enabled": oidc.oidc_enabled(),
     }
     return render(request, "root/login.html", ctx)
 
@@ -489,9 +491,38 @@ def login_submit(
     return RedirectResponse("/login", status_code=303)
 
 
+@router.get("/login/oidc")
+def login_oidc(request: Request) -> RedirectResponse:
+    """Start the Authentik authorization-code flow (additional login path)."""
+    if not oidc.oidc_enabled():
+        request.session["login_error"] = "SSO login is not configured."
+        return RedirectResponse("/login", status_code=303)
+    redirect_uri = str(request.url_for("auth_callback"))
+    return oidc.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/auth/callback")
+def auth_callback(request: Request, code: str = "", state: str = "") -> RedirectResponse:
+    """Authentik redirects here with ?code=&state= after the user authenticates."""
+    if not oidc.oidc_enabled() or not code or not state:
+        request.session["login_error"] = "SSO login failed."
+        return RedirectResponse("/login", status_code=303)
+    redirect_uri = str(request.url_for("auth_callback"))
+    try:
+        claims = oidc.handle_callback(request, code=code, state=state, redirect_uri=redirect_uri)
+    except oidc.OIDCError as exc:
+        log.warning("oidc login failed", error=str(exc))
+        request.session["login_error"] = "SSO login failed."
+        return RedirectResponse("/login", status_code=303)
+    oidc.login_via_claims(request, claims)
+    _get_csrf_token(request)
+    log.info("oidc login successful", ip=get_client_ip(request))
+    return RedirectResponse("/", status_code=303)
+
+
 @router.post("/logout")
-def logout_route(request: Request) -> RedirectResponse:
-    verify_csrf(request)
+async def logout_route(request: Request) -> RedirectResponse:
+    await verify_csrf(request)
     log.info("user logged out", ip=request.client.host if request.client else "unknown")
     logout(request)
     return RedirectResponse("/login", status_code=303)

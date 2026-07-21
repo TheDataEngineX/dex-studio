@@ -5,6 +5,26 @@ All notable changes to `dex-studio` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-07-07
+
+### Added
+
+- **Content domain** — `routers/content.py` + `templates/content/explorer.html` for cross-source recommendation compare, watch-provider tables, and match-confidence views
+- **Authentik OIDC** (`oidc.py`) — session-based auth with Authentik as OpenID Connect provider
+- **Schema evolution** (`schema_evolution.py`) — schema change detection and migration UI
+- **Embedding management** (`embeddings.py`) — embedding search and management views
+- **Quality evaluation** (`quality_eval.py`, `run_checks.py`) — standalone quality check runner
+- **Notification support** (`notify.py`) — event notification dispatch
+- **Log infrastructure** (`logging_setup.py`, `logstore.py`) — structlog configuration and in-app log capture
+- **Store abstraction** (`store.py`, `db_store.py`) — storage layer helpers
+- **Test expansion** — `integration/`, `system/`, `security/`, `performance/`, `regression/` test suites
+- **E2E testing** — Playwright-based screenshot capture (`scripts/demo/browser_segments.py`) and video recording (`scripts/demo/record.py`)
+
+### Changed
+
+- **Router count** — seven routers now mounted (root, data, intelligence, secops, system, api, content)
+- **Static files** — `_json.py` added for orjson-backed JSON serialization
+
 ## [0.5.1] - 2026-06-30
 
 ### Added

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from unittest.mock import MagicMock, patch  # noqa: F401 (patch used in with-blocks)
 
 import pytest
@@ -40,23 +40,14 @@ def _make_engine_mock() -> MagicMock:
     return eng
 
 
-def _patch_db_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Patch all db_store I/O so tests run without a real Postgres connection."""
-    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=None))
-    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
-    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
-
-
 @pytest.fixture
-def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def unauthed_client(
+    monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+) -> Generator[TestClient]:
     """Client with passphrase set via env var but no session — every request is unauthenticated."""
     monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-    _patch_db_store(monkeypatch)
+    patch_db()
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app
@@ -66,11 +57,13 @@ def unauthed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
 
 
 @pytest.fixture
-def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
+def authed_client(
+    monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+) -> Generator[TestClient]:
     """Client with a valid session (logged in via POST /login)."""
     monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", _API_KEY)
     monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-    _patch_db_store(monkeypatch)
+    patch_db()
     mock_eng = _make_engine_mock()
     with patch("dex_studio._engine.get_engine", return_value=mock_eng):
         from dex_studio.app import create_app

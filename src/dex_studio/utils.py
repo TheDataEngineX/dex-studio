@@ -72,6 +72,16 @@ def fmt_bytes(n: int | None) -> str:
     return f"{n:.1f} TB"
 
 
+def fmt_intword(n: int | None) -> str:
+    """Format a large integer compactly (1_234 -> '1.2K', 3_400_000 -> '3.4M')."""
+    if n is None:
+        return "—"
+    for suffix, threshold in (("B", 1_000_000_000), ("M", 1_000_000), ("K", 1_000)):
+        if abs(n) >= threshold:
+            return f"{n / threshold:.1f}{suffix}"
+    return str(n)
+
+
 def fmt_run_row(r: Any, **extra: Any) -> dict[str, Any]:
     """Serialize a pipeline run record to a display dict.
 

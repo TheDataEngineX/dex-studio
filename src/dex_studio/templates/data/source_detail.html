@@ -11,69 +11,89 @@
 {% endblock %}
 
 {% block content %}
-<!-- Stats -->
-{% if stats %}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
-  {% for k, v in stats.items() %}
-  {{ metric_card(k, v, "bar-chart-2", "indigo") }}
-  {% endfor %}
-</div>
-{% endif %}
+<div x-data="{ tab: '{{ request.query_params.get('tab', 'overview') }}' }">
+  <div class="domain-tabs">
+    <a href="#" class="domain-tab" :class="tab==='overview' ? 'active' : ''" @click.prevent="tab='overview'">Overview</a>
+    <a href="#" class="domain-tab" :class="tab==='used-by' ? 'active' : ''" @click.prevent="tab='used-by'">Used-by</a>
+  </div>
 
-<!-- Schema -->
-<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Schema</h3>
-{% if schema %}
-<div class="card" style="overflow:hidden;margin-bottom:24px">
-  <table class="dex-table tbl" style="width:100%">
-    <thead>
-      <tr>
-        <th>Column</th>
-        <th>Type</th>
-        <th>Nullable</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for col in schema %}
-      <tr>
-        <td class="mono" style="font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
-        <td><span class="pill" style="background:var(--blue-3);color:var(--blue-11)">{{ col.get("column_type","") }}</span></td>
-        <td style="font-size:12px;color:var(--text-3)">{{ "yes" if col.get("nullable") else "no" }}</td>
-      </tr>
+  {# ── Overview tab (existing Stats/Schema/Sample content) ────── #}
+  <div x-show="tab==='overview'" style="padding-top:16px">
+    {% if stats %}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+      {% for k, v in stats.items() %}
+      {{ metric_card(k, v, "bar-chart-2", "indigo") }}
       {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% else %}
-{{ empty_state("table", "No schema information available") }}
-{% endif %}
+    </div>
+    {% endif %}
 
-<!-- Sample -->
-<h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Sample Data</h3>
-{% if sample_rows %}
-<div class="card" style="overflow:auto">
-  <table class="dex-table tbl" style="width:100%;min-width:600px">
-    <thead>
-      <tr>
-        {% for col in sample_cols %}<th>{{ col }}</th>{% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in sample_rows %}
-      <tr>
-        {% for col in sample_cols %}
-        {% set cv = row.get(col) %}
-        {% if cv is none %}
-        <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-4);font-style:italic">NULL</td>
-        {% else %}
-        <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
-        {% endif %}
-        {% endfor %}
-      </tr>
+    <h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Schema</h3>
+    {% if schema %}
+    <div class="card" style="overflow:hidden;margin-bottom:24px">
+      <table class="dex-table tbl" style="width:100%">
+        <thead>
+          <tr>
+            <th>Column</th>
+            <th>Type</th>
+            <th>Nullable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for col in schema %}
+          <tr>
+            <td class="mono" style="font-size:12px;font-weight:500">{{ col.get("column_name","") }}</td>
+            <td><span class="pill" style="background:var(--info-3);color:var(--info-9)">{{ col.get("column_type","") }}</span></td>
+            <td style="font-size:12px;color:var(--text-3)">{{ "yes" if col.get("nullable") else "no" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    {{ empty_state("table", "No schema information available") }}
+    {% endif %}
+
+    <h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 10px">Sample Data</h3>
+    {% if sample_rows %}
+    <div class="card" style="overflow:auto">
+      <table class="dex-table tbl" style="width:100%;min-width:600px">
+        <thead>
+          <tr>{% for col in sample_cols %}<th>{{ col }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for row in sample_rows %}
+          <tr>
+            {% for col in sample_cols %}
+            {% set cv = row.get(col) %}
+            {% if cv is none %}
+            <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-4);font-style:italic">NULL</td>
+            {% else %}
+            <td class="mono" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cv }}</td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    {{ empty_state("rows", "No sample data available") }}
+    {% endif %}
+  </div>
+
+  {# ── Used-by tab ─────────────────────────────────────────────────────────── #}
+  <div x-show="tab==='used-by'" style="padding-top:16px">
+    {% if used_by %}
+    <div class="card" style="padding:16px">
+      {% for p in used_by %}
+      <a href="/data/pipelines/{{ p }}" class="stat-chip" style="display:inline-flex;margin:0 6px 6px 0;text-decoration:none">
+        <i data-lucide="workflow" style="width:10px;height:10px"></i> {{ p }}
+      </a>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+    {% else %}
+    {{ empty_state("workflow", "No pipelines use this source yet") }}
+    {% endif %}
+  </div>
 </div>
-{% else %}
-{{ empty_state("rows", "No sample data available") }}
-{% endif %}
 {% endblock %}

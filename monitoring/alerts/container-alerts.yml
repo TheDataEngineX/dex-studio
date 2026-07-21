@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------
+# Container OOM & CPU Throttle Alerts
+# Requires cAdvisor for container-level metrics.
+# ---------------------------------------------------------------
+groups:
+  - name: dex_container_alerts
+    rules:
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total{container_label_com_docker_compose_service="dex-studio"} > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "Container OOM-killed: {{ $labels.container_label_com_docker_compose_service }}"
+          description: "{{ $labels.name }} was OOM-killed. Increase memory limit or reduce pipeline batch size. Current limit: see compose file."
+
+      - alert: ContainerCPUThrottled
+        expr: rate(container_cpu_cfs_throttled_seconds_total{container_label_com_docker_compose_service="dex-studio"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Container CPU throttling: {{ $labels.container_label_com_docker_compose_service }}"
+          description: "{{ $labels.name }} throttled for >10s in 5m window. Increase CPU limit."
+
+      - alert: ContainerMemoryNearLimit
+        expr: container_memory_working_set_bytes{container_label_com_docker_compose_service="dex-studio"} / container_spec_memory_limit_bytes{container_label_com_docker_compose_service="dex-studio"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Container memory near limit: {{ $labels.container_label_com_docker_compose_service }}"
+          description: "{{ $labels.name }} is using >85% of memory limit. Increase limit or investigate leak."

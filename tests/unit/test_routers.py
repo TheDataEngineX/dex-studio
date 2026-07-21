@@ -80,6 +80,20 @@ class TestHub:
         assert resp.status_code == 200
 
 
+class TestContentRoutes:
+    def test_content_explorer_renders_without_materialized_tables(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("dex_studio.routers._deps.is_authenticated", lambda _request: True)
+        resp = client.get("/content/explorer")
+        assert resp.status_code == 200
+        assert "Content Explorer" in resp.text
+
+    def test_enrichment_requires_admin_bearer_token(self, client: TestClient) -> None:
+        resp = client.post("/content/admin/enrich", json={"movie_id": 101})
+        assert resp.status_code == 401
+
+
 class TestDataRoutes:
     def test_data_dashboard(self, client: TestClient) -> None:
         resp = client.get("/data/")

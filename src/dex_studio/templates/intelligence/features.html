@@ -1,136 +1,71 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state, metric_card, status_badge %}
 
 {% block title %}Features — DEX Studio{% endblock %}
-{% block page_title %}Feature Store{% endblock %}
-{% block page_sub %}
-  {% if feature_groups %}
-    <p class="page-sub">{{ feature_groups | length }} group{{ 's' if feature_groups | length != 1 }} · training-serving consistency · intelligence domain</p>
-  {% else %}
-    <p class="page-sub">training-serving consistency · computed feature groups · powered by gold layer pipelines</p>
-  {% endif %}
-{% endblock %}
-{% block page_actions %}
-<a href="/data/pipelines" class="btn sm ghost">
-  <i data-lucide="git-branch" style="width:12px;height:12px"></i> Browse pipelines
-</a>
-{% endblock %}
+
+{% block page_title %}Features{% endblock %}
+{% block page_sub %}{{ total_features }} features across {{ feature_groups | length }} groups · {{ total_rows | intword }} rows{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-intelligence)">
+<div class="animate-fade-in">
 
-{# ── Metric strip ── #}
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-  {{ metric_card("Feature groups", feature_groups | length, "layers", "violet", "from gold layer") }}
-  {{ metric_card("Total features", total_features if total_features else "—", "list", "violet", "across all groups") }}
-  {{ metric_card("Total rows", total_rows if total_rows else "—", "database", "orange", "across all groups") }}
-  {% if consistency %}
-  {% set ok_count = consistency | selectattr('status', 'equalto', 'ok') | list | length %}
-  {% set total_ck = consistency | length %}
-  {{ metric_card("Consistency", ok_count ~ "/" ~ total_ck, "shield-check", "violet", "models checked") }}
-  {% endif %}
+<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+  <div class="stat"><div class="lbl"><i data-lucide="layers" style="width:14px;height:14px;color:var(--domain-intelligence)"></i> Feature Groups</div><div class="val">{{ feature_groups | length }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="database" style="width:14px;height:14px;color:var(--info-9)"></i> Total Features</div><div class="val">{{ total_features }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="table-2" style="width:14px;height:14px;color:var(--success-9)"></i> Total Rows</div><div class="val">{{ total_rows }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="alert-triangle" style="width:14px;height:14px;color:var(--warning-9)"></i> Consistency Issues</div><div class="val delta down">{{ consistency | selectattr('status','equalto','warn') | list | length }}</div></div>
 </div>
 
-{# ── Two-column layout ── #}
-{% if feature_groups or consistency %}
-<div class="grid" style="grid-template-columns:{% if consistency %}1fr 1fr{% else %}1fr{% endif %};gap:16px;align-items:start">
-
-{# ── Left: Feature groups table ── #}
-{% if feature_groups %}
-<div>
-  <div class="section-h">
-    <h2>Feature groups</h2>
-    <div class="input-icon" style="width:180px">
-      <i data-lucide="search" class="icon" style="width:11px;height:11px"></i>
-      <input class="input dex-table-filter" placeholder="Filter groups…"
-             data-table="features-tbl" style="font-size:12px;height:26px">
-    </div>
-  </div>
-  <div class="card bare" style="overflow:hidden">
-    <table class="dex-table" id="features-tbl" style="width:100%">
-      <thead>
-        <tr>
-          <th class="sortable">Name</th>
-          <th class="sortable num">Columns</th>
-          <th class="sortable num">Rows</th>
-          <th>Preview</th>
-        </tr>
-      </thead>
+<div class="card">
+  <div class="section-h"><h2>Feature Groups</h2></div>
+  {% if feature_groups %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Group</th><th>Features</th><th>Rows</th><th>Created</th><th>Description</th></tr></thead>
       <tbody>
         {% for g in feature_groups %}
         <tr>
-          <td class="mono" style="font-size:12px;font-weight:600;color:var(--accent-11)">{{ g.name }}</td>
-          <td class="mono num" style="font-size:12px">{{ g.columns | length if g.columns is defined and g.columns else 0 }}</td>
-          <td class="mono num" style="font-size:12px">{{ g.row_count | default('—') }}</td>
-          <td style="font-size:11px;color:var(--text-3);max-width:220px">
-            {% if g.columns is defined and g.columns %}
-              <span style="word-break:break-all">{{ g.columns[:5] | join(', ') }}{% if g.columns | length > 5 %} <span class="muted">+{{ g.columns | length - 5 }} more</span>{% endif %}</span>
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
-          </td>
+          <td class="mono" style="font-weight:500">{{ g.name }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ (g.columns | length) if g.columns else '—' }}</td>
+          <td class="mono tnum" style="font-size:var(--text-xs)">{{ (g.row_count | intword) if g.row_count else '—' }}</td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ g.created_at | default('—') }}</td>
+          <td class="muted" style="font-size:var(--text-xs);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.description | default('—') }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="layers" class="icon"></i><div class="title">No feature groups</div><div class="desc">Create feature groups in the feature store.</div></div>
+  {% endif %}
 </div>
-{% endif %}
 
-{# ── Right: Model feature consistency ── #}
-{% if consistency %}
-<div>
-  <div class="section-h">
-    <h2>Model feature consistency</h2>
-    {% set missing_ct = consistency | selectattr('status', 'equalto', 'warn') | list | length %}
-    {% if missing_ct > 0 %}
-    <span class="pill error" style="font-size:10px">{{ missing_ct }} gap{{ 's' if missing_ct != 1 }}</span>
-    {% else %}
-    <span class="pill success" style="font-size:10px">all matched</span>
-    {% endif %}
-  </div>
-  <div class="card bare" style="overflow:hidden">
-    <table class="dex-table" style="width:100%">
-      <thead>
-        <tr>
-          <th class="sortable">Model</th>
-          <th class="sortable num">Required</th>
-          <th class="sortable num">Missing</th>
-          <th style="width:80px">Status</th>
-        </tr>
-      </thead>
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Model-Feature Consistency</h2></div>
+  {% if consistency %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Model</th><th>Required Features</th><th>Available</th><th>Missing</th><th>Status</th></tr></thead>
       <tbody>
         {% for c in consistency %}
         <tr>
-          <td class="mono" style="font-size:12px;font-weight:500">{{ c.model }}</td>
-          <td class="mono num" style="font-size:12px">{{ c.required | length }}</td>
-          <td class="mono num" style="font-size:12px">
-            {% if c.missing %}
-              <span style="color:var(--red-11)">{{ c.missing | length }}</span>
-            {% else %}
-              <span class="muted">0</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if c.status == 'ok' %}
-              {{ status_badge("ok") }}
-            {% else %}
-              <span class="pill error" style="font-size:10px">{{ c.missing | length }} missing</span>
-            {% endif %}
-          </td>
+          <td class="mono" style="font-weight:500">{{ c.model }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ c.required | length }}</td>
+          <td class="mono tnum" style="font-size:var(--text-xs)">{{ c.available }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ c.missing | length }}</td>
+          <td><span class="pill {{ 'success' if c.status == 'ok' else 'warning' }}" style="height:18px;font-size:var(--text-xs)">{{ c.status | upper }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="check-circle-2" class="icon" style="color:var(--success-9)"></i><div class="title">All models consistent</div><div class="desc">No missing features detected.</div></div>
+  {% endif %}
 </div>
-{% endif %}
-
-</div>{# /grid #}
-
-{% else %}
-{{ empty_state("layers", "No feature groups yet", "Feature groups are built from pipeline outputs. Run a pipeline to ingest data first.") }}
-{% endif %}
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

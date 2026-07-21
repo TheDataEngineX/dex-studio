@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -139,42 +140,35 @@ class TestSessionCookieConstant:
         assert SESSION_COOKIE == "dex_session"
 
 
-def _patch_db(monkeypatch: pytest.MonkeyPatch, *, return_hash: str | None = None) -> None:
-    """Patch all db_store functions used during app lifecycle and request handling."""
-    monkeypatch.setattr("dex_studio.db_store.init_db", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_setting", MagicMock(return_value=return_hash))
-    monkeypatch.setattr("dex_studio.db_store.set_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_setting", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.get_projects", MagicMock(return_value=[]))
-    monkeypatch.setattr("dex_studio.db_store.set_project", MagicMock())
-    monkeypatch.setattr("dex_studio.db_store.delete_project", MagicMock())
-
-
 class TestAuthRequired:
-    def test_login_page_always_accessible(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_login_page_always_accessible(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch)
+        patch_db()
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
         assert TestClient(create_app()).get("/login").status_code == 200
 
-    def test_setup_page_accessible_when_no_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_setup_page_accessible_when_no_password(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=None)
+        patch_db(return_hash=None)
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
         assert TestClient(create_app(), follow_redirects=False).get("/setup").status_code == 200
 
     def test_setup_page_redirects_to_login_when_password_exists(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch)
+        patch_db()
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
@@ -202,20 +196,24 @@ class TestAuthRequired:
         assert "/login" in resp.headers.get("location", "")
         assert "auth.hash" in stored
 
-    def test_setup_post_rejects_short_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_setup_post_rejects_short_password(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=None)
+        patch_db(return_hash=None)
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
         resp = TestClient(create_app()).post("/setup", data={"password": "short"})
         assert resp.status_code == 200
 
-    def test_onboarding_is_public(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_onboarding_is_public(
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
+    ) -> None:
         monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch)
+        patch_db()
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
@@ -224,11 +222,11 @@ class TestAuthRequired:
         )
 
     def test_protected_route_redirects_when_not_authed(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         monkeypatch.setenv("DEX_STUDIO_PASSPHRASE", "secret")
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch)
+        patch_db()
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 
@@ -237,11 +235,11 @@ class TestAuthRequired:
         assert "/login" in resp.headers.get("location", "")
 
     def test_protected_route_redirects_to_setup_when_no_password(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, patch_db: Callable[..., None]
     ) -> None:
         monkeypatch.delenv("DEX_STUDIO_PASSPHRASE", raising=False)
         monkeypatch.setenv("DEX_STUDIO_SESSION_SECRET", _SESSION_SECRET)
-        _patch_db(monkeypatch, return_hash=None)
+        patch_db(return_hash=None)
         monkeypatch.setattr("dex_studio._engine.get_engine", lambda: None)
         from dex_studio.app import create_app
 

@@ -1,34 +1,34 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
-{% block title %}Connection Pool — System — DEX Studio{% endblock %}
-{% block page_title %}Connection Pool{% endblock %}
-{% block page_sub %}{{ sources|length }} configured data source{{ 's' if sources|length != 1 }}{% endblock %}
+{% block title %}Connections — DEX Studio{% endblock %}
+
+{% block page_title %}Connections{% endblock %}
+{% block page_sub %}Configured data source connections{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
+<div class="animate-fade-in">
+
+<div class="card">
+  <div class="section-h"><h2>Data Sources</h2></div>
   {% if sources %}
-  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
-    {% for s in sources %}
-    <div class="card" style="padding:14px 16px;border-left:3px solid var(--domain-system)">
-      <div class="row" style="gap:8px;margin-bottom:8px">
-        <span class="glyph" style="width:28px;height:28px;border-radius:var(--r-2);background:color-mix(in oklch,var(--green-4) 60%,var(--bg-elev))">
-          <i data-lucide="database" style="width:13px;height:13px;color:var(--green-10)"></i>
-        </span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</div>
-          <div class="muted mono" style="font-size:10px">{{ s.type }}</div>
-        </div>
-        <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px;background:var(--green-9);box-shadow:0 0 0 2px color-mix(in oklch,var(--green-9) 25%,transparent)"></span>
-      </div>
-      {% if s.path %}
-      <div class="muted mono" style="font-size:10.5px;padding-top:6px;border-top:1px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ s.path }}">{{ s.path }}</div>
-      {% endif %}
-    </div>
-    {% endfor %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Name</th><th>Type</th><th>Path / URL</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for s in sources %}
+        <tr><td class="mono" style="font-weight:500">{{ s.name }}</td><td><span class="pill" style="height:18px;font-size:var(--text-xs)">{{ s.type }}</span></td><td class="mono muted" style="font-size:var(--text-xs);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.path }}</td><td><span class="pill success" style="height:18px;font-size:var(--text-xs)">{{ s.status }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
-  {{ empty_state("plug", "No connections", "Configure data sources in dex.yaml to see them here.") }}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="link" class="icon"></i><div class="title">No sources</div><div class="desc">Add data sources in /data/sources</div></div>
   {% endif %}
 </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

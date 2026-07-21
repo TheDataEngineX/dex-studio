@@ -1,6 +1,9 @@
 """Navigation structure — single source of truth for sidebar, breadcrumbs, and command palette.
 
-Add/remove/rename nav items here; sidebar, breadcrumbs, and ⌘K all update automatically.
+NAV_DOMAINS is authored by hand (drives the two-rail sidebar). Everything
+else — the flat NAV_GROUPS list (breadcrumbs, ⌘K), active_group_id, and
+cmd_palette_pages — is derived from it, so they cannot drift apart again.
+Add/remove/rename nav items in NAV_DOMAINS only.
 """
 
 from __future__ import annotations
@@ -27,101 +30,232 @@ def _item(
     return d
 
 
-NAV_GROUPS: list[dict[str, Any]] = [
+_D = _item  # alias for readability in NAV_DOMAINS
+
+
+# ── Two-rail domain structure — single authored source of truth ─────────────
+# Each domain maps to one icon in the 44px rail. page_groups mirrors
+# spec §3.3 Monitor · Explore · Build.
+
+NAV_DOMAINS: list[dict[str, Any]] = [
     {
-        "label": None,
-        "id": "home",
-        "items": [
-            _item("Home", "/", "home", "Project overview & recent activity", exact=True),
+        "id": "content",
+        "label": "Content",
+        "icon": "film",
+        "color": "#f59e0b",
+        "href": "/content/explorer",
+        "prefix": "/content/",
+        "page_groups": [
+            {
+                "label": "Explore",
+                "items": [
+                    _D(
+                        "Movie Explorer",
+                        "/content/explorer",
+                        "film",
+                        "Recommendations, providers, and source matching",
+                    ),
+                ],
+            },
         ],
     },
     {
-        "label": "Data",
         "id": "data",
-        "items": [
-            _item(
-                "Dashboard", "/data/dashboard", "layout-dashboard", "Pipeline health at a glance"
-            ),
-            _item("Sources", "/data/sources", "link", "Connectors and ingest configs"),
-            _item("Catalog", "/data/catalog", "table-2", "Browse bronze / silver / gold"),
-            _item("Warehouse", "/data/warehouse", "database", "Gold layer — BI-ready tables"),
-            _item("SQL", "/data/sql", "hash", "Ad-hoc query editor"),
-            _item("Lineage", "/data/lineage", "share-2", "Trace data flow end-to-end"),
-            _item("Quality", "/data/quality", "shield-check", "Quality tests and scores"),
-            _item("Schema", "/data/schema", "file-code", "Contracts and drift detection"),
+        "label": "Data",
+        "icon": "database",
+        "color": "#60a5fa",
+        "href": "/data/pipelines",
+        "prefix": "/data/",
+        "page_groups": [
+            {
+                "label": "Monitor",
+                "items": [
+                    _D(
+                        "Dashboard",
+                        "/data/dashboard",
+                        "layout-dashboard",
+                        "Pipeline health at a glance",
+                    ),
+                    _D("Pipelines", "/data/pipelines", "workflow", "DAG runner — bronze → gold"),
+                    _D(
+                        "Watermarks",
+                        "/data/watermarks",
+                        "droplets",
+                        "Ingestion cursors and dedup state",
+                    ),
+                    _D("Quality", "/data/quality", "shield-check", "Quality tests and scores"),
+                    _D("Streaming", "/data/streaming", "radio", "SSE / Kafka consumers"),
+                ],
+            },
+            {
+                "label": "Explore",
+                "items": [
+                    _D("Sources", "/data/sources", "link", "Connectors and ingest configs"),
+                    _D("Catalog", "/data/catalog", "table-2", "Browse bronze / silver / gold"),
+                    _D("Warehouse", "/data/warehouse", "database", "Gold layer — BI-ready tables"),
+                    _D("Lineage", "/data/lineage", "share-2", "Trace data flow end-to-end"),
+                    _D("SQL", "/data/sql", "hash", "Ad-hoc query editor"),
+                ],
+            },
+            {
+                "label": "Build",
+                "items": [
+                    _D("Transforms", "/data/transforms", "code-2", "SQL + Python transforms"),
+                    _D("Backfill", "/data/backfill", "rewind", "Reset watermarks and re-ingest"),
+                    _D("Schema", "/data/schema", "file-code", "Contracts and drift detection"),
+                ],
+            },
         ],
     },
     {
-        "label": "Pipelines",
-        "id": "pipelines",
-        "items": [
-            _item("Pipelines", "/data/pipelines", "workflow", "DAG runner — bronze → gold"),
-            _item("Transforms", "/data/transforms", "code-2", "SQL + Python transforms"),
-            _item("Streaming", "/data/streaming", "radio", "SSE / Kafka consumers"),
-            _item("Watermarks", "/data/watermarks", "droplets", "Ingestion cursors / dedup state"),
-            _item("Backfill", "/data/backfill", "rewind", "Reset watermarks and re-ingest"),
-            _item("Runs", "/system/runs", "list", "Unified run history"),
-        ],
-    },
-    {
-        "label": "Intelligence",
         "id": "intelligence",
-        "items": [
-            _item(
-                "Playground",
-                "/intelligence/playground",
-                "message-square",
-                "Chat over your data",
-                badge="live",
-                badge_color="green",
-            ),
-            _item(
-                "Dashboard",
-                "/intelligence/dashboard",
-                "layout-dashboard",
-                "Unified ML + AI health overview",
-            ),
-            _item("Models", "/intelligence/models", "box", "Model registry and deployment"),
-            _item(
-                "Experiments",
-                "/intelligence/experiments",
-                "flask-conical",
-                "Track and compare ML runs",
-            ),
-            _item("Features", "/intelligence/features", "layers", "Feature store and groups"),
-            _item(
-                "Predictions", "/intelligence/predictions", "zap", "Run inference against models"
-            ),
-            _item("Drift", "/intelligence/drift", "activity", "Model drift monitoring"),
-            _item("Agents", "/intelligence/agents", "bot", "Autonomous AI agents"),
-            _item("Tools", "/intelligence/tools", "wrench", "Tool catalog (3-tier registry)"),
-            _item("Traces", "/intelligence/traces", "git-branch", "Agent execution traces"),
-            _item("Embeddings", "/intelligence/embeddings", "layers", "Embedding collections"),
-            _item(
-                "Fine-tune",
-                "/intelligence/finetune",
-                "flask-conical",
-                "Train models on lakehouse data",
-            ),
+        "label": "Intelligence",
+        "icon": "sparkles",
+        "color": "#a78bfa",
+        "href": "/intelligence/playground",
+        "prefix": "/intelligence/",
+        "page_groups": [
+            {
+                "label": "Monitor",
+                "items": [
+                    _D(
+                        "Dashboard",
+                        "/intelligence/dashboard",
+                        "layout-dashboard",
+                        "Unified ML + AI health overview",
+                    ),
+                    _D("Models", "/intelligence/models", "box", "Model registry and deployment"),
+                    _D("Drift", "/intelligence/drift", "activity", "Model drift monitoring"),
+                ],
+            },
+            {
+                "label": "Explore",
+                "items": [
+                    _D(
+                        "Playground",
+                        "/intelligence/playground",
+                        "message-square",
+                        "Chat over your data",
+                    ),
+                    _D("Traces", "/intelligence/traces", "git-branch", "Agent execution traces"),
+                    _D("Features", "/intelligence/features", "layers", "Feature store and groups"),
+                    _D(
+                        "Predictions",
+                        "/intelligence/predictions",
+                        "zap",
+                        "Run inference against models",
+                    ),
+                    _D(
+                        "Embeddings",
+                        "/intelligence/embeddings",
+                        "database",
+                        "Semantic search collections",
+                    ),
+                ],
+            },
+            {
+                "label": "Build",
+                "items": [
+                    _D(
+                        "Experiments",
+                        "/intelligence/experiments",
+                        "flask-conical",
+                        "Track and compare ML runs",
+                    ),
+                    _D("Agents", "/intelligence/agents", "bot", "Configure autonomous agents"),
+                    _D("Tools", "/intelligence/tools", "wrench", "Tool catalog — 3-tier registry"),
+                    _D(
+                        "Fine-tune",
+                        "/intelligence/finetune",
+                        "cpu",
+                        "Train models on lakehouse data",
+                    ),
+                ],
+            },
         ],
     },
     {
-        "label": "Platform",
-        "id": "platform",
-        "items": [
-            _item("Privacy", "/secops", "shield", "PrivacyGuard — PII protection"),
-            _item("Audit log", "/secops/audit", "file-text", "Immutable event record"),
-            _item("Policies", "/secops/policies", "file-check", "Data access policies"),
-            _item("Compaction", "/system/compaction", "archive", "Merge small parquet files"),
-            _item("Alerting", "/system/alerting", "bell", "Webhook alerts and SLA"),
-            _item("Logs", "/system/logs", "scroll", "Structured log viewer"),
-            _item("Status", "/system/status", "activity", "Component health"),
-            _item("Components", "/system/components", "cpu", "Engine internals"),
-            _item("Settings", "/system/settings", "sliders", "dex.yaml configuration"),
-            _item("Costs", "/system/costs", "bar-chart-2", "API spend tracking"),
+        "id": "secops",
+        "label": "SecOps",
+        "icon": "shield",
+        "color": "#f87171",
+        "href": "/secops",
+        "prefix": "/secops",
+        "page_groups": [
+            {
+                "label": "Monitor",
+                "items": [
+                    _D("Overview", "/secops", "eye", "Privacy and security overview"),
+                    _D("Alerts", "/secops/alerts", "bell", "Security and policy alerts"),
+                    _D("Audit log", "/secops/audit", "scroll", "Action audit trail"),
+                ],
+            },
+            {
+                "label": "Explore",
+                "items": [
+                    _D("Privacy", "/secops/privacy", "lock", "PII detection and masking"),
+                    _D("Policies", "/secops/policies", "file-check", "Data access policies"),
+                ],
+            },
+        ],
+    },
+    {
+        "id": "system",
+        "label": "System",
+        "icon": "settings-2",
+        "color": "#22c55e",
+        "href": "/system/status",
+        "prefix": "/system/",
+        "page_groups": [
+            {
+                "label": "Monitor",
+                "items": [
+                    _D("Health", "/system/status", "heart-pulse", "Component health checks"),
+                    _D("Alerting", "/system/alerting", "bell", "Alert rules and channels"),
+                    _D(
+                        "Metrics", "/system/metrics", "bar-chart-2", "Resource + throughput metrics"
+                    ),
+                ],
+            },
+            {
+                "label": "Build",
+                "items": [
+                    _D("Compaction", "/system/compaction", "minimize-2", "Table compaction jobs"),
+                    _D("Settings", "/system/settings", "sliders", "dex.yaml configuration"),
+                ],
+            },
         ],
     },
 ]
+
+# Deliberately NOT wired into NAV_DOMAINS this phase: /system/activity,
+# /system/incidents, /system/connection, /system/logs, /system/traces,
+# /system/components — all routed and functional, but slated to merge into
+# other pages in Phase 3 (Elevate). Wiring them into nav now just to delete
+# the entry next phase is wasted motion; they remain reachable by direct URL
+# until Phase 3 resolves them.
+
+
+def _domains_to_groups() -> list[dict[str, Any]]:
+    """Flatten NAV_DOMAINS into the NAV_GROUPS shape breadcrumbs/⌘K expect."""
+    groups: list[dict[str, Any]] = [
+        {
+            "label": None,
+            "id": "home",
+            "items": [
+                _item("Home", "/", "home", "Project overview & recent activity", exact=True),
+            ],
+        }
+    ]
+    for dom in NAV_DOMAINS:
+        items: list[dict[str, Any]] = []
+        for grp in dom.get("page_groups", []):
+            items.extend(grp["items"])
+        groups.append({"label": dom["label"], "id": dom["id"], "items": items})
+    return groups
+
+
+NAV_GROUPS: list[dict[str, Any]] = _domains_to_groups()
 
 
 def _item_matches(item: dict[str, Any], path: str) -> bool:
@@ -209,174 +343,6 @@ def cmd_palette_pages() -> list[dict[str, str]]:
         for group in NAV_GROUPS
         for item in group["items"]
     ]
-
-
-# ── Two-rail domain structure ────────────────────────────────────────────────
-# Each domain maps to one icon in the 44px rail.
-# page_groups mirrors spec §3.3 Monitor · Explore · Build.
-
-_D = _item  # alias for readability in this section
-
-NAV_DOMAINS: list[dict[str, Any]] = [
-    {
-        "id": "data",
-        "label": "Data",
-        "icon": "database",
-        "color": "#60a5fa",
-        "href": "/data/pipelines",
-        "prefix": "/data/",
-        "page_groups": [
-            {
-                "label": "Monitor",
-                "items": [
-                    _D(
-                        "Dashboard",
-                        "/data/dashboard",
-                        "layout-dashboard",
-                        "Pipeline health at a glance",
-                    ),
-                    _D("Pipelines", "/data/pipelines", "workflow", "DAG runner — bronze → gold"),
-                    _D(
-                        "Watermarks",
-                        "/data/watermarks",
-                        "droplets",
-                        "Ingestion cursors and dedup state",
-                    ),
-                ],
-            },
-            {
-                "label": "Explore",
-                "items": [
-                    _D("Sources", "/data/sources", "link", "Connectors and ingest configs"),
-                    _D("Catalog", "/data/catalog", "table-2", "Browse bronze / silver / gold"),
-                    _D("SQL", "/data/sql", "hash", "Ad-hoc query editor"),
-                ],
-            },
-            {
-                "label": "Build",
-                "items": [
-                    _D("Backfill", "/data/backfill", "rewind", "Reset watermarks and re-ingest"),
-                    _D("Schema", "/data/schema", "file-code", "Contracts and drift detection"),
-                ],
-            },
-        ],
-    },
-    {
-        "id": "intelligence",
-        "label": "Intelligence",
-        "icon": "sparkles",
-        "color": "#a78bfa",
-        "href": "/intelligence/playground",
-        "prefix": "/intelligence/",
-        "page_groups": [
-            {
-                "label": "Monitor",
-                "items": [
-                    _D(
-                        "Dashboard",
-                        "/intelligence/dashboard",
-                        "layout-dashboard",
-                        "Unified ML + AI health overview",
-                    ),
-                    _D("Models", "/intelligence/models", "box", "Model registry and deployment"),
-                    _D("Drift", "/intelligence/drift", "activity", "Model drift monitoring"),
-                ],
-            },
-            {
-                "label": "Explore",
-                "items": [
-                    _D(
-                        "Playground",
-                        "/intelligence/playground",
-                        "message-square",
-                        "Chat over your data",
-                    ),
-                    _D("Traces", "/intelligence/traces", "git-branch", "Agent execution traces"),
-                    _D("Features", "/intelligence/features", "layers", "Feature store and groups"),
-                    _D(
-                        "Predictions",
-                        "/intelligence/predictions",
-                        "zap",
-                        "Run inference against models",
-                    ),
-                    _D(
-                        "Embeddings",
-                        "/intelligence/embeddings",
-                        "database",
-                        "Semantic search collections",
-                    ),
-                ],
-            },
-            {
-                "label": "Build",
-                "items": [
-                    _D(
-                        "Experiments",
-                        "/intelligence/experiments",
-                        "flask-conical",
-                        "Track and compare ML runs",
-                    ),
-                    _D("Agents", "/intelligence/agents", "bot", "Configure autonomous agents"),
-                    _D("Tools", "/intelligence/tools", "wrench", "Tool catalog — 3-tier registry"),
-                    _D(
-                        "Fine-tune",
-                        "/intelligence/finetune",
-                        "cpu",
-                        "Train models on lakehouse data",
-                    ),
-                ],
-            },
-        ],
-    },
-    {
-        "id": "secops",
-        "label": "SecOps",
-        "icon": "shield",
-        "color": "#f87171",
-        "href": "/secops",
-        "prefix": "/secops",
-        "page_groups": [
-            {
-                "label": "Monitor",
-                "items": [
-                    _D("Overview", "/secops", "eye", "Privacy and security overview"),
-                    _D("Audit log", "/secops/audit", "scroll", "Action audit trail"),
-                ],
-            },
-            {
-                "label": "Explore",
-                "items": [
-                    _D("Privacy", "/secops/privacy", "lock", "PII detection and masking"),
-                    _D("Policies", "/secops/policies", "file-check", "Data access policies"),
-                ],
-            },
-        ],
-    },
-    {
-        "id": "system",
-        "label": "System",
-        "icon": "settings-2",
-        "color": "#22c55e",
-        "href": "/system/status",
-        "prefix": "/system/",
-        "page_groups": [
-            {
-                "label": "Monitor",
-                "items": [
-                    _D("Health", "/system/status", "heart-pulse", "Component health checks"),
-                    _D("Alerting", "/system/alerting", "bell", "Alert rules and channels"),
-                ],
-            },
-            {
-                "label": "Build",
-                "items": [
-                    _D("Compaction", "/system/compaction", "minimize-2", "Table compaction jobs"),
-                    _D("Settings", "/system/settings", "sliders", "dex.yaml configuration"),
-                ],
-            },
-        ],
-    },
-]
 
 
 def _active_domain_id(current_path: str) -> str:

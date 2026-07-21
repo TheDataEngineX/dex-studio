@@ -1,38 +1,79 @@
 {% extends "base.html" %}
 
-{% block title %}Privacy — SecOps — DEX Studio{% endblock %}
+{% block title %}Privacy — DEX Studio{% endblock %}
+
 {% block page_title %}Privacy{% endblock %}
-{% block page_sub %}Data privacy configuration{% endblock %}
+{% block page_sub %}PrivacyGuard configuration and status{% endblock %}
 
 {% block content %}
-<div class="card" style="margin-bottom:24px">
-  <div class="card-header"><h3>Detection settings</h3></div>
-  <table class="table">
-    <tbody>
-      <tr><td style="color:var(--text-3);width:200px">PII scan enabled</td><td>{{ "Yes" if pii_scan else "No" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Action on detect</td><td>{{ pii_action }}</td></tr>
-      <tr><td style="color:var(--text-3)">Patterns</td><td>{{ pii_patterns | join(", ") if pii_patterns else "—" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Guard enabled</td><td>{{ "Yes" if guard_enabled else "No" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Block on detect</td><td>{{ "Yes" if block_on_detect else "No" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Local targets</td><td>{{ guard_local_targets | join(", ") if guard_local_targets else "—" }}</td></tr>
-    </tbody>
-  </table>
+<div class="animate-fade-in">
+
+<div class="grid grid-4" style="margin-bottom:var(--space-6)">
+  <div class="stat"><div class="lbl"><i data-lucide="lock" style="width:14px;height:14px;color:var(--domain-secops)"></i> Guard</div><div class="val">{{ 'Enabled' if guard_enabled else 'Disabled' }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="shield-x" style="width:14px;height:14px;color:var(--error-9)"></i> Block on Detect</div><div class="val">{{ 'Yes' if block_on_detect else 'No' }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="globe" style="width:14px;height:14px;color:var(--info-9)"></i> Allow Local</div><div class="val">{{ 'Yes' if allow_local else 'No' }}</div></div>
+  <div class="stat"><div class="lbl"><i data-lucide="log-out" style="width:14px;height:14px;color:var(--warning-9)"></i> Log All Outbound</div><div class="val">{{ 'Yes' if log_all_outbound else 'No' }}</div></div>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr 1fr; gap:var(--space-4); margin-bottom:var(--space-6)">
+  <div class="card">
+    <div class="section-h"><h2>Local Targets</h2></div>
+    {% if local_targets %}
+    <div class="col" style="gap:var(--space-2)">
+      {% for t in local_targets %}<div class="chip" style="font-size:var(--text-sm)">{{ t }}</div>{% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="globe" class="icon"></i><div class="title">No local targets</div></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="section-h"><h2>Detection settings</h2></div>
+    <div class="col" style="gap:var(--space-3)">
+      <div class="row" style="justify-content:space-between"><span class="muted">Scan</span><span class="pill {{ 'success' if pii_scan else 'info' }}" style="font-size:var(--text-xs);height:18px">{{ 'On' if pii_scan else 'Off' }}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="muted">Action</span><span class="pill {{ 'error' if pii_action == 'block' else 'warning' if pii_action == 'mask' else 'info' }}" style="font-size:var(--text-xs);height:18px">{{ pii_action | upper }}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="muted">Masking</span><span class="mono" style="font-size:var(--text-xs)">{{ pii_masking or '—' }}</span></div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-header"><h3>Masking strategy</h3></div>
-  <table class="table">
-    <thead><tr><th>Field</th><th>Strategy</th></tr></thead>
-    <tbody>
-    {% if pii_masking and pii_masking.fields %}
-      {% for field, strategy in pii_masking.fields.items() %}
-      <tr><td>{{ field }}</td><td>{{ strategy }}</td></tr>
-      {% endfor %}
-    {% endif %}
-    {% for pii_type, strategy in guard_strategies.items() %}
-      <tr><td>{{ pii_type }}</td><td>{{ strategy }}</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="section-h"><h2>Strategies</h2></div>
+  {% if strategy_display %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>PII Type</th><th>Strategy</th><th>Mode</th><th>Fields</th></tr></thead>
+      <tbody>
+        {% for s in strategy_display %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ s.name }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ s.strategy }}</td>
+          <td><span class="pill {{ 'error' if s.mode == 'block' else 'warning' if s.mode == 'mask' else 'info' }}" style="font-size:var(--text-xs);height:18px">{{ s.mode | upper }}</span></td>
+          <td class="tnum mono" style="font-size:var(--text-xs)">{{ s.field_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="shield" class="icon"></i><div class="title">No strategies configured</div></div>
+  {% endif %}
 </div>
+
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Patterns</h2></div>
+  {% if pii_patterns %}
+  <div class="col" style="gap:var(--space-2)">
+    {% for p in pii_patterns %}<div class="chip" style="font-size:var(--text-xs)">{{ p }}</div>{% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-8)"><i data-lucide="search" class="icon"></i><div class="title">No custom patterns</div></div>
+  {% endif %}
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

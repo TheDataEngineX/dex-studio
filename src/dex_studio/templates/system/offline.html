@@ -4,10 +4,10 @@
 {% block content %}
 <div style="--domain-color: var(--domain-system); display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; padding:40px 24px; text-align:center">
 
-  <div style="width:56px;height:56px;border-radius:50%;background:color-mix(in oklch,var(--state-error) 12%,transparent);
-              border:2px solid color-mix(in oklch,var(--state-error) 30%,transparent);
+  <div style="width:56px;height:56px;border-radius:50%;background:color-mix(in oklch,var(--error-9) 12%,transparent);
+              border:2px solid color-mix(in oklch,var(--error-9) 30%,transparent);
               display:flex;align-items:center;justify-content:center;margin-bottom:20px">
-    <i data-lucide="server-off" style="width:26px;height:26px;color:var(--state-error)"></i>
+    <i data-lucide="server-off" style="width:26px;height:26px;color:var(--error-9)"></i>
   </div>
 
   <h1 style="font-size:22px;font-weight:700;margin:0 0 8px;color:var(--text)">Engine Offline</h1>
@@ -46,7 +46,7 @@
         ("Wrong config path", "Verify DEX_CONFIG_PATH or the saved project path is correct."),
       ] %}
       <div style="display:flex;gap:10px;align-items:flex-start">
-        <i data-lucide="alert-circle" style="width:13px;height:13px;color:var(--state-warn);flex-shrink:0;margin-top:2px"></i>
+        <i data-lucide="alert-circle" style="width:13px;height:13px;color:var(--warning-9);flex-shrink:0;margin-top:2px"></i>
         <div>
           <div style="font-size:12.5px;font-weight:600;color:var(--text)">{{ cause }}</div>
           <div style="font-size:12px;color:var(--text-3);line-height:1.5">{{ fix }}</div>

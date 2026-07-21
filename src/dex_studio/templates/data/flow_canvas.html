@@ -1,23 +1,28 @@
 {# Flow canvas — source → transforms → destination, with per-stage row counts.
-   Rendered count-less by the page (auto_load=True triggers the HTMX preview),
-   then re-rendered with real counts by /data/transforms/{p}/preview. #}
+    Rendered count-less by the page (auto_load=True triggers the HTMX preview),
+    then re-rendered with real counts by /data/transforms/{p}/preview. 
+    Features: pan/zoom, responsive layout, keyboard navigation, touch support. #}
 {% set tcount = (nodes | length) - 2 %}
 {% set any_est = nodes | selectattr('estimated') | list | length > 0 %}
 <div id="flow-canvas"{% if auto_load %} hx-get="/data/transforms/{{ selected_pipeline }}/preview" hx-trigger="load" hx-swap="outerHTML"{% endif %}
-     style="overflow-x:auto;padding:18px 14px">
-  <div style="display:flex;align-items:center;min-width:max-content">
+     style="overflow:hidden;position:relative;touch-action:none">
+  <div id="flow-canvas-inner" class="flow-canvas-inner" 
+       style="display:flex;align-items:center;min-width:max-content;transition:transform 0.15s ease-out;will-change:transform"
+       data-scale="1" data-pan-x="0" data-pan-y="0">
     {% for n in nodes %}
-    <div class="card" style="width:174px;min-height:104px;display:flex;flex-direction:column;gap:7px;padding:11px 12px;flex-shrink:0;
-         border-top:3px solid {% if n.kind=='source' %}var(--border-strong){% elif n.kind=='destination' %}var(--green-9){% else %}var(--accent-9){% endif %}">
+    <div class="flow-node card" data-index="{{ n.index }}" 
+         style="width:180px;min-height:110px;display:flex;flex-direction:column;gap:8px;padding:12px 14px;flex-shrink:0;
+             border-top:3px solid {% if n.kind=='source' %}var(--border-strong){% elif n.kind=='destination' %}var(--success-9){% else %}var(--accent-9){% endif %}"
+             tabindex="0" role="button" aria-label="{{ n.kind }}: {{ n.label }}">
       <div class="row" style="gap:6px;align-items:center">
         <i data-lucide="{% if n.kind=='source' %}database{% elif n.kind=='destination' %}table-2{% elif n.type=='filter' %}filter{% elif n.type=='deduplicate' %}copy-minus{% elif n.type=='sql' %}code{% elif n.type=='derive' %}plus-circle{% else %}wand-2{% endif %}"
-           style="width:14px;height:14px;color:{% if n.kind=='destination' %}var(--green-11,var(--text-2)){% elif n.kind=='source' %}var(--text-2){% else %}var(--accent-11){% endif %}"></i>
+           style="width:16px;height:16px;color:{% if n.kind=='destination' %}var(--success-9,var(--text-2)){% elif n.kind=='source' %}var(--text-2){% else %}var(--accent-11){% endif %}"></i>
         <span style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em">{% if n.kind=='transform' %}{{ n.type }}{% else %}{{ n.kind }}{% endif %}</span>
         {% if n.kind=='transform' %}
         <span class="row" style="margin-left:auto;gap:1px">
-          {% if n.index > 0 %}<form method="post" action="/data/transforms/{{ selected_pipeline }}/reorder/{{ n.index }}/-1" style="display:inline"><button class="btn icon sm ghost" title="Move left" style="width:20px;height:20px;padding:0"><i data-lucide="chevron-left" style="width:12px;height:12px"></i></button></form>{% endif %}
-          {% if n.index < tcount - 1 %}<form method="post" action="/data/transforms/{{ selected_pipeline }}/reorder/{{ n.index }}/1" style="display:inline"><button class="btn icon sm ghost" title="Move right" style="width:20px;height:20px;padding:0"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></button></form>{% endif %}
-          <form method="post" action="/data/transforms/{{ selected_pipeline }}/delete/{{ n.index }}" style="display:inline"><button class="btn icon sm ghost" title="Remove step" style="width:20px;height:20px;padding:0"><i data-lucide="x" style="width:12px;height:12px"></i></button></form>
+          {% if n.index > 0 %}<button type="button" class="btn icon sm ghost" title="Move left" style="width:24px;height:24px;padding:0" data-action="reorder" data-dir="-1"><i data-lucide="chevron-left" style="width:12px;height:12px"></i></button>{% endif %}
+          {% if n.index < tcount - 1 %}<button type="button" class="btn icon sm ghost" title="Move right" style="width:24px;height:24px;padding:0" data-action="reorder" data-dir="1"><i data-lucide="chevron-right" style="width:12px;height:12px"></i></button>{% endif %}
+          <button type="button" class="btn icon sm ghost" title="Remove step" style="width:24px;height:24px;padding:0" data-action="delete"><i data-lucide="x" style="width:12px;height:12px"></i></button>
         </span>
         {% endif %}
       </div>
@@ -32,8 +37,218 @@
         {% endif %}
       </div>
     </div>
-    {% if not loop.last %}<div style="padding:0 7px;color:var(--text-4);flex-shrink:0"><i data-lucide="arrow-right" style="width:20px;height:20px"></i></div>{% endif %}
+    {% if not loop.last %}<div style="padding:0 10px;color:var(--text-4);flex-shrink:0"><i data-lucide="arrow-right" style="width:24px;height:24px"></i></div>{% endif %}
     {% endfor %}
   </div>
-  {% if any_est %}<div class="muted" style="font-size:10.5px;margin-top:11px;display:flex;align-items:center;gap:5px"><i data-lucide="info" style="width:11px;height:11px"></i> intermediate counts (~) estimated from a sample — run the flow for exact figures</div>{% endif %}
+  {% if any_est %}<div class="muted" style="font-size:10.5px;margin-top:12px;display:flex;align-items:center;gap:5px"><i data-lucide="info" style="width:11px;height:11px"></i> intermediate counts (~) estimated from a sample — run the flow for exact figures</div>{% endif %}
 </div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Pan/Zoom state
+  const canvas = document.getElementById('flow-canvas');
+  const inner = document.getElementById('flow-canvas-inner');
+  if (!canvas || !inner) return;
+
+  let scale = 1;
+  let panX = 0;
+  let panY = 0;
+  let isPanning = false;
+  let lastX = 0;
+  let lastY = 0;
+  let animationFrame = null;
+
+  // Read initial state from DOM
+  function readState() {
+    scale = parseFloat(inner.dataset.scale) || 1;
+    panX = parseFloat(inner.dataset.panX) || 0;
+    panY = parseFloat(inner.dataset.panY) || 0;
+  }
+
+  function writeState() {
+    inner.dataset.scale = scale;
+    inner.dataset.panX = panX;
+    inner.dataset.panY = panY;
+    applyTransform();
+  }
+
+  function applyTransform() {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = requestAnimationFrame(() => {
+      inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+      inner.style.transformOrigin = '0 0';
+    });
+  }
+
+  // Clamp scale and pan to reasonable bounds
+  function clamp() {
+    scale = Math.max(0.25, Math.min(3, scale));
+  }
+
+  // Wheel zoom
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    
+    const oldScale = scale;
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    scale *= zoomFactor;
+    clamp();
+    
+    // Adjust pan to zoom toward cursor
+    const factor = scale / oldScale;
+    panX = cx - (cx - panX) * factor;
+    panY = cy - (cy - panY) * factor;
+    
+    writeState();
+  }, { passive: false });
+
+  // Pan with mouse
+  function onPointerDown(e) {
+    if (e.target.closest('button, input, select, textarea, a[href], [data-action]')) return;
+    isPanning = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onPointerMove(e) {
+    if (!isPanning) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    panX += dx;
+    panY += dy;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    writeState();
+  }
+
+  function onPointerUp() {
+    isPanning = false;
+    canvas.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
+  canvas.addEventListener('mousedown', onPointerDown);
+  document.addEventListener('mousemove', onPointerMove);
+  document.addEventListener('mouseup', onPointerUp);
+  document.addEventListener('mouseleave', onPointerUp);
+
+  // Touch support
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      onPointerDown({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, preventDefault: () => {}, target: e.target });
+    }
+  }, { passive: false });
+  
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && isPanning) {
+      e.preventDefault();
+      onPointerMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+    }
+  }, { passive: false });
+  
+  canvas.addEventListener('touchend', onPointerUp);
+  canvas.addEventListener('touchcancel', onPointerUp);
+
+  // Pinch zoom
+  let lastTouchDist = null;
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      
+      if (lastTouchDist !== null) {
+        const factor = dist / lastTouchDist;
+        const oldScale = scale;
+        scale *= factor;
+        clamp();
+        
+        // Zoom toward center of pinch
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = canvas.getBoundingClientRect();
+        const factorScale = scale / oldScale;
+        panX = (cx - rect.left) - ((cx - rect.left) - panX) * factorScale;
+        panY = (cy - rect.top) - ((cy - rect.top) - panY) * factorScale;
+        
+        writeState();
+      }
+      lastTouchDist = dist;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) lastTouchDist = null;
+  });
+
+  // Double-click to reset
+  canvas.addEventListener('dblclick', () => {
+    scale = 1;
+    panX = 0;
+    panY = 0;
+    writeState();
+  });
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, textarea, select')) return;
+    
+    const step = 50 / scale;
+    switch (e.key) {
+      case 'ArrowLeft': panX += step; writeState(); break;
+      case 'ArrowRight': panX -= step; writeState(); break;
+      case 'ArrowUp': panY += step; writeState(); break;
+      case 'ArrowDown': panY -= step; writeState(); break;
+      case '0': case 'Escape': 
+        scale = 1; panX = 0; panY = 0; writeState(); break;
+      case '+': case '=':
+        scale *= 1.2; clamp(); writeState(); break;
+      case '-':
+        scale *= 0.83; clamp(); writeState(); break;
+    }
+  });
+
+  // Node click handling
+  inner.addEventListener('click', (e) => {
+    const node = e.target.closest('.flow-node');
+    if (node && !e.target.closest('button')) {
+      const idx = node.dataset.index;
+      // Emit custom event for parent page to handle
+      canvas.dispatchEvent(new CustomEvent('flow-node-click', { 
+        detail: { index: parseInt(idx), node: e.target.closest('.flow-node') },
+        bubbles: true 
+      }));
+    }
+  });
+
+  // Reflow on HTMX swap
+  document.addEventListener('htmx:afterSwap', (e) => {
+    if (e.target === canvas || canvas.contains(e.target)) {
+      readState();
+      writeState();
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+  });
+
+  // Initialize
+  readState();
+  writeState();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  // Expose API
+  window.flowCanvas = {
+    reset: () => { scale = 1; panX = 0; panY = 0; writeState(); },
+    zoomIn: () => { scale *= 1.2; clamp(); writeState(); },
+    zoomOut: () => { scale *= 0.83; clamp(); writeState(); },
+    pan: (dx, dy) => { panX += dx; panY += dy; writeState(); }
+  };
+})();
+</script>

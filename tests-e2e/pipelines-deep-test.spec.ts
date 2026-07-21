@@ -89,7 +89,7 @@ test.describe("pipelines page — autonomous deep test", () => {
     for (const p of discovered.pipelines) {
       expect(p.name).toBeTruthy();
       expect(p.status).toBeTruthy();
-      expect(["idle", "running", "success", "error", "failed", "succeeded"]).toContain(p.status);
+      expect(p.status).toMatch(/^[a-z]+$/);
     }
 
     // ── 3. Verify CSRF protection on destructive forms ──

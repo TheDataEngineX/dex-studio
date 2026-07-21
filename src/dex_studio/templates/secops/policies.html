@@ -1,43 +1,81 @@
 {% extends "base.html" %}
+{% from "components/macros.html" import metric_card %}
 
-{% block title %}Policies — SecOps — DEX Studio{% endblock %}
+{% block title %}Policies — DEX Studio{% endblock %}
+
 {% block page_title %}Policies{% endblock %}
-{% block page_sub %}Security policy rules{% endblock %}
+{% block page_sub %}Data access policies and PII rules{% endblock %}
 
 {% block content %}
-<div class="card" style="margin-bottom:24px">
-  <div class="card-header"><h3>Global data governance</h3></div>
-  <table class="table">
-    <tbody>
-      <tr><td style="color:var(--text-3);width:200px">Enforcement mode</td><td>{{ "Block" if block_on_detect else "Warn" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Default PII action</td><td>{{ pii_action }}</td></tr>
-      <tr><td style="color:var(--text-3)">Guard enabled</td><td>{{ "Yes" if guard_enabled else "No" }}</td></tr>
-      <tr><td style="color:var(--text-3)">Allow local providers</td><td>{{ "Yes" if allow_local else "No" }}</td></tr>
-    </tbody>
-  </table>
+<div class="animate-fade-in">
+
+<div class="card" style="margin-bottom:var(--space-4)">
+  <div class="section-h"><h2>Global data governance</h2></div>
+  <div class="row" style="gap:var(--space-6);flex-wrap:wrap">
+    <div class="row" style="justify-content:space-between;gap:var(--space-2);flex:1;min-width:220px">
+      <span class="muted">Enforcement mode</span>
+      <span class="pill {{ 'error' if block_on_detect else 'warning' }}" style="height:18px;font-size:var(--text-xs)">{{ 'BLOCK' if block_on_detect else 'WARN' }}</span>
+    </div>
+    <div class="row" style="justify-content:space-between;gap:var(--space-2);flex:1;min-width:220px">
+      <span class="muted">Guard status</span>
+      <span class="pill {{ 'success' if guard_enabled else 'info' }}" style="height:18px;font-size:var(--text-xs)">{{ 'ENABLED' if guard_enabled else 'DISABLED' }}</span>
+    </div>
+  </div>
+  <div class="row" style="gap:var(--space-4);flex-wrap:wrap;margin-top:var(--space-4)">
+    {{ metric_card("Default PII action", pii_action | upper, "shield-alert", color="warning" if pii_action == "mask" else ("error" if pii_action == "block" else "info")) }}
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-header"><h3>Policy Rules</h3></div>
-  {% if config_policies %}
-  <table class="table">
-    <thead><tr><th>Name</th><th>Description</th><th>Rule</th><th>Severity</th><th>Tables</th></tr></thead>
-    <tbody>
-    {% for p in config_policies %}
-    <tr>
-      <td>{{ p.name }}</td>
-      <td>{{ p.description or "—" }}</td>
-      <td><code>{{ p.rule or "—" }}</code></td>
-      <td>{{ p.severity or "—" }}</td>
-      <td>{{ (p.tables or []) | join(", ") or "—" }}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-4)">
-    No policies configured.
+  <div class="section-h"><h2>PII Strategies</h2></div>
+  {% if policies %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Policy</th><th>Rule</th><th>Action</th><th>Mode</th></tr></thead>
+      <tbody>
+        {% for p in policies %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ p.name }}</td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ p.rule }}</td>
+          <td><span class="pill" style="height:18px;font-size:var(--text-xs)">{{ p.action }}</span></td>
+          <td><span class="pill {{ 'success' if p.mode == 'mask' else 'error' if p.mode == 'block' else 'warning' }}" style="height:18px;font-size:var(--text-xs)">{{ p.mode | upper }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="file-check" class="icon"></i><div class="title">No PII policies</div><div class="desc">Configure in dex.yaml secops.pii.strategies</div></div>
   {% endif %}
 </div>
+
+<div class="card" style="margin-top:var(--space-4)">
+  <div class="section-h"><h2>Configured Policies</h2></div>
+  {% if config_policies %}
+  <div style="overflow:auto">
+    <table class="tbl" style="font-size:var(--text-sm)">
+      <thead><tr><th>Name</th><th>Description</th><th>Rule</th><th>Severity</th><th>Tables</th></tr></thead>
+      <tbody>
+        {% for p in config_policies %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ p.name }}</td>
+          <td class="muted" style="font-size:var(--text-xs);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.description }}</td>
+          <td class="mono" style="font-size:var(--text-xs)">{{ p.rule }}</td>
+          <td><span class="pill {{ 'error' if p.severity == 'high' else 'warning' if p.severity == 'medium' else 'info' }}" style="height:18px;font-size:var(--text-xs)">{{ p.severity | upper }}</span></td>
+          <td class="muted" style="font-size:var(--text-xs)">{{ p.tables | join(', ') if p.tables else 'All' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="file-check" class="icon"></i><div class="title">No additional policies</div><div class="desc">Add policies in dex.yaml secops.policies</div></div>
+  {% endif %}
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}

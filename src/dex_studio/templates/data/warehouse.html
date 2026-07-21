@@ -1,19 +1,134 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import empty_state %}
 
 {% block title %}Warehouse — DEX Studio{% endblock %}
+
 {% block page_title %}Warehouse{% endblock %}
-{% block page_sub %}Business-ready Gold layer — aggregated tables for BI and reporting{% endblock %}
+{% block page_sub %}{{ layers | map(attribute='count') | sum | default(0) }} tables across bronze, silver, gold · BI-ready structured data{% endblock %}
+
+{% block page_actions %}
+<div class="input-icon" style="width:220px">
+  <i data-lucide="search" class="icon" style="width:12px;height:12px"></i>
+  <input class="input" id="wh-search" placeholder="search tables…" style="height:26px;font-size:12px;font-family:var(--font-mono)" oninput="filterWarehouse()">
+</div>
+<select class="input" id="wh-layer-filter" style="height:26px;font-size:11.5px;font-family:var(--font-mono);width:auto" onchange="filterWarehouse()">
+  <option value="all">All layers</option>
+  <option value="bronze">Bronze</option>
+  <option value="silver">Silver</option>
+  <option value="gold">Gold</option>
+</select>
+<a href="/data/sql" class="btn primary">
+  <i data-lucide="terminal" style="width:12px;height:12px"></i> SQL
+</a>
+{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-data)">
-<p style="font-size:13px;color:var(--text-3);margin:0 0 20px">
-  Highly structured, aggregated tables optimized for BI and reporting.
-  <a href="/data/lakehouse" style="color:var(--indigo-9);text-decoration:none;margin-left:6px">View full Lakehouse →</a>
-</p>
+<div class="animate-fade-in">
 
-<div id="warehouse-tables">
-  {% include "data/warehouse_tables.html" %}
+{# ── Layer summary cards ──────────────────────────────────────────────────── #}
+<div class="grid grid-3" style="margin-bottom:var(--space-6)">
+  {% for l in layers %}
+  <div class="card dex-layer-card dex-layer-{{ l.layer }}"
+       style="padding:var(--space-4);display:flex;align-items:center;gap:var(--space-4);cursor:pointer"
+       onclick="location.href='#layer-{{ l.layer }}'">
+    <div style="width:48px;height:48px;border-radius:var(--r-3);background:color-mix(in oklch,var(--layer-{{ l.layer }}) 15%,transparent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <i data-lucide="{% if l.layer == 'gold' %}award{% elif l.layer == 'silver' %}medal{% else %}package{% endif %}" style="width:24px;height:24px;color:var(--layer-{{ l.layer }})"></i>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--layer-{{ l.layer }})">{{ l.layer }}</div>
+      <div style="font-size:var(--text-2xl);font-weight:700;line-height:1;color:var(--text)">{{ l.count }}</div>
+      <div class="muted" style="font-size:var(--text-xs)">tables</div>
+    </div>
+    <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-4);flex-shrink:0"></i>
+  </div>
+  {% endfor %}
 </div>
+
+{# ── Tables per layer ──────────────────────────────────────────────────────── #}
+<div class="card card-bare">
+  {% if layers %}
+  {% for l in layers %}
+  <div id="layer-{{ l.layer }}" style="margin-bottom:var(--space-6)">
+    <div class="section-h" style="margin-bottom:var(--space-3)">
+      <h2>{{ l.layer | upper }}</h2>
+      <span class="layer-chip {{ l.layer }}">{{ l.count }} tables</span>
+    </div>
+    {% if l.tables %}
+    <div class="grid grid-4" style="gap:var(--space-3)">
+      {% for t in l.tables %}
+      <div class="card" style="padding:var(--space-3);transition:transform var(--d-fast),box-shadow var(--d-fast)"
+           onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+           onmouseleave="this.style.transform='';this.style.boxShadow='var(--shadow-sm)'"
+           data-name="{{ t.name | lower }}"
+           data-layer="{{ t.layer }}">
+        <div class="row" style="justify-content:space-between;margin-bottom:var(--space-2)">
+          <span class="layer-chip {{ t.layer }}">{{ t.layer }}</span>
+          <span class="mono dim" style="font-size:var(--text-xs)">{{ "{:,}".format(t.rows | int | default(0)) }} rows</span>
+        </div>
+        <div style="font-weight:600;font-size:var(--text-sm);margin-bottom:var(--space-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</div>
+        <div class="muted" style="font-size:var(--text-xs);margin-bottom:var(--space-2)">{{ t.size_mb | round(1) }} MB · {{ t.columns | length }} cols</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:var(--space-2)">
+          {% for c in t.columns[:4] %}
+          <span class="mono" style="background:var(--bg);padding:2px 6px;border-radius:var(--r-1);border:1px solid var(--border);font-size:var(--text-xs)">{{ c.name }}:{{ c.type }}</span>
+          {% endfor %}
+          {% if t.columns | length > 4 %}
+          <span class="mono" style="color:var(--text-4);font-size:var(--text-xs)">+{{ t.columns | length - 4 }} more</span>
+          {% endif %}
+        </div>
+        <div class="row" style="gap:var(--space-1)">
+          <a href="/data/catalog/{{ t.name | urlencode }}" class="btn ghost sm" style="flex:1;justify-content:center">
+            <i data-lucide="table-2" style="width:12px;height:12px"></i> Browse
+          </a>
+          <a href="/data/sql?table={{ t.layer }}.{{ t.name | urlencode }}" class="btn ghost sm" style="flex:1;justify-content:center">
+            <i data-lucide="terminal" style="width:12px;height:12px"></i> Query
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:var(--space-8)">
+      <i data-lucide="table-2" class="icon"></i>
+      <div class="title">No tables in {{ l.layer }}</div>
+      <div class="desc">Run pipelines to populate this layer.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)">
+    <i data-lucide="database" class="icon"></i>
+    <div class="title">Warehouse is empty</div>
+    <div class="desc">Run pipelines to populate bronze, silver, and gold layers.</    </div>
+  </div>
+  {% endif %}
 </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+});
+
+function filterWarehouse() {
+  const search = document.getElementById('wh-search').value.toLowerCase();
+  const layerFilter = document.getElementById('wh-layer-filter').value;
+
+  document.querySelectorAll('.grid > .card[data-name]').forEach(card => {
+    const name = card.dataset.name;
+    const layer = card.dataset.layer;
+    const matchesSearch = name.includes(search);
+    const matchesLayer = layerFilter === 'all' || layer === layerFilter;
+    card.style.display = matchesSearch && matchesLayer ? '' : 'none';
+  });
+
+  // Hide empty layer sections
+  document.querySelectorAll('[id^="layer-"]').forEach(section => {
+    const visible = section.querySelectorAll('.card[data-name]:not([style*="display: none"])').length;
+    section.style.display = visible > 0 ? '' : 'none';
+  });
+}
+</script>
 {% endblock %}

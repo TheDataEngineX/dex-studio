@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from dex_studio.routers._deps import ReadDep, base_ctx, render
-from dex_studio.utils import fmt_ts
+from dex_studio.utils import fmt_ts, fmt_ts_iso
 
 router = APIRouter()
 log = structlog.get_logger().bind(src="router.secops")
@@ -116,7 +116,7 @@ def _load_audit_data(
                 "dataset": e.dataset_name,
                 "pii_fields": e.pii_fields,
                 "record_count": e.record_count,
-                "occurred_at": str(e.occurred_at)[:19].replace("T", " "),
+                "occurred_at": fmt_ts_iso(e.occurred_at),
                 "actor": getattr(e, "actor", "system"),
             }
             for e in reversed(raw_events[-10:])
@@ -244,7 +244,7 @@ def _parse_audit_events(
                     "pii_fields": pii_str,
                     "record_count": getattr(e, "record_count", None),
                     "actor": actor,
-                    "occurred_at": occurred[:19].replace("T", " "),
+                    "occurred_at": fmt_ts_iso(occurred),
                     "date": occurred[:10],
                     "metadata": meta,
                 }

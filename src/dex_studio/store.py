@@ -93,3 +93,13 @@ def get_store() -> StudioStore:
     if _store is None:
         _store = StudioStore()
     return _store
+
+
+def pop_pending_toasts() -> list[dict[str, Any]]:
+    """Pop all pending toasts from the store as a list of dicts."""
+    store = get_store()
+    toasts: list[dict[str, Any]] = []
+    while store.notifications:
+        n = store.notifications.popleft()
+        toasts.append({"msg": n.message, "kind": n.type})
+    return toasts

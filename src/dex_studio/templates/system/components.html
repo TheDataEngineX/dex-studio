@@ -1,190 +1,37 @@
 {% extends "base.html" %}
-{% from "components/macros.html" import metric_card, empty_state %}
 
-{% block title %}Components — System — DEX Studio{% endblock %}
+{% block title %}Components — DEX Studio{% endblock %}
+
 {% block page_title %}Components{% endblock %}
-{% block page_sub %}{{ healthy_count }}/{{ total_count }} healthy{% if uptime_str is defined %} · uptime {{ uptime_str }}{% endif %}{% endblock %}
-
-{% block page_actions %}
-<a href="/system/status" class="btn sm ghost">
-  <i data-lucide="activity" style="width:11px;height:11px"></i> Status
-</a>
-<form method="post" action="/system/reload-config" style="display:contents">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <button type="submit" class="btn sm">
-    <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config
-  </button>
-</form>
-{% endblock %}
+{% block page_sub %}{{ components | length }} engine components{% endblock %}
 
 {% block content %}
-<div style="--domain-color: var(--domain-system)">
+<div class="animate-fade-in" style="--domain-color: var(--domain-system)">
 
-{# ── Health banner ─────────────────────────────────────────────────────────── #}
-<div class="dex-health-banner {{ 'healthy' if is_healthy else 'degraded' }}" style="margin-bottom:20px">
-  <span style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:{{ 'color-mix(in oklch,var(--green-9) 18%,transparent)' if is_healthy else 'color-mix(in oklch,var(--red-9) 18%,transparent)' }}">
-    <i data-lucide="{{ 'check-circle' if is_healthy else 'alert-triangle' }}" style="width:16px;height:16px;color:{{ 'var(--green-9)' if is_healthy else 'var(--red-9)' }}"></i>
-  </span>
-  <div>
-    <div style="font-size:13px;font-weight:600;color:var(--text)">
-      {{ "All Systems Operational" if is_healthy else "System Degraded — one or more components offline" }}
-    </div>
-    <div class="muted" style="font-size:11px;margin-top:3px">
-      {{ healthy_count }}/{{ total_count }} components healthy
-    </div>
-  </div>
-  <a href="/system/logs" class="btn sm ghost" style="margin-left:auto;flex-shrink:0">
-    <i data-lucide="scroll-text" style="width:11px;height:11px"></i> Logs
-  </a>
-</div>
-
-{# ── Metric strip ─────────────────────────────────────────────────────────── #}
-<div class="grid grid-4" style="margin-bottom:20px">
-  <div class="card dex-metric-card {{ 'dex-metric-green' if healthy_count == total_count else 'dex-metric-red' }}" style="padding:14px">
-    <div class="stat-label">Components healthy</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ healthy_count }}<span style="font-size:14px;font-weight:400;color:var(--text-3)">/{{ total_count }}</span>
-    </div>
-    <div class="stat-delta" style="color:{{ 'var(--green-10)' if healthy_count == total_count else 'var(--red-10)' }}">
-      {{ 'all green' if healthy_count == total_count else '%d offline' % (total_count - healthy_count) }}
-    </div>
-  </div>
-
-  <div class="card dex-metric-card dex-metric-blue" style="padding:14px">
-    <div class="stat-label">Memory used</div>
-    {% if mem_used_gb is defined %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ mem_used_gb }}<span style="font-size:14px;font-weight:400;color:var(--text-3)"> GB</span>
-    </div>
-    <div class="stat-delta">of {{ mem_total_gb }} GB ({{ mem_pct }}%)</div>
-    {% else %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">—</div>
-    <div class="stat-delta">unavailable</div>
-    {% endif %}
-  </div>
-
-  <div class="card dex-metric-card {{ 'dex-metric-orange' if cpu_pct is defined and cpu_pct > 80 else 'dex-metric-indigo' }}" style="padding:14px">
-    <div class="stat-label">CPU usage</div>
-    {% if cpu_pct is defined %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {{ cpu_pct }}<span style="font-size:14px;font-weight:400;color:var(--text-3)">%</span>
-    </div>
-    <div class="stat-delta" style="{{ 'color:var(--red-10)' if cpu_pct > 80 else '' }}">
-      {{ 'high load' if cpu_pct > 80 else 'normal' }}
-    </div>
-    {% else %}
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">—</div>
-    <div class="stat-delta">unavailable</div>
-    {% endif %}
-  </div>
-
-  <div class="card dex-metric-card dex-metric-violet" style="padding:14px">
-    <div class="stat-label">Uptime</div>
-    <div class="dex-metric-value" style="font-size:24px;font-weight:700;margin:6px 0 4px">
-      {% if uptime_str is defined %}{{ uptime_str }}{% else %}—{% endif %}
-    </div>
-    <div class="stat-delta">engine process</div>
-  </div>
-</div>
-
-{# ── Component health grid ─────────────────────────────────────────────────── #}
-<div class="section-h" style="margin-bottom:12px">
-  <h2>Health overview</h2>
-  <span class="sub">{{ healthy_count }}/{{ total_count }} components online</span>
-</div>
-
-{% if components %}
-<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px">
-  {% for c in components %}
-  {% set unconfigured = not c.available and c.message == 'Not initialized' %}
-  {% set is_error = not c.available and not unconfigured %}
-  <div class="card" style="padding:14px 16px;
-    background:{{ 'color-mix(in oklch,var(--state-error) 6%,transparent)' if is_error else 'transparent' }};
-    border-left:3px solid {{ 'var(--state-ok)' if c.available else ('var(--border)' if unconfigured else 'var(--state-error)') }}">
-    <div class="row" style="gap:8px;margin-bottom:10px">
-      <span class="glyph" style="width:28px;height:28px;border-radius:var(--r-2);background:{{ 'color-mix(in oklch,var(--green-4) 60%,var(--bg-elev))' if c.available else 'var(--bg-elev)' }}">
-        <i data-lucide="{{ c.icon | default('box') }}" style="width:13px;height:13px;color:{{ 'var(--green-10)' if c.available else 'var(--text-3)' }}"></i>
-      </span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div>
-        <div class="muted mono" style="font-size:10px">{{ c.raw_name | default(c.name | lower | replace(' ', '_')) }}</div>
+<div class="card">
+  <div class="section-h"><h2>Engine Components</h2></div>
+  {% if components %}
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-3)">
+    {% for c in components %}
+    {% set is_ok = c.available %}{% set is_uncfg = not c.available and c.get('message','') == 'Not initialized' %}
+    <div class="card" style="padding:var(--space-4);background:{{ 'transparent' if (is_ok or is_uncfg) else 'color-mix(in oklch,var(--error-9) 6%,transparent)' }};border-left:3px solid {{ 'var(--success-9)' if is_ok else ('var(--border)' if is_uncfg else 'var(--error-9)') }}">
+      <div class="row" style="align-items:center;gap:8px;margin-bottom:8px">
+        <span class="sdot {{ 'ok' if is_ok else ('idle' if is_uncfg else 'error') }}"></span>
+        <span style="font-weight:600;font-size:var(--text-base);flex:1">{{ c.name }}</span>
+        <span class="pill {{ 'success' if is_ok else ('warning' if is_uncfg else 'error') }}" style="font-size:var(--text-xs);height:20px">{{ 'online' if is_ok else ('not cfg' if is_uncfg else 'offline') }}</span>
       </div>
-      <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px;
-        background:{{ 'var(--green-9)' if c.available else ('var(--gray-6)' if unconfigured else 'var(--red-9)') }};
-        box-shadow:0 0 0 2px color-mix(in oklch,{{ 'var(--green-9)' if c.available else ('var(--gray-6)' if unconfigured else 'var(--red-9)') }} 25%,transparent)">
-      </span>
+      <div class="muted" style="font-size:var(--text-sm)">{{ c.get('message','') or ('Running' if is_ok else 'Not initialized') }}</div>
     </div>
-    <div style="font-size:11px;font-weight:500;color:{{ 'var(--green-10)' if c.available else ('var(--text-3)' if unconfigured else 'var(--red-10)') }}">
-      {{ 'Online' if c.available else ('Not configured' if unconfigured else 'Offline') }}
-    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
-{% else %}
-{{ empty_state("cpu", "No components detected", "Engine may still be initializing.") }}
-{% endif %}
-
-{# ── Events + runtime config ──────────────────────────────────────────────── #}
-<div class="grid" style="grid-template-columns:1.2fr 1fr;gap:16px">
-
-  {# Recent log events #}
-  <div class="card bare">
-    <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600;font-size:13px">Recent log events</span>
-      <a href="/system/logs" style="font-size:11px;color:var(--accent-9);margin-left:auto;text-decoration:none">
-        All logs <i data-lucide="arrow-right" style="width:10px;height:10px;vertical-align:-1px"></i>
-      </a>
-    </div>
-    {% if recent_events %}
-    <table class="dex-table">
-      <tbody>
-        {% for ev in recent_events %}
-        <tr>
-          <td class="mono muted" style="font-size:10px;white-space:nowrap;width:130px">{{ ev.ts }}</td>
-          <td style="width:60px"><span class="dex-log-badge dex-log-{{ ev.level }}">{{ ev.level }}</span></td>
-          <td class="muted" style="font-size:11.5px;max-width:0;width:99%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ev.msg }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="muted" style="padding:28px;text-align:center;font-size:12px">
-      <i data-lucide="info" style="width:16px;height:16px;opacity:.4;display:block;margin:0 auto 6px"></i>
-      No log events yet
-    </div>
-    {% endif %}
-  </div>
-
-  {# Runtime config #}
-  <div class="card" style="padding:16px">
-    <div style="font-weight:600;font-size:13px;margin-bottom:12px">Runtime configuration</div>
-    {% if config_entries %}
-    <div class="col" style="gap:0">
-      {% for key, val in config_entries %}
-      <div class="row" style="font-size:11.5px;padding:5px 0;{% if not loop.first %}border-top:1px solid var(--border);{% endif %}">
-        <span class="mono muted" style="flex:1;min-width:0">{{ key }}</span>
-        <span class="mono" style="color:var(--text-2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right" title="{{ val }}">{{ val }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="muted" style="font-size:12px;padding:12px 0">No config loaded</div>
-    {% endif %}
-    <div class="div-y" style="margin:14px 0"></div>
-    <div class="row" style="gap:6px;flex-wrap:wrap">
-      <form method="post" action="/system/reload-config" style="display:contents">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button type="submit" class="btn sm">
-          <i data-lucide="refresh-cw" style="width:11px;height:11px"></i> Reload config
-        </button>
-      </form>
-      <button class="btn sm ghost" disabled title="Not implemented">
-        <i data-lucide="alert-triangle" style="width:11px;height:11px"></i> Force restart
-      </button>
-    </div>
-  </div>
-
+  {% else %}
+  <div class="empty-state" style="padding:var(--space-12)"><i data-lucide="cpu" class="icon"></i><div class="title">No components</div></div>
+  {% endif %}
 </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', () => { lucide.createIcons(); });</script>
 {% endblock %}
