@@ -10,9 +10,7 @@ from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 from prometheus_client.metrics import MetricWrapperBase
 
 
-def _register[M: MetricWrapperBase](
-    cls: type[M], name: str, *args: object, **kwargs: object
-) -> M:
+def _register[M: MetricWrapperBase](cls: type[M], name: str, *args: object, **kwargs: object) -> M:
     """Create a metric, reusing the existing collector if *name* is already registered.
 
     dex-studio's app factory can run more than once in a process (e.g. under

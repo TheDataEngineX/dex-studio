@@ -1500,12 +1500,14 @@ def sql_tables(request: Request, eng: JsonReadDep) -> Any:
     for layer in ("bronze", "silver", "gold"):
         for tbl in eng.warehouse_tables(layer):
             schema = eng.warehouse_table_schema(tbl["name"], layer) or []
-            tables.append({
-                "name": tbl["name"],
-                "layer": layer,
-                "rows": tbl.get("row_count", 0),
-                "columns": len(schema),
-            })
+            tables.append(
+                {
+                    "name": tbl["name"],
+                    "layer": layer,
+                    "rows": tbl.get("row_count", 0),
+                    "columns": len(schema),
+                }
+            )
     return tables
 
 
@@ -1637,18 +1639,22 @@ def warehouse(request: Request, eng: ReadDep) -> HTMLResponse:
             size_mb = 0
             if table.get("size_bytes"):
                 size_mb = round(table["size_bytes"] / 1024 / 1024, 1)
-            table_list.append({
-                "name": name,
+            table_list.append(
+                {
+                    "name": name,
+                    "layer": layer,
+                    "rows": table.get("row_count", 0),
+                    "columns": schema,
+                    "size_mb": size_mb,
+                }
+            )
+        layers.append(
+            {
                 "layer": layer,
-                "rows": table.get("row_count", 0),
-                "columns": schema,
-                "size_mb": size_mb,
-            })
-        layers.append({
-            "layer": layer,
-            "count": len(tables),
-            "tables": table_list,
-        })
+                "count": len(tables),
+                "tables": table_list,
+            }
+        )
     ctx = base_ctx(request) | {"layers": layers}
     return render(request, "data/warehouse.html", ctx)
 
@@ -2030,18 +2036,22 @@ def catalog(request: Request, eng: ReadDep) -> HTMLResponse:
             size_mb = 0
             if table.get("size_bytes"):
                 size_mb = round(table["size_bytes"] / 1024 / 1024, 1)
-            table_list.append({
-                "name": table["name"],
+            table_list.append(
+                {
+                    "name": table["name"],
+                    "layer": layer,
+                    "rows": table.get("row_count", 0),
+                    "columns": schema,
+                    "size_mb": size_mb,
+                }
+            )
+        layers.append(
+            {
                 "layer": layer,
-                "rows": table.get("row_count", 0),
-                "columns": schema,
-                "size_mb": size_mb,
-            })
-        layers.append({
-            "layer": layer,
-            "count": len(tables),
-            "tables": table_list,
-        })
+                "count": len(tables),
+                "tables": table_list,
+            }
+        )
     ctx = base_ctx(request) | {"layers": layers}
     return render(request, "data/catalog.html", ctx)
 

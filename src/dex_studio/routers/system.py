@@ -20,6 +20,7 @@ from dex_studio.utils import fmt_ts_iso
 
 router = APIRouter()
 
+
 def _sys_metrics() -> dict[str, Any]:
     """Read live CPU%, RAM, and uptime via psutil — cross-platform (Linux/macOS/Windows)."""
     metrics: dict[str, Any] = {}

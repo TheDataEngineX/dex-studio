@@ -85,10 +85,10 @@ def _post_success_checks(
 
 # Queue configuration
 _MAX_CONCURRENT = 1  # ponytail: 1 at a time — TMDB pipelines OOM at 3 concurrent with 32G
-_MAX_QUEUED = 100    # max queued pipelines
+_MAX_QUEUED = 100  # max queued pipelines
 _MIN_FREE_MB = 3_072  # ponytail: 3GB free required — TMDB pipelines are memory hogs
 _RUN_ALL_SENTINEL = "__run_all__"
-_RUN_TIMEOUT_S = 3_600      # release pipeline from running after 1h
+_RUN_TIMEOUT_S = 3_600  # release pipeline from running after 1h
 _PIPELINE_TIMEOUT_S = 7_200  # hard timeout for a single pipeline run
 
 # Thread pool for pipeline execution (1 worker = 1 concurrent max)
@@ -233,11 +233,7 @@ def is_pipeline_queued(name: str, db: StudioDb | PgStudioDb | None = None) -> bo
 
     status = db.get_queue_status()
     entries = status["entries"]
-    return name in [
-        e["pipeline_name"]
-        for e in entries
-        if e["status"] in ("queued", "pending")
-    ]
+    return name in [e["pipeline_name"] for e in entries if e["status"] in ("queued", "pending")]
 
 
 def running_pipelines(db: StudioDb | PgStudioDb | None = None) -> set[str]:
@@ -746,7 +742,10 @@ def _init_pipeline_run(
 
 
 def _execute_pipeline(
-    eng: Any, name: str, sdb: Any, run_id: int | None = None,
+    eng: Any,
+    name: str,
+    sdb: Any,
+    run_id: int | None = None,
 ) -> tuple[str, str, int, int]:
     """Execute pipeline and return (status, error_msg, rows_input, rows_output)."""
     error_msg = ""
@@ -785,8 +784,14 @@ def _execute_pipeline(
 
 
 def _finalize_pipeline_run(
-    sdb: Any, run_id: int, name: str, status: str, error_msg: str,
-    rows_input: int, rows_output: int, duration_s: float = 0.0,
+    sdb: Any,
+    run_id: int,
+    name: str,
+    status: str,
+    error_msg: str,
+    rows_input: int,
+    rows_output: int,
+    duration_s: float = 0.0,
 ) -> None:
     """Finalize pipeline run in DB and record Prometheus metrics."""
     try:
@@ -808,9 +813,13 @@ def _finalize_pipeline_run(
     # Prometheus metrics
     try:
         from dex_studio.metrics import record_pipeline_run
+
         record_pipeline_run(
-            name, terminal, duration_s,
-            rows_input=rows_input, rows_output=rows_output,
+            name,
+            terminal,
+            duration_s,
+            rows_input=rows_input,
+            rows_output=rows_output,
         )
     except Exception:
         logger.exception("metrics record failed", pipeline=name)
@@ -854,10 +863,19 @@ def _run(name: str, claimed: dict[str, Any]) -> None:
     finally:
         duration_s = time.monotonic() - start_time
         _finalize_run(
-            sdb, run_id, name, status, error_msg,
-            rows_input, rows_output, duration_s, claimed, lock_acquired
+            sdb,
+            run_id,
+            name,
+            status,
+            error_msg,
+            rows_input,
+            rows_output,
+            duration_s,
+            claimed,
+            lock_acquired,
         )
         _schedule_next_queued()
+
 
 def _finalize_run(
     sdb: Any | None,
@@ -879,10 +897,17 @@ def _finalize_run(
     if sdb is not None:
         if lock_acquired and run_id is not None:
             _finalize_pipeline_run(
-                sdb, run_id, name, status, error_msg,
-                rows_input, rows_output, duration_s,
+                sdb,
+                run_id,
+                name,
+                status,
+                error_msg,
+                rows_input,
+                rows_output,
+                duration_s,
             )
             from dex_studio._engine import get_engine
+
             db = _get_studio_db(get_engine())
             if db:
                 db.mark_queue_status(
@@ -894,6 +919,7 @@ def _finalize_run(
                 )
         elif not lock_acquired:
             from dex_studio._engine import get_engine
+
             db = _get_studio_db(get_engine())
             if db:
                 db.mark_queue_status(
@@ -904,15 +930,18 @@ def _finalize_run(
                     claimed["version"],
                 )
 
+
 def _schedule_next_queued() -> None:
     """Start next queued pipeline if capacity available."""
     from dex_studio._engine import get_engine
+
     eng = get_engine()
     db = _get_studio_db(eng)
     if db:
         _start_next_queued(db)
         try:
             from dex_studio.metrics import update_queue_depth
+
             qs = db.get_queue_status()
             running = qs["by_status"].get("running", 0)
             queued = qs["by_status"].get("queued", 0) + qs["by_status"].get("pending", 0)

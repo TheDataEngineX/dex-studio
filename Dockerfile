@@ -5,11 +5,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV UV_PYTHON_PREFERENCE=only-system
 
 WORKDIR /workspace/dex-studio
-COPY dex-studio/pyproject.toml dex-studio/uv.lock ./
-COPY dex-studio/README.md ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --no-dev
 
-COPY dex-studio/ .
+COPY . .
 RUN uv sync --no-dev
 
 
