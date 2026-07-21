@@ -372,16 +372,15 @@ def _run_pipeline_with_timeout(
     Uses a dedicated thread so a hung pipeline never blocks the pool permanently.
     """
     import concurrent.futures
+    from functools import partial
 
     def _progress_cb(stage: str, current: int, total: int) -> None:
         # Could store progress in DB if needed
         pass
 
     _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    fut = _pool.submit(
-        eng.run_pipeline, name,
-        progress_cb=_progress_cb, checkpoint_cb=checkpoint_cb,
-    )
+    fn = partial(eng.run_pipeline, name, progress_cb=_progress_cb, checkpoint_cb=checkpoint_cb)
+    fut = _pool.submit(fn)
     poll_s = min(30, timeout_s)
     elapsed = 0
     try:

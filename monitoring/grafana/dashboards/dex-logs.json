@@ -1,0 +1,81 @@
+{
+  "uid": "dex-logs",
+  "title": "Dex-Studio Logs",
+  "tags": ["dex-studio", "loki", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "loki",
+        "type": "datasource",
+        "label": "Loki",
+        "query": "loki",
+        "current": { "text": "Loki", "value": "Loki" }
+      },
+      {
+        "name": "app",
+        "type": "constant",
+        "label": "App",
+        "query": "dex-studio",
+        "current": { "text": "dex-studio", "value": "dex-studio" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Log Volume",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "count_over_time({app=\"$app\"}[5m])",
+          "legendFormat": "logs",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error Logs (rate)",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate({app=\"$app\"} | json | level=\"error\" [5m])",
+          "legendFormat": "error_rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Recent Logs",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "expr": "{app=\"$app\"} | json",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error Logs by Request ID",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "x": 0, "y": 18, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "count_over_time({app=\"$app\"} | json | level=\"error\" | request_id!=\"\" [5m])",
+          "legendFormat": "{{request_id}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

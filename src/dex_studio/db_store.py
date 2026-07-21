@@ -66,7 +66,7 @@ def init_db() -> None:
 
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
-        _log.info("DATABASE_URL not set — db_store disabled (single-pod mode)")
+        _log.info("db_store disabled — DATABASE_URL not set (single-pod/local mode)")
         return
 
     _engine = create_engine(url, pool_pre_ping=True)
@@ -75,7 +75,7 @@ def init_db() -> None:
             stmt = statement.strip()
             if stmt:
                 conn.execute(text(stmt))
-    _log.info("db initialised", url=_redact(url))
+    _log.info("db_store initialised", url=_redact(url))
 
 
 def _redact(url: str) -> str:

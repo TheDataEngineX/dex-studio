@@ -1,0 +1,13 @@
+# ---------------------------------------------------------------
+# Dex-Studio SLO Alert Rules
+# Fires alerts when latency (P95), error rate (5xx), or in-flight
+# saturation exceed prod thresholds.
+#
+# No HTTP-request-level metrics (http_requests_total,
+# http_request_duration_seconds_bucket, http_requests_in_flight)
+# are currently emitted by dex-studio, so this group is empty.
+# Repopulate once that instrumentation exists.
+# ---------------------------------------------------------------
+groups:
+  - name: dex-studio-slos
+    rules: []

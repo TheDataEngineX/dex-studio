@@ -39,7 +39,7 @@ Or point at an existing config:
 DEX_CONFIG_PATH=/path/to/your/dex.yaml uv run poe dev
 ```
 
-A minimal `dex.yaml` looks like:
+A minimal `dex.yaml`:
 
 ```yaml
 store:
@@ -89,10 +89,11 @@ ai:
 
 | Guide | What it covers |
 |-------|----------------|
-| [Configuration](configuration.md) | All dex.yaml options — sources, pipelines, ML, AI, backends |
+| [Configuration](configuration.md) | All `dex.yaml` options — sources, pipelines, ML, AI, backends |
 | [Architecture Reference](architecture-review.md) | Request flow, auth, scheduler, deployment |
 | [Design Document](design.md) | Why FastAPI + HTMX, project structure, roadmap |
 | [dataenginex docs](https://github.com/TheDataEngineX/dataenginex) | Full pipeline and engine reference |
+| [InfraDEX](https://github.com/TheDataEngineX/infradex) | Kubernetes + ArgoCD deployment |
 
 ## Docker / CI notes
 
@@ -110,3 +111,9 @@ Project registry at `~/.dex-studio/projects.yaml`:
 - name: ecommerce
   config_path: /path/to/ecommerce/dex.yaml
 ```
+
+## Links
+
+- [GitHub](https://github.com/TheDataEngineX/dex-studio)
+- [Website](https://thedataenginex.org)
+- [Full Documentation](https://docs.thedataenginex.org)

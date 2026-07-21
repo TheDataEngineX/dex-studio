@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------
+# Dex Studio Pipeline Alert Rules
+# Monitors pipeline execution, data quality scores, ingestion
+# volume, and deduplication rates.
+# ---------------------------------------------------------------
+groups:
+  - name: dex_pipeline_alerts
+    rules:
+      # --- Pipeline execution alerts ---
+
+      - alert: PipelineDurationExceeded
+        expr: dex_pipeline_duration_seconds > 2700
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Pipeline execution exceeded 45-minute target"
+          description: "Pipeline {{ $labels.pipeline_name }} has been running for {{ $value }}s (target: 2700s)"
+
+      - alert: PipelineFailureRate
+        expr: rate(dex_pipeline_runs_total{status="failed"}[1h]) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "High pipeline failure rate detected"
+          description: "Pipeline failure rate is {{ $value | humanizePercentage }} over the last hour"
+
+      # --- Data quality alerts ---
+
+      - alert: DataQualityBelowThreshold
+        expr: dex_data_quality_score < 0.75
+        for: 15m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Data quality score below silver layer threshold"
+          description: "Quality score for {{ $labels.dataset }} is {{ $value }} (threshold: 0.75)"
+
+      - alert: DataQualityGoldLayerLow
+        expr: dex_data_quality_score{layer="gold"} < 0.90
+        for: 10m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "Gold layer quality below 90%"
+          description: "Gold layer quality for {{ $labels.dataset }} is {{ $value }} (threshold: 0.90)"
+
+      # --- Ingestion volume alerts ---
+
+      - alert: LowIngestionVolume
+        expr: increase(dex_pipeline_rows_input_total[3h]) < 5000
+        for: 5m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "Low job ingestion volume this cycle"
+          description: "Only {{ $value }} rows ingested in the last 3-hour cycle (expected: 13750)"
+
+      - alert: ZeroIngestion
+        expr: increase(dex_pipeline_rows_input_total[6h]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: data-engineering
+        annotations:
+          summary: "No data ingested for 6 hours"
+          description: "Zero rows have been ingested in the last 6 hours — pipeline may be stalled"
+
+      # --- Deduplication alerts ---
+
+      - alert: HighDuplicateRate
+        expr: >
+          rate(dex_ingestion_deduplicated_total[1h])
+          /
+          (rate(dex_pipeline_rows_input_total[1h]) + rate(dex_ingestion_deduplicated_total[1h]) + 1)
+          > 0.30
+        for: 15m
+        labels:
+          severity: warning
+          team: data-engineering
+        annotations:
+          summary: "High duplicate rate detected (>30%)"
+          description: "Duplicate rate is {{ $value | humanizePercentage }} — check source connectors"

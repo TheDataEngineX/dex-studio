@@ -4,12 +4,10 @@ FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV UV_PYTHON_PREFERENCE=only-system
 
-WORKDIR /workspace
-COPY dataenginex/ dataenginex/
-
 WORKDIR /workspace/dex-studio
 COPY dex-studio/pyproject.toml dex-studio/uv.lock ./
-RUN uv sync --no-dev --no-install-project
+COPY dex-studio/README.md ./
+RUN uv sync --no-dev
 
 COPY dex-studio/ .
 RUN uv sync --no-dev

@@ -13,11 +13,7 @@ docker compose up
 open http://localhost:7860
 ```
 
-[![DEX Studio demo](docs/demo.gif)](docs/demo-full.mp4)
-
 > **After login →** head to [**Getting Started**](docs/getting-started.md) for your first project, first pipeline, and first AI agent.
-
-> 40-second highlight · [Full walkthrough →](docs/demo-full.mp4)
 
 ---
 
@@ -82,6 +78,37 @@ export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 
 ---
 
+## Local Development
+
+Full observability stack (dex-studio + Prometheus + Grafana + Tempo + cAdvisor + PostgreSQL + Redis + Kafka + Elasticsearch):
+
+```bash
+docker compose up -d
+# dex-studio:  http://localhost:7860
+# Grafana:     http://localhost:3000 (admin/admin)
+# Prometheus:  http://localhost:9090
+# Tempo:       http://localhost:3200
+# cAdvisor:    http://localhost:8080
+# Kafka UI:    http://localhost:9091
+# Schema Reg:  http://localhost:8081
+```
+
+Stack includes:
+- **dex-studio** — Web UI (FastAPI + Jinja2 + HTMX)
+- **Prometheus** — Metrics collection & alerting
+- **Alertmanager** — Alert routing
+- **Grafana** — Dashboards & visualization
+- **Tempo** — Distributed tracing
+- **cAdvisor** — Container metrics (OOM, CPU throttle, memory)
+- **PostgreSQL** — Shared state for dex-studio
+- **Redis** — Session store / rate limiting / Celery broker
+- **Kafka** — Streaming message bus (KRaft mode)
+- **Schema Registry** — Avro/Protobuf schema management
+- **Kafka UI** — Browse topics, partitions, messages
+- **Elasticsearch** — Lexical search (movie-dex example)
+
+---
+
 ## Local-first by default
 
 - **DuckDB** embedded — no Postgres / Redis for the base install
@@ -101,7 +128,7 @@ export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 | Templates | Jinja2 (server-rendered HTML) |
 | Interactivity | HTMX + Alpine.js (no JS build step) |
 | Styling | Custom CSS + Radix UI design tokens |
-| Engine | [`dataenginex`](https://github.com/TheDataEngineX/dataenginex) — direct import, no HTTP |
+| Engine | [`dataenginex>=0.5.0`](https://github.com/TheDataEngineX/dataenginex) — direct import, no HTTP |
 | Persistence | DuckDB (embedded) + optional PostgreSQL / Qdrant / S3 |
 | LLM | Ollama (default) + optional OpenAI / Anthropic / LiteLLM |
 | Streaming | Kafka / Redpanda (optional) |
@@ -109,9 +136,13 @@ export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 | Build | Hatchling + uv |
 | Quality | Ruff + mypy strict + pytest |
 
+**Key dependency versions (0.5.2):** `fastapi>=0.139.2`, `pydantic>=2.13.4`, `structlog>=26.1.0`, `sqlalchemy>=2.0.51`, `scikit-learn>=1.9.0`, `pandas>=3.0.3`, `orjson>=3.11.9`, `httpx>=0.28.1`, `opentelemetry-sdk>=1.44.0`
+
 ---
 
 ## Screenshots
+
+![DEX Studio Demo](docs/screenshots/dex-studio-demo.gif)
 
 | Data pipelines | SQL console | Warehouse lineage |
 |---|---|---|
@@ -124,6 +155,44 @@ export DEX_CONFIG_PATH=/path/to/dex.yaml && dex-studio
 | System status | Live logs | Scheduler |
 |---|---|---|
 | [![Status](docs/screenshots/system-status.png)](docs/screenshots/system-status.png) | [![Logs](docs/screenshots/system-logs.png)](docs/screenshots/system-logs.png) | [![Scheduler](docs/screenshots/system-scheduler.png)](docs/screenshots/system-scheduler.png) |
+
+---
+
+## Local Development
+
+Full observability stack (dex-studio + Prometheus + Grafana + Tempo + cAdvisor):
+
+```bash
+docker compose up -d
+# dex-studio:  http://localhost:7860
+# Grafana:     http://localhost:3000 (admin/admin)
+# Prometheus:  http://localhost:9090
+# Tempo:       http://localhost:3200
+# cAdvisor:    http://localhost:8080
+```
+
+Stack includes:
+- **dex-studio** — Web UI (FastAPI + Jinja2 + HTMX)
+- **Prometheus** — Metrics collection & alerting
+- **Alertmanager** — Alert routing
+- **Grafana** — Dashboards & visualization
+- **Tempo** — Distributed traces storage
+- **cAdvisor** — Container metrics (OOM, CPU throttle, memory)
+- **PostgreSQL** — Shared state for multi-replica dex-studio
+- **Redis** — Session store / rate limiting
+- **Kafka** — Streaming message bus (optional)
+- **Elasticsearch** — Lexical search (optional)
+
+### Poe Tasks (from dex-studio repo root)
+
+```bash
+uv run poe dc-up       # Start dex-studio + monitoring stack
+uv run poe dc-down     # Stop it
+uv run poe dc-logs     # Tail logs
+uv run poe dc-ps       # List services
+```
+
+Defined in `pyproject.toml`. The compose file at `docker-compose.yml` includes everything needed for local development.
 
 ---
 
@@ -148,7 +217,7 @@ Design tokens: `src/dex_studio/static/studio.css`.
 |------|-------------|
 | [dataenginex](https://github.com/TheDataEngineX/dataenginex) | The Python library — engine, config, all backends |
 | [dex-studio](https://github.com/TheDataEngineX/dex-studio) | This repo — web UI |
-| [infradex](https://github.com/TheDataEngineX/infradex) | Kubernetes deployment via ArgoCD |
+| [infradex](https://github.com/TheDataEngineX/infradex) | Kubernetes deployment via ArgoCD (private) |
 
 ---
 

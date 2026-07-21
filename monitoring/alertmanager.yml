@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------
+# Alertmanager — Routing & Notification Configuration
+# Routes fired alerts to email (warnings) or Slack (pages).
+#
+# Primary notification emails use thedataenginex.org domain.
+# ---------------------------------------------------------------
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: localhost:25          # Dummy SMTP for local dev; set real SMTP in prod
+  smtp_from: alerts@thedataenginex.org
+
+# --- Routing tree ---
+route:
+  group_by:
+    - alertname
+    - environment               # Group identical alerts per environment
+  group_wait: 30s               # Wait before sending first notification
+  group_interval: 5m            # Interval between grouped notifications
+  repeat_interval: 2h           # Re-send if alert still firing after 2 h
+  receiver: default-email       # Fallback receiver
+  routes:
+    # Critical / page alerts → Slack immediately
+    - matchers:
+        - severity = "page"
+      receiver: critical-slack
+      continue: false
+    # Warnings → email digest
+    - matchers:
+        - severity = "warning"
+      receiver: default-email
+      continue: false
+
+# --- Receivers ---
+receivers:
+  - name: default-email
+    email_configs:
+      - to: alerts@thedataenginex.org
+        from: ops@thedataenginex.org
+        send_resolved: true
+        html: "<p>Alert: {{ .CommonAnnotations.summary }}</p>"
+  - name: critical-slack
+    slack_configs:
+      - api_url: "https://hooks.slack.com/services/T00/B00/placeholder"  # Set real URL for alerts
+        send_resolved: true
+        title: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        channel: "#dex-alerts"
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Resource:* {{ .Labels.pipeline_name }}{{ .Labels.model }}{{ .Labels.dataset }}{{ .Labels.connector }}{{ .Labels.name }}
+          *Severity:* {{ .Labels.severity }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+# --- Inhibition rules ---
+# Suppress 'warning' when a matching 'page' is already firing
+inhibit_rules:
+  - source_matchers:
+      - severity = "page"
+    target_matchers:
+      - severity = "warning"
+    equal:
+      - alertname
+      - environment

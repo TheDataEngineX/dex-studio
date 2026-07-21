@@ -369,9 +369,12 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
     _add_middlewares(app)
 
-    from dex_studio.otel_setup import setup_otel
+    try:
+        from dex_studio.otel_setup import setup_otel
 
-    setup_otel(app)
+        setup_otel(app)
+    except ModuleNotFoundError:
+        logger.error("Error Setting up OTEL")
 
     # ── Static files ─────────────────────────────────────────────────────────
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
