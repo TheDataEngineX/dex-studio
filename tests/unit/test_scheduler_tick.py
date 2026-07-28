@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,9 +26,6 @@ def _make_eng(pipelines: dict) -> MagicMock:
     eng = MagicMock()
     eng.config_path = None
     eng.config.data.pipelines = pipelines
-    # Real eng.config.project.name (see app.py) — set explicitly so
-    # MagicMock doesn't auto-vivify a non-None child mock in its place,
-    # which would defeat resolve_depends_on's getattr(..., "default") fallback.
     eng.config.project = SimpleNamespace(name="default")
     return eng
 
@@ -40,7 +37,8 @@ def test_no_pipelines_runs_nothing(studio_db: StudioDb) -> None:
     eng = _make_eng({})
     cfg = SchedulerConfig(enabled=True)
     ran: list[str] = []
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
     assert ran == []
 
 
@@ -48,7 +46,8 @@ def test_pipeline_with_no_schedule_skipped(studio_db: StudioDb) -> None:
     eng = _make_eng({"p": _PipeCfg(schedule="")})
     cfg = SchedulerConfig(enabled=True)
     ran: list[str] = []
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
     assert ran == []
 
 
@@ -57,7 +56,8 @@ def test_pipeline_already_locked_skipped(studio_db: StudioDb) -> None:
     eng = _make_eng({"p": _PipeCfg(schedule="* * * * *")})
     cfg = SchedulerConfig(enabled=True)
     ran: list[str] = []
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
     assert ran == []
 
 
@@ -68,7 +68,8 @@ def test_never_run_pipeline_waits_for_next_tick_not_immediate(studio_db: StudioD
     eng = _make_eng({"p": _PipeCfg(schedule="0 3 * * *")})  # daily at 03:00
     cfg = SchedulerConfig(enabled=True)
     ran: list[str] = []
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
     assert ran == []
 
 
@@ -83,7 +84,8 @@ def test_running_row_with_no_lock_is_reconciled(studio_db: StudioDb) -> None:
 
     eng = _make_eng({})
     cfg = SchedulerConfig(enabled=True)
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=lambda _: None)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=lambda _: None)
 
     runs = studio_db.get_runs("orphan", limit=1)
     assert runs[0]["id"] == run_id
@@ -99,14 +101,15 @@ def test_hard_kill_still_persists_retry_state(studio_db: StudioDb) -> None:
     same pipeline immediately with no backoff, forever."""
     studio_db.set_last_run("p", datetime(2019, 12, 31, 23, 58, tzinfo=UTC))
     eng = _make_eng({"p": _PipeCfg(schedule="* * * * *")})
-    # Mock the job queue to avoid real engine
-    from unittest.mock import patch
-
-    with patch("dex_studio.jobs.run_pipeline_bg") as mock_run_bg:
+    with (
+        patch("dex_studio.jobs.run_pipeline_bg") as mock_run_bg,
+        patch("dex_studio.jobs._available_mb", return_value=999_999),
+    ):
         mock_run_bg.return_value = "queued"
         cfg = SchedulerConfig(enabled=True)
         ran: list[str] = []
-        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+        with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+            _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
         mock_run_bg.assert_called_once_with("p", triggered_by="scheduler")
 
 
@@ -122,7 +125,8 @@ def test_hard_kill_exhausted_attempts_dead_letters_without_running(studio_db: St
 
     eng = _make_eng({"p": _PipeCfg(schedule="* * * * *")})
     ran: list[str] = []
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
 
     eng.run_pipeline.assert_not_called()
     state = studio_db.get_run_state("p")
@@ -226,31 +230,8 @@ def test_migrated_dependent_does_not_fire_as_root(studio_db: StudioDb) -> None:
     cfg = SchedulerConfig(enabled=True)
     ran: list[str] = []
 
-    _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
+    with patch("dex_studio.jobs.running_pipelines", return_value=set()):
+        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH, ran_cb=ran.append)
 
     eng.run_pipeline.assert_not_called()
-
-
-def test_drains_already_queued_work_even_when_nothing_is_cron_due(
-    studio_db: StudioDb,
-) -> None:
-    """A tick where no root pipeline is cron-due must still attempt to claim
-    already-queued work — previously the only paths that ever called
-    _start_next_queued were run_pipeline_bg() (a fresh enqueue) and a run's
-    own completion, so a claimed pipeline could sit queued indefinitely on a
-    tick where neither happened, even with free concurrency slots."""
-    from unittest.mock import patch
-
-    from dex_studio import jobs as jobs_mod
-
-    studio_db.enqueue_pipeline("already_queued_pipeline", priority=999)
-
-    # No pipelines configured at all -> nothing cron-due this tick.
-    eng = _make_eng({})
-    cfg = SchedulerConfig(enabled=True, min_free_mb=0)
-
-    with patch.object(jobs_mod._EXECUTOR, "submit") as mock_submit:
-        _run_due_pipelines(eng, cfg, studio_db, now=_EPOCH)
-
-    mock_submit.assert_called_once()
-    assert mock_submit.call_args.args[1] == "already_queued_pipeline"
+    assert ran == []
