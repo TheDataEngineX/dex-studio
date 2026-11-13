@@ -3,7 +3,7 @@
 Layer 1 of the DataEngineX rebuild: the runtime app that loads a
 DataEngineX project and runs it.
 
-    dataenginex init      create a starter project
+    dataenginex init      create a starter project (M1b)
     dataenginex check     validate definitions without running
     dataenginex run       run pipelines (Bronze / Silver / Gold)
     dataenginex receipt   show the receipt of a run
@@ -23,5 +23,5 @@ Rules:
 
 Status: fresh start (2026-10-28). The previous dex-studio codebase,
 including its unpushed local commits, was removed in full at the
-founder's direction. Skeleton only - the CLI lands with the M0/M1
-milestones of the foundation package.
+founder's direction. check / run / receipt are implemented (M0/M1a);
+init templates and serve land later.
