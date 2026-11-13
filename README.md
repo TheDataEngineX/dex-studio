@@ -1,13 +1,17 @@
-# dex-studio (the dex runtime)
+# dex-studio (the DataEngineX runtime)
 
 Layer 1 of the DataEngineX rebuild: the runtime app that loads a
 DataEngineX project and runs it.
 
-    dex init     create a starter project
-    dex check    validate definitions without running
-    dex run      run pipelines (Bronze / Silver / Gold)
-    dex receipt  show the receipt of a run
-    dex serve    local read API over Gold (later)
+    dataenginex init      create a starter project
+    dataenginex check     validate definitions without running
+    dataenginex run       run pipelines (Bronze / Silver / Gold)
+    dataenginex receipt   show the receipt of a run
+    dataenginex serve     local read API over Gold (later)
+
+The CLI command is `dataenginex` (decision 0012 in the dataenginex
+repo). The name `dex` belongs to the AI assistant product
+(decision 0023) - do not use it for this runtime.
 
 Rules:
 - Depends on the dataenginex foundation package (Layer 0) through its

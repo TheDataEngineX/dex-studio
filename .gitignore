@@ -10,3 +10,4 @@ build/
 *.duckdb
 *.wal
 .dex/
+.DS_Store
