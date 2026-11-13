@@ -30,4 +30,6 @@ through a pull request, nothing merges without the founder's review
   repo's decision log (docs/decisions/) and apply here too.
 - This runtime uses only the public API of the dataenginex
   foundation package, installed from PyPI in shipped builds.
+- Commits are signed off with the DCO: git commit -s
+  (decision 0003 in the dataenginex repo).
 - Plain ASCII in code and docs.

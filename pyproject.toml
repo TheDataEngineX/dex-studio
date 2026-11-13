@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "dex runtime: loads and runs DataEngineX projects (Layer 1)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Jayapal Reddy Myaka" },
 ]
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-dex = "dex_studio.cli:main"
+dataenginex = "dex_studio.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dex_studio"]
